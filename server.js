@@ -12,6 +12,9 @@ const authMiddleware = require('./middleware/auth');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// Trust nginx reverse proxy — allows Express to see the real HTTPS connection
+app.set('trust proxy', 1);
+
 // Ensure uploads directory exists
 const uploadsDir = process.env.UPLOADS_PATH || path.join(__dirname, 'uploads');
 if (!fs.existsSync(uploadsDir)) {
@@ -40,7 +43,7 @@ app.use(session({
   resave: false,
   saveUninitialized: false,
   cookie: {
-    secure: process.env.NODE_ENV === 'production' && process.env.FORCE_HTTPS === '1',
+    secure: process.env.NODE_ENV !== 'development', // HTTPS-only cookie in production
     httpOnly: true,
     maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days in ms
   },
