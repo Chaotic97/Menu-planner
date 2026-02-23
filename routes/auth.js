@@ -49,7 +49,10 @@ router.post('/setup', async (req, res) => {
   setSetting(db, 'email', email);
 
   req.session.authenticated = true;
-  res.json({ success: true });
+  req.session.save((err) => {
+    if (err) return res.status(500).json({ error: 'Session error.' });
+    res.json({ success: true });
+  });
 });
 
 // POST /api/auth/login
@@ -72,7 +75,10 @@ router.post('/login', async (req, res) => {
   }
 
   req.session.authenticated = true;
-  res.json({ success: true });
+  req.session.save((err) => {
+    if (err) return res.status(500).json({ error: 'Session error.' });
+    res.json({ success: true });
+  });
 });
 
 // POST /api/auth/logout
