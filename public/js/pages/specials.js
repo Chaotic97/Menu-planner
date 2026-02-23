@@ -138,10 +138,9 @@ export async function renderSpecials(container) {
       // Delete
       listEl.querySelectorAll('.delete-special').forEach(btn => {
         btn.addEventListener('click', async () => {
-          if (!confirm('Remove this special?')) return;
           try {
             await deleteSpecial(btn.dataset.id);
-            showToast('Special removed');
+            showToast('Special removed', 'info');
             loadSpecials();
           } catch (err) {
             showToast(err.message, 'error');

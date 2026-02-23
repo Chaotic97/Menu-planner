@@ -7,7 +7,7 @@ export function renderLogin(container, mode = 'login') {
   container.innerHTML = `
     <div class="login-page">
       <div class="login-card">
-        <h1 class="login-title">Menu Planner</h1>
+        <h1 class="login-title">PlateStack</h1>
         <p class="login-subtitle" id="login-subtitle"></p>
 
         <form id="auth-form" class="login-form">
