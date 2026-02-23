@@ -28,7 +28,6 @@ async function checkAuth() {
     const data = await res.json();
 
     if (!data.isSetup) {
-      // First time: show setup screen
       showAuthUI(false);
       renderLogin(appContent, 'setup');
       return false;
@@ -43,7 +42,6 @@ async function checkAuth() {
     showAuthUI(true);
     return true;
   } catch {
-    // If auth check fails, show login
     showAuthUI(false);
     renderLogin(appContent, 'login');
     return false;
@@ -53,9 +51,11 @@ async function checkAuth() {
 function showAuthUI(authed) {
   isAuthenticated = authed;
   const nav = document.querySelector('.top-nav');
+  const bottomNav = document.getElementById('bottom-nav');
   const logoutBtn = document.getElementById('logout-btn');
 
   if (nav) nav.style.display = authed ? '' : 'none';
+  if (bottomNav) bottomNav.style.display = authed ? '' : 'none';
   if (logoutBtn) logoutBtn.style.display = authed ? '' : 'none';
 }
 
@@ -63,6 +63,23 @@ async function handleLogout() {
   await fetch('/api/auth/logout', { method: 'POST' });
   window.location.hash = '#/login';
   window.location.reload();
+}
+
+function updateActiveNav(hash) {
+  // Top nav links
+  document.querySelectorAll('.nav-link').forEach(link => {
+    const href = link.getAttribute('href');
+    link.classList.toggle('active',
+      href === hash || (hash.startsWith(href) && href !== '#/')
+    );
+  });
+
+  // Bottom nav links
+  document.querySelectorAll('.bottom-nav-link[data-route]').forEach(link => {
+    const route = link.getAttribute('data-route');
+    const isActive = hash === `#${route}` || (hash.startsWith(`#${route}`) && route !== '#/');
+    link.classList.toggle('active', isActive);
+  });
 }
 
 async function router() {
@@ -88,11 +105,7 @@ async function router() {
     if (!authed) return;
   }
 
-  // Update active nav link
-  document.querySelectorAll('.nav-link').forEach(link => {
-    link.classList.toggle('active', link.getAttribute('href') === hash ||
-      (hash.startsWith(link.getAttribute('href')) && link.getAttribute('href') !== '#/'));
-  });
+  updateActiveNav(hash);
 
   for (const route of routes) {
     const match = hash.match(route.pattern);
@@ -102,7 +115,6 @@ async function router() {
     }
   }
 
-  // Default fallback
   renderMenuList(appContent);
 }
 
@@ -131,14 +143,12 @@ function updateThemeIcon() {
   btn.title = isDark ? 'Switch to light mode' : 'Switch to dark mode';
 }
 
-// Expose logout for nav button
-window._menuPlannerLogout = handleLogout;
-
 window.addEventListener('hashchange', router);
 window.addEventListener('DOMContentLoaded', async () => {
   initTheme();
   document.getElementById('theme-toggle')?.addEventListener('click', toggleTheme);
   document.getElementById('logout-btn')?.addEventListener('click', handleLogout);
+  document.getElementById('bottom-logout-btn')?.addEventListener('click', handleLogout);
 
   const authed = await checkAuth();
   if (authed) {

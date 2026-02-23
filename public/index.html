@@ -28,6 +28,26 @@
     <div class="loading">Loading...</div>
   </main>
 
+  <!-- Bottom tab bar (mobile only) -->
+  <nav class="bottom-nav" id="bottom-nav">
+    <a href="#/dishes" class="bottom-nav-link" data-route="/dishes">
+      <span class="bottom-nav-icon">🍽️</span>
+      <span class="bottom-nav-label">Dishes</span>
+    </a>
+    <a href="#/menus" class="bottom-nav-link" data-route="/menus">
+      <span class="bottom-nav-icon">📋</span>
+      <span class="bottom-nav-label">Menus</span>
+    </a>
+    <a href="#/specials" class="bottom-nav-link" data-route="/specials">
+      <span class="bottom-nav-icon">⭐</span>
+      <span class="bottom-nav-label">Specials</span>
+    </a>
+    <button class="bottom-nav-link bottom-nav-logout" id="bottom-logout-btn">
+      <span class="bottom-nav-icon">🚪</span>
+      <span class="bottom-nav-label">Logout</span>
+    </button>
+  </nav>
+
   <script type="module" src="/js/app.js"></script>
 </body>
 </html>
