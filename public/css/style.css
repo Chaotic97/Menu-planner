@@ -2571,3 +2571,128 @@ textarea.input { resize: vertical; min-height: 80px; }
   color: var(--text);
   white-space: nowrap;
 }
+
+/* ============================
+   Service Notes — shift picker & legend
+   ============================ */
+.sn-cal-legend {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 10px;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  justify-content: center;
+}
+
+.sn-dot-legend {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--warning);
+  flex-shrink: 0;
+}
+
+.sn-shift-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.sn-shift-opt {
+  padding: 6px 12px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  font-family: var(--font);
+  border: 2px solid var(--sc, var(--border));
+  border-radius: 20px;
+  background: none;
+  color: var(--sc, var(--text));
+  cursor: pointer;
+  transition: all 0.15s;
+  opacity: 0.7;
+}
+
+.sn-shift-opt:hover {
+  opacity: 1;
+  background: rgba(0,0,0,0.06);
+}
+
+.sn-shift-opt.active {
+  background: var(--sc, var(--primary));
+  color: white;
+  opacity: 1;
+  border-color: var(--sc, var(--primary));
+}
+
+/* ============================
+   Ingredient Row — inline unit converter
+   ============================ */
+.ing-main-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* Mirror the old ingredient-row flex layout */
+.ingredient-row { flex-wrap: wrap; }
+
+.ing-convert-btn {
+  flex-shrink: 0;
+  font-size: 1rem;
+  padding: 6px 8px;
+  min-width: 34px;
+  min-height: 34px;
+  border-color: var(--primary);
+  color: var(--primary);
+}
+
+.ing-convert-btn:hover:not(:disabled) {
+  background: rgba(45,106,79,0.08);
+}
+
+.ing-converter {
+  width: 100%;
+  padding: 8px 12px;
+  background: rgba(45,106,79,0.06);
+  border-left: 3px solid var(--primary);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  margin-top: 2px;
+}
+
+.ing-converter-inner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.ing-converter-label {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.ing-converter-target {
+  padding: 5px 8px;
+  font-size: 0.85rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text);
+  font-family: var(--font);
+  min-height: 34px;
+  appearance: auto;
+}
+
+.ing-converter-result {
+  font-size: 0.9rem;
+  color: var(--text);
+  min-width: 80px;
+}
+
+[data-theme="dark"] .ing-converter {
+  background: rgba(64,145,108,0.08);
+}

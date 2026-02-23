@@ -8,6 +8,36 @@ import { loadAllergenKeywords, detectAllergensClient } from '../data/allergenKey
 
 const ALLERGEN_LIST = ['celery','gluten','crustaceans','eggs','fish','lupin','milk','molluscs','mustard','nuts','peanuts','sesame','soy','sulphites'];
 
+// Unit conversion tables — base unit is g (weight) or ml (volume)
+const UNIT_GROUPS = {
+  weight: { units: ['g','kg','oz','lb'], toBase: { g:1, kg:1000, oz:28.3495, lb:453.592 } },
+  volume: { units: ['ml','L','tsp','tbsp','cup'], toBase: { ml:1, L:1000, tsp:4.92892, tbsp:14.7868, cup:236.588 } },
+};
+
+function getUnitGroup(unit) {
+  for (const [group, data] of Object.entries(UNIT_GROUPS)) {
+    if (data.units.includes(unit)) return { group, data };
+  }
+  return null;
+}
+
+function convertUnit(qty, fromUnit, toUnit) {
+  const g = getUnitGroup(fromUnit);
+  if (!g) return null;
+  const base = qty * g.data.toBase[fromUnit];
+  const result = base / g.data.toBase[toUnit];
+  // Round nicely
+  if (result >= 100) return Math.round(result * 10) / 10;
+  if (result >= 10)  return Math.round(result * 100) / 100;
+  return Math.round(result * 10000) / 10000;
+}
+
+function compatibleUnits(fromUnit) {
+  const g = getUnitGroup(fromUnit);
+  if (!g) return [];
+  return g.data.units.filter(u => u !== fromUnit);
+}
+
 export async function renderDishForm(container, dishId) {
   const isEdit = !!dishId;
   let dish = null;
@@ -247,6 +277,79 @@ export async function renderDishForm(container, dishId) {
       e.target.closest('.ingredient-row').remove();
       updateAllergenPreview();
     }
+
+    // Unit converter button
+    if (e.target.closest('.ing-convert-btn')) {
+      const btn = e.target.closest('.ing-convert-btn');
+      const row = btn.closest('.ingredient-row');
+      const converterEl = row.querySelector('.ing-converter');
+      if (!converterEl) return;
+
+      // Toggle
+      if (converterEl.style.display !== 'none' && converterEl.innerHTML) {
+        converterEl.style.display = 'none';
+        converterEl.innerHTML = '';
+        return;
+      }
+
+      const fromUnit = row.querySelector('.ing-unit').value;
+      const fromQty  = parseFloat(row.querySelector('.ing-qty').value) || 0;
+      const compat   = compatibleUnits(fromUnit);
+      if (!compat.length) return;
+
+      const defaultTarget = compat[0];
+      const initialResult = fromQty ? convertUnit(fromQty, fromUnit, defaultTarget) : null;
+
+      converterEl.innerHTML = `
+        <div class="ing-converter-inner">
+          <span class="ing-converter-label">Convert <strong>${fromQty || '?'} ${fromUnit}</strong> to:</span>
+          <select class="input ing-converter-target" style="flex:0 0 auto;min-width:80px;">
+            ${compat.map(u => `<option value="${u}">${u}</option>`).join('')}
+          </select>
+          <span class="ing-converter-result">${initialResult !== null ? `= <strong>${initialResult} ${defaultTarget}</strong>` : '—'}</span>
+          <button type="button" class="btn btn-sm btn-primary ing-converter-apply">Apply</button>
+          <button type="button" class="btn btn-sm ing-converter-cancel">✕</button>
+        </div>
+      `;
+      converterEl.style.display = 'block';
+
+      const targetSel    = converterEl.querySelector('.ing-converter-target');
+      const resultSpan   = converterEl.querySelector('.ing-converter-result');
+      const applyBtn     = converterEl.querySelector('.ing-converter-apply');
+      const cancelBtn    = converterEl.querySelector('.ing-converter-cancel');
+
+      function updateResult() {
+        const qty = parseFloat(row.querySelector('.ing-qty').value) || 0;
+        const to  = targetSel.value;
+        const r   = convertUnit(qty, fromUnit, to);
+        resultSpan.innerHTML = r !== null ? `= <strong>${r} ${to}</strong>` : '—';
+      }
+
+      targetSel.addEventListener('change', updateResult);
+      row.querySelector('.ing-qty').addEventListener('input', updateResult);
+
+      applyBtn.addEventListener('click', () => {
+        const qty = parseFloat(row.querySelector('.ing-qty').value) || 0;
+        const to  = targetSel.value;
+        const r   = convertUnit(qty, fromUnit, to);
+        if (r === null) return;
+        row.querySelector('.ing-qty').value = r;
+        // Update the unit select
+        row.querySelector('.ing-unit').value = to;
+        // Refresh convert button availability
+        const newCompat = compatibleUnits(to);
+        btn.disabled = !newCompat.length;
+        btn.style.opacity = newCompat.length ? '' : '0.35';
+        converterEl.style.display = 'none';
+        converterEl.innerHTML = '';
+        showToast(`Converted: ${qty} ${fromUnit} → ${r} ${to}`);
+      });
+
+      cancelBtn.addEventListener('click', () => {
+        converterEl.style.display = 'none';
+        converterEl.innerHTML = '';
+      });
+    }
   });
 
   // Live allergen preview on ingredient name change
@@ -424,23 +527,31 @@ export async function renderDishForm(container, dishId) {
 }
 
 function ingredientRow(ing, index) {
+  const currentUnit = ing?.unit || 'g';
+  const compat = compatibleUnits(currentUnit);
+  const canConvert = compat.length > 0;
   return `
     <div class="ingredient-row" data-index="${index}">
-      <div class="ing-field ing-name-field">
-        <input type="text" class="input ing-name" placeholder="Ingredient name" value="${ing ? ing.ingredient_name : ''}">
+      <div class="ing-main-controls">
+        <div class="ing-field ing-name-field">
+          <input type="text" class="input ing-name" placeholder="Ingredient name" value="${ing ? ing.ingredient_name : ''}">
+        </div>
+        <div class="ing-field ing-qty-field">
+          <input type="number" class="input ing-qty" placeholder="Qty" step="0.01" min="0" value="${ing ? ing.quantity : ''}">
+        </div>
+        <div class="ing-field ing-unit-field">
+          <select class="input ing-unit">
+            ${UNITS.map(u => `<option value="${u.value}" ${ing && ing.unit === u.value ? 'selected' : ''}>${u.label}</option>`).join('')}
+          </select>
+        </div>
+        <button type="button" class="btn btn-icon ing-convert-btn" title="Convert unit"
+                ${!canConvert ? 'disabled style="opacity:0.35;cursor:not-allowed;"' : ''}>⇄</button>
+        <div class="ing-field ing-prep-field">
+          <input type="text" class="input ing-prep" placeholder="Prep note (e.g., dice, marinate 24hr)" value="${ing ? ing.prep_note : ''}">
+        </div>
+        <button type="button" class="btn btn-icon remove-ingredient" title="Remove">&times;</button>
       </div>
-      <div class="ing-field ing-qty-field">
-        <input type="number" class="input ing-qty" placeholder="Qty" step="0.01" min="0" value="${ing ? ing.quantity : ''}">
-      </div>
-      <div class="ing-field ing-unit-field">
-        <select class="input ing-unit">
-          ${UNITS.map(u => `<option value="${u.value}" ${ing && ing.unit === u.value ? 'selected' : ''}>${u.label}</option>`).join('')}
-        </select>
-      </div>
-      <div class="ing-field ing-prep-field">
-        <input type="text" class="input ing-prep" placeholder="Prep note (e.g., dice, marinate 24hr)" value="${ing ? ing.prep_note : ''}">
-      </div>
-      <button type="button" class="btn btn-icon remove-ingredient" title="Remove">&times;</button>
+      <div class="ing-converter" style="display:none;"></div>
     </div>
   `;
 }
