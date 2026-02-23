@@ -27,6 +27,8 @@ export async function renderTodoView(container, menuId) {
     localStorage.setItem(storageKey, JSON.stringify(checkedState));
   }
 
+  const poDate = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+
   container.innerHTML = `
     <div class="page-header">
       <a href="#/menus/${menuId}" class="btn btn-back">&larr; Back to Menu</a>
@@ -37,6 +39,7 @@ export async function renderTodoView(container, menuId) {
     <div class="todo-tabs">
       <button class="tab-btn active" data-tab="shopping">Shopping List</button>
       <button class="tab-btn" data-tab="prep">Prep Tasks (${prepTasks.total_tasks})</button>
+      <button class="tab-btn" data-tab="po">Purchase Order</button>
     </div>
 
     <div id="tab-shopping" class="tab-content active">
@@ -86,6 +89,58 @@ export async function renderTodoView(container, menuId) {
           </div>
         `).join('')}
       ` : '<div class="empty-state"><p>No prep tasks found. Add chef\'s notes or ingredient prep notes to generate tasks.</p></div>'}
+    </div>
+
+    <div id="tab-po" class="tab-content">
+      <div class="po-header">
+        <div class="po-header-row">
+          <span class="po-label">PURCHASE ORDER</span>
+          <span class="po-date">${poDate}</span>
+        </div>
+        <div class="po-header-row">
+          <span><strong>Menu:</strong> ${shoppingList.menu_name}</span>
+          ${shoppingList.expected_covers ? `<span><strong>Covers:</strong> ${shoppingList.expected_covers}</span>` : ''}
+        </div>
+      </div>
+      ${shoppingList.groups.length ? `
+        <table class="po-table">
+          <thead>
+            <tr>
+              <th>Ingredient</th>
+              <th>Qty</th>
+              <th>Unit</th>
+              <th>Est. Cost</th>
+              <th>Used In</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${shoppingList.groups.map(group => `
+              <tr class="po-category-row"><td colspan="5">${group.category.charAt(0).toUpperCase() + group.category.slice(1)}</td></tr>
+              ${group.items.map(item => `
+                <tr>
+                  <td>${item.ingredient}</td>
+                  <td>${item.total_quantity}</td>
+                  <td>${item.unit}</td>
+                  <td>${item.estimated_cost !== null ? '$' + item.estimated_cost.toFixed(2) : '—'}</td>
+                  <td class="po-used-in">${item.used_in.join(', ')}</td>
+                </tr>
+              `).join('')}
+            `).join('')}
+          </tbody>
+          <tfoot>
+            <tr class="po-total-row">
+              <td colspan="3"><strong>Estimated Total</strong></td>
+              <td><strong>$${shoppingList.total_estimated_cost.toFixed(2)}</strong></td>
+              <td></td>
+            </tr>
+          </tfoot>
+        </table>
+        <div class="po-footer">
+          <div class="po-footer-line">Ordered by: ___________________________</div>
+          <div class="po-footer-line">Approved by: ___________________________</div>
+          <div class="po-footer-line">Delivery date: ___________________________</div>
+        </div>
+      ` : '<div class="empty-state"><p>No ingredients to order — add dishes to this menu first.</p></div>'}
     </div>
   `;
 

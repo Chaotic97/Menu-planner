@@ -118,6 +118,7 @@ async function start() {
   app.use('/api/ingredients', require('./routes/ingredients'));
   app.use('/api/menus', menusRouter);
   app.use('/api/todos', require('./routes/todos'));
+  app.use('/api/service-notes', require('./routes/serviceNotes'));
 
   server.listen(PORT, () => {
     console.log(`Menu Planner running at http://localhost:${PORT}`);

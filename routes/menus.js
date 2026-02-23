@@ -169,12 +169,16 @@ router.get('/:id/kitchen-print', (req, res) => {
 // POST /api/menus - Create menu
 router.post('/', (req, res) => {
   const db = getDb();
-  const { name, description, sell_price, expected_covers, guest_allergies } = req.body;
+  const { name, description, sell_price, expected_covers, guest_allergies, allergen_covers } = req.body;
   if (!name) return res.status(400).json({ error: 'Name is required' });
 
+  const coversJson = allergen_covers
+    ? (typeof allergen_covers === 'string' ? allergen_covers : JSON.stringify(allergen_covers))
+    : '{}';
+
   const result = db.prepare(
-    'INSERT INTO menus (name, description, sell_price, expected_covers, guest_allergies) VALUES (?, ?, ?, ?, ?)'
-  ).run(name, description || '', sell_price || 0, expected_covers || 0, guest_allergies || '');
+    'INSERT INTO menus (name, description, sell_price, expected_covers, guest_allergies, allergen_covers) VALUES (?, ?, ?, ?, ?, ?)'
+  ).run(name, description || '', sell_price || 0, expected_covers || 0, guest_allergies || '', coversJson);
 
   broadcast('menu_created', { id: result.lastInsertRowid }, req.headers['x-client-id']);
   res.status(201).json({ id: result.lastInsertRowid });
@@ -183,7 +187,7 @@ router.post('/', (req, res) => {
 // PUT /api/menus/:id - Update menu
 router.put('/:id', (req, res) => {
   const db = getDb();
-  const { name, description, is_active, sell_price, expected_covers, guest_allergies } = req.body;
+  const { name, description, is_active, sell_price, expected_covers, guest_allergies, allergen_covers } = req.body;
 
   const updates = [];
   const params = [];
@@ -193,6 +197,10 @@ router.put('/:id', (req, res) => {
   if (sell_price !== undefined) { updates.push('sell_price = ?'); params.push(sell_price); }
   if (expected_covers !== undefined) { updates.push('expected_covers = ?'); params.push(expected_covers); }
   if (guest_allergies !== undefined) { updates.push('guest_allergies = ?'); params.push(guest_allergies); }
+  if (allergen_covers !== undefined) {
+    updates.push('allergen_covers = ?');
+    params.push(typeof allergen_covers === 'string' ? allergen_covers : JSON.stringify(allergen_covers));
+  }
   updates.push("updated_at = datetime('now')");
 
   params.push(req.params.id);

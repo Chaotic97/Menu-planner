@@ -189,6 +189,22 @@ async function initialize() {
     )`);
   } catch {}
 
+  // Service notes
+  try {
+    sqlDb.run(`CREATE TABLE IF NOT EXISTS service_notes (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      date       TEXT NOT NULL,
+      shift      TEXT DEFAULT 'all',
+      title      TEXT DEFAULT '',
+      content    TEXT NOT NULL DEFAULT '',
+      created_at TEXT DEFAULT (datetime('now')),
+      updated_at TEXT DEFAULT (datetime('now'))
+    )`);
+  } catch {}
+
+  // Allergen cover counts per menu (JSON: {"gluten":3,"milk":2})
+  try { sqlDb.run("ALTER TABLE menus ADD COLUMN allergen_covers TEXT DEFAULT '{}'"); } catch {}
+
   // Auto-purge soft-deleted records older than 7 days
   try { sqlDb.run("DELETE FROM dishes WHERE deleted_at IS NOT NULL AND deleted_at < datetime('now', '-7 days')"); } catch {}
   try { sqlDb.run("DELETE FROM menus WHERE deleted_at IS NOT NULL AND deleted_at < datetime('now', '-7 days')"); } catch {}

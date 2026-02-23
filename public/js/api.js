@@ -84,6 +84,19 @@ export const getPrepTasks = (menuId) => request(`/todos/menu/${menuId}/prep-task
 // Allergen keywords
 export const getAllergenKeywords = () => request('/dishes/allergen-keywords/all');
 
+// Service Notes
+export const getServiceNotes = (params) => {
+  const qs = new URLSearchParams(params).toString();
+  return request(`/service-notes${qs ? '?' + qs : ''}`);
+};
+export const getServiceNoteDates = (params) => {
+  const qs = new URLSearchParams(params).toString();
+  return request(`/service-notes/dates${qs ? '?' + qs : ''}`);
+};
+export const createServiceNote = (data) => request('/service-notes', { method: 'POST', body: data });
+export const updateServiceNote = (id, data) => request(`/service-notes/${id}`, { method: 'PUT', body: data });
+export const deleteServiceNote = (id) => request(`/service-notes/${id}`, { method: 'DELETE' });
+
 // Weekly Specials
 export const getSpecials = (params) => {
   const qs = new URLSearchParams(params).toString();

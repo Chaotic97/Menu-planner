@@ -5,17 +5,27 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="theme-color" content="#1b4332">
   <title>PlateStack</title>
   <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <link rel="manifest" href="/manifest.json">
   <link rel="stylesheet" href="/css/style.css">
 </head>
 <body>
+  <!-- Offline banner -->
+  <div id="offline-banner" class="offline-banner" style="display:none;">
+    You are offline — showing cached data
+  </div>
+
   <nav class="top-nav">
     <div class="nav-brand">PlateStack</div>
     <div class="nav-links">
-      <a href="#/dishes" class="nav-link">Dishes</a>
-      <a href="#/menus" class="nav-link active">Menus</a>
-      <a href="#/specials" class="nav-link">Specials</a>
+      <a href="#/dishes" class="nav-link">🍽️ Dishes</a>
+      <a href="#/menus" class="nav-link">📋 Menus</a>
+      <a href="#/specials" class="nav-link">⭐ Specials</a>
+      <a href="#/service-notes" class="nav-link">📝 Service Notes</a>
+      <a href="#/flavor-pairings" class="nav-link">🧪 Flavor Pairings</a>
+      <button class="nav-link nav-link-btn" id="unit-converter-nav-btn" title="Unit Converter">⚖️ Converter</button>
     </div>
     <div class="nav-right">
       <div class="sync-indicator" id="sync-indicator" title="Sync: disconnected"></div>
@@ -42,6 +52,14 @@
       <span class="bottom-nav-icon">⭐</span>
       <span class="bottom-nav-label">Specials</span>
     </a>
+    <a href="#/service-notes" class="bottom-nav-link" data-route="/service-notes">
+      <span class="bottom-nav-icon">📝</span>
+      <span class="bottom-nav-label">Notes</span>
+    </a>
+    <a href="#/flavor-pairings" class="bottom-nav-link" data-route="/flavor-pairings">
+      <span class="bottom-nav-icon">🧪</span>
+      <span class="bottom-nav-label">Pairings</span>
+    </a>
     <button class="bottom-nav-link bottom-nav-logout" id="bottom-logout-btn">
       <span class="bottom-nav-icon">🚪</span>
       <span class="bottom-nav-label">Logout</span>
@@ -49,5 +67,21 @@
   </nav>
 
   <script type="module" src="/js/app.js"></script>
+  <script>
+    // Register service worker
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('/service-worker.js').catch(() => {});
+      });
+    }
+    // Offline banner
+    function updateOnlineStatus() {
+      const banner = document.getElementById('offline-banner');
+      if (banner) banner.style.display = navigator.onLine ? 'none' : 'flex';
+    }
+    window.addEventListener('online', updateOnlineStatus);
+    window.addEventListener('offline', updateOnlineStatus);
+    updateOnlineStatus();
+  </script>
 </body>
 </html>

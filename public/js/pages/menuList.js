@@ -44,7 +44,15 @@ export async function renderMenuList(container) {
                 ` : ''}
               </div>
               ${menu.expected_covers ? `<div class="menu-stats"><span>${menu.expected_covers} expected covers</span></div>` : ''}
-              ${guestAllergies.length ? `<div style="margin-top:4px;">${renderAllergenBadges(guestAllergies, true)}</div>` : ''}
+              ${guestAllergies.length ? (() => {
+                let covers = {};
+                try { covers = JSON.parse(menu.allergen_covers || '{}'); } catch {}
+                return `<div class="allergen-cover-badges" style="margin-top:4px;">
+                  ${guestAllergies.map(a => `
+                    <span class="allergen-badge">${a.charAt(0).toUpperCase() + a.slice(1)}${covers[a] ? ` <span class="allergen-cover-num">×${covers[a]}</span>` : ''}</span>
+                  `).join('')}
+                </div>`;
+              })() : ''}
             </div>
             <div class="card-actions">
               <a href="#/menus/${menu.id}" class="btn btn-sm btn-primary">Open</a>
@@ -113,10 +121,14 @@ export async function renderMenuList(container) {
           </div>
         </div>
         <div class="form-group">
-          <label>Guest Allergies</label>
-          <div class="allergen-toggle-grid" id="new-menu-allergies">
+          <label>Guest Allergies &amp; Cover Counts</label>
+          <p class="text-muted" style="font-size:0.8rem;margin-bottom:8px;">Toggle an allergen to activate it, then enter how many covers need that option.</p>
+          <div class="allergen-cover-grid" id="new-menu-allergies">
             ${ALLERGEN_LIST.map(a => `
-              <button type="button" class="allergen-toggle" data-allergen="${a}">${a.charAt(0).toUpperCase() + a.slice(1)}</button>
+              <div class="allergen-cover-item">
+                <button type="button" class="allergen-toggle" data-allergen="${a}">${a.charAt(0).toUpperCase() + a.slice(1)}</button>
+                <input type="number" class="allergen-cover-count" data-allergen="${a}" placeholder="# covers" min="0" max="999" style="display:none;">
+              </div>
             `).join('')}
           </div>
         </div>
@@ -131,6 +143,11 @@ export async function renderMenuList(container) {
       btn.addEventListener('click', (e) => {
         e.preventDefault();
         btn.classList.toggle('active');
+        const countInput = btn.closest('.allergen-cover-item').querySelector('.allergen-cover-count');
+        if (countInput) {
+          countInput.style.display = btn.classList.contains('active') ? 'block' : 'none';
+          if (!btn.classList.contains('active')) countInput.value = '';
+        }
       });
     });
 
@@ -139,8 +156,16 @@ export async function renderMenuList(container) {
       const name = modal.querySelector('#menu-name').value.trim();
       if (!name) return;
 
-      const activeAllergens = Array.from(modal.querySelectorAll('.allergen-toggle.active'))
-        .map(b => b.dataset.allergen);
+      const activeAllergens = [];
+      const allergenCovers = {};
+      modal.querySelectorAll('.allergen-toggle.active').forEach(b => {
+        const allergen = b.dataset.allergen;
+        activeAllergens.push(allergen);
+        const countInput = b.closest('.allergen-cover-item').querySelector('.allergen-cover-count');
+        if (countInput && countInput.value) {
+          allergenCovers[allergen] = parseInt(countInput.value) || 0;
+        }
+      });
 
       try {
         const result = await createMenu({
@@ -149,6 +174,7 @@ export async function renderMenuList(container) {
           sell_price: parseFloat(modal.querySelector('#menu-sell-price').value) || 0,
           expected_covers: parseInt(modal.querySelector('#menu-covers').value) || 0,
           guest_allergies: activeAllergens.join(','),
+          allergen_covers: JSON.stringify(allergenCovers),
         });
         closeModal(modal);
         showToast('Menu created');

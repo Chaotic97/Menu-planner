@@ -4,6 +4,9 @@ import { renderMenuList } from './pages/menuList.js';
 import { renderMenuBuilder } from './pages/menuBuilder.js';
 import { renderTodoView } from './pages/todoView.js';
 import { renderSpecials } from './pages/specials.js';
+import { renderServiceNotes } from './pages/serviceNotes.js';
+import { renderFlavorPairings } from './pages/flavorPairings.js';
+import { openUnitConverter } from './components/unitConverter.js';
 import { renderLogin } from './pages/login.js';
 import { connectSync } from './sync.js';
 
@@ -16,6 +19,8 @@ const routes = [
   { pattern: /^#\/dishes\/(\d+)\/edit$/, handler: (m) => renderDishForm(appContent, m[1]) },
   { pattern: /^#\/dishes$/, handler: () => renderDishList(appContent) },
   { pattern: /^#\/specials$/, handler: () => renderSpecials(appContent) },
+  { pattern: /^#\/service-notes$/, handler: () => renderServiceNotes(appContent) },
+  { pattern: /^#\/flavor-pairings$/, handler: () => renderFlavorPairings(appContent) },
   { pattern: /^#\/menus\/(\d+)\/todos$/, handler: (m) => renderTodoView(appContent, m[1]) },
   { pattern: /^#\/menus\/(\d+)$/, handler: (m) => renderMenuBuilder(appContent, m[1]) },
   { pattern: /^#\/menus$/, handler: () => renderMenuList(appContent) },
@@ -149,6 +154,7 @@ window.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('theme-toggle')?.addEventListener('click', toggleTheme);
   document.getElementById('logout-btn')?.addEventListener('click', handleLogout);
   document.getElementById('bottom-logout-btn')?.addEventListener('click', handleLogout);
+  document.getElementById('unit-converter-nav-btn')?.addEventListener('click', () => openUnitConverter());
 
   const authed = await checkAuth();
   if (authed) {

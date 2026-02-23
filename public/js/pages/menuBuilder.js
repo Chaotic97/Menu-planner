@@ -87,12 +87,21 @@ export async function renderMenuBuilder(container, menuId) {
                  value="${menu.expected_covers || ''}" placeholder="0">
         </div>
         <div class="menu-info-group" style="flex:1;">
-          <label>Guest Allergies</label>
-          <div class="allergen-toggle-grid" id="guest-allergy-toggles">
-            ${ALLERGEN_LIST.map(a => `
-              <button type="button" class="allergen-toggle ${guestAllergies.includes(a) ? 'active' : ''}"
-                      data-allergen="${a}">${a.charAt(0).toUpperCase() + a.slice(1)}</button>
-            `).join('')}
+          <label>Guest Allergies &amp; Cover Counts</label>
+          <div class="allergen-cover-grid" id="guest-allergy-toggles">
+            ${(() => {
+              let covers = {};
+              try { covers = JSON.parse(menu.allergen_covers || '{}'); } catch {}
+              return ALLERGEN_LIST.map(a => `
+                <div class="allergen-cover-item">
+                  <button type="button" class="allergen-toggle ${guestAllergies.includes(a) ? 'active' : ''}"
+                          data-allergen="${a}">${a.charAt(0).toUpperCase() + a.slice(1)}</button>
+                  <input type="number" class="allergen-cover-count" data-allergen="${a}" placeholder="# covers"
+                         min="0" max="999" value="${covers[a] || ''}"
+                         style="display:${guestAllergies.includes(a) ? 'block' : 'none'};">
+                </div>
+              `).join('');
+            })()}
           </div>
         </div>
       </div>
@@ -204,21 +213,48 @@ export async function renderMenuBuilder(container, menuId) {
     container.querySelectorAll('.allergen-toggle').forEach(btn => {
       btn.addEventListener('click', async () => {
         btn.classList.toggle('active');
-        const activeAllergens = Array.from(container.querySelectorAll('.allergen-toggle.active'))
-          .map(b => b.dataset.allergen);
-        const newVal = activeAllergens.join(',');
-        try {
-          await updateMenu(menuId, { guest_allergies: newVal });
-          menu.guest_allergies = newVal;
-          // Refresh to update conflict highlighting
-          menu = await getMenu(menuId);
-          render();
-          showToast('Guest allergies updated');
-        } catch (err) {
-          showToast('Failed to update', 'error');
+        const countInput = btn.closest('.allergen-cover-item').querySelector('.allergen-cover-count');
+        if (countInput) {
+          countInput.style.display = btn.classList.contains('active') ? 'block' : 'none';
+          if (!btn.classList.contains('active')) countInput.value = '';
         }
+        await saveAllergyState();
       });
     });
+
+    // Wire up allergen cover count changes
+    container.querySelectorAll('.allergen-cover-count').forEach(input => {
+      let debounce;
+      input.addEventListener('input', () => {
+        clearTimeout(debounce);
+        debounce = setTimeout(saveAllergyState, 600);
+      });
+    });
+
+    async function saveAllergyState() {
+      const activeAllergens = [];
+      const allergenCovers = {};
+      container.querySelectorAll('.allergen-toggle.active').forEach(b => {
+        const allergen = b.dataset.allergen;
+        activeAllergens.push(allergen);
+        const countInput = b.closest('.allergen-cover-item').querySelector('.allergen-cover-count');
+        if (countInput && countInput.value) {
+          allergenCovers[allergen] = parseInt(countInput.value) || 0;
+        }
+      });
+      const newVal = activeAllergens.join(',');
+      try {
+        await updateMenu(menuId, { guest_allergies: newVal, allergen_covers: JSON.stringify(allergenCovers) });
+        menu.guest_allergies = newVal;
+        menu.allergen_covers = JSON.stringify(allergenCovers);
+        // Refresh to update conflict highlighting
+        menu = await getMenu(menuId);
+        render();
+        showToast('Guest allergies updated');
+      } catch (err) {
+        showToast('Failed to update', 'error');
+      }
+    }
 
     // Wire up events
     container.querySelector('#add-dish-btn')?.addEventListener('click', showDishPicker);
