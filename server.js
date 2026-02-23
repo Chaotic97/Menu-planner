@@ -1,6 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 const session = require('express-session');
+const FileStore = require('session-file-store')(session);
 const crypto = require('crypto');
 const path = require('path');
 const fs = require('fs');
@@ -17,19 +18,31 @@ if (!fs.existsSync(uploadsDir)) {
   fs.mkdirSync(uploadsDir, { recursive: true });
 }
 
+// Ensure sessions directory exists
+const sessionsDir = process.env.SESSIONS_PATH || path.join(__dirname, 'sessions');
+if (!fs.existsSync(sessionsDir)) {
+  fs.mkdirSync(sessionsDir, { recursive: true });
+}
+
 // Middleware
 app.use(cors());
 app.use(express.json());
 
-// Session middleware
+// Session middleware — persists to disk so logins survive server restarts
 app.use(session({
+  store: new FileStore({
+    path: sessionsDir,
+    ttl: 7 * 24 * 60 * 60, // 7 days in seconds
+    retries: 1,
+    logFn: () => {}, // silence verbose logging
+  }),
   secret: process.env.SESSION_SECRET || crypto.randomBytes(32).toString('hex'),
   resave: false,
   saveUninitialized: false,
   cookie: {
     secure: process.env.NODE_ENV === 'production' && process.env.FORCE_HTTPS === '1',
     httpOnly: true,
-    maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+    maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days in ms
   },
 }));
 

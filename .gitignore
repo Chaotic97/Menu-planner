@@ -1,5 +1,6 @@
 node_modules/
 uploads/
+sessions/
 *.db
 .env
 .claude/
