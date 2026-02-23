@@ -1698,7 +1698,7 @@ textarea.input { resize: vertical; min-height: 80px; }
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   font-family: var(--font);
-  font-size: 15px;
+  font-size: 16px; /* 16px minimum prevents iOS auto-zoom */
   color: var(--text);
   background: var(--surface);
   transition: border-color 0.2s;
