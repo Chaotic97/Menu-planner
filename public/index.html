@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <title>Menu Planner</title>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <nav class="top-nav">
+    <div class="nav-brand">Menu Planner</div>
+    <div class="nav-links">
+      <a href="#/dishes" class="nav-link">Dishes</a>
+      <a href="#/menus" class="nav-link active">Menus</a>
+      <a href="#/specials" class="nav-link">Specials</a>
+    </div>
+    <div class="nav-right">
+      <div class="sync-indicator" id="sync-indicator" title="Sync: disconnected"></div>
+      <button class="theme-toggle" id="theme-toggle" title="Toggle dark mode" aria-label="Toggle dark mode">&#9790;</button>
+      <button class="btn btn-logout" id="logout-btn" title="Log out" aria-label="Log out">Logout</button>
+    </div>
+  </nav>
+
+  <main id="app-content">
+    <div class="loading">Loading...</div>
+  </main>
+
+  <script type="module" src="/js/app.js"></script>
+</body>
+</html>
