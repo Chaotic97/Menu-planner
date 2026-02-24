@@ -52,40 +52,40 @@ export async function renderMenuBuilder(container, menuId) {
       </div>
 
       <!-- Menu Sell Price -->
-      <div class="menu-pricing-bar">
-        <div class="pricing-input-group">
+      <div class="mb-pricing-bar">
+        <div class="mb-pricing-group">
           <label for="menu-sell-price">Menu Sell Price ($)</label>
           <input type="number" id="menu-sell-price" class="input" step="0.01" min="0"
                  value="${menu.sell_price || ''}" placeholder="e.g., 120.00">
         </div>
         ${hasSellPrice ? `
-          <div class="pricing-stats">
-            <div class="pricing-stat">
-              <span class="pricing-label">Total Food Cost</span>
-              <span class="pricing-value">$${menu.total_food_cost.toFixed(2)}</span>
+          <div class="mb-pricing-stats">
+            <div class="mb-pricing-stat">
+              <span class="mb-pricing-label">Total Food Cost</span>
+              <span class="mb-pricing-value">$${menu.total_food_cost.toFixed(2)}</span>
             </div>
-            <div class="pricing-stat">
-              <span class="pricing-label">Food Cost %</span>
-              <span class="pricing-value ${foodCostClass}">${menu.menu_food_cost_percent}%</span>
+            <div class="mb-pricing-stat">
+              <span class="mb-pricing-label">Food Cost %</span>
+              <span class="mb-pricing-value ${foodCostClass}">${menu.menu_food_cost_percent}%</span>
             </div>
-            <div class="pricing-stat">
-              <span class="pricing-label">Profit</span>
-              <span class="pricing-value">$${(menu.sell_price - menu.total_food_cost).toFixed(2)}</span>
+            <div class="mb-pricing-stat">
+              <span class="mb-pricing-label">Profit</span>
+              <span class="mb-pricing-value">$${(menu.sell_price - menu.total_food_cost).toFixed(2)}</span>
             </div>
           </div>
         ` : `
-          <div class="pricing-hint">Set a sell price to see cost breakdown per dish</div>
+          <div class="mb-pricing-hint">Set a sell price to see cost breakdown per dish</div>
         `}
       </div>
 
       <!-- Expected Covers & Guest Allergies -->
-      <div class="menu-info-bar">
-        <div class="menu-info-group">
+      <div class="mb-info-bar">
+        <div class="mb-info-group">
           <label for="menu-covers">Expected Covers</label>
           <input type="number" id="menu-covers" class="input" style="max-width:120px;" min="0"
                  value="${menu.expected_covers || ''}" placeholder="0">
         </div>
-        <div class="menu-info-group" style="flex:1;">
+        <div class="mb-info-group" style="flex:1;">
           <label>Guest Allergies &amp; Cover Counts</label>
           <div class="allergen-cover-grid" id="guest-allergy-toggles">
             ${(() => {
@@ -106,7 +106,7 @@ export async function renderMenuBuilder(container, menuId) {
       </div>
 
       ${menu.dishes.length ? `
-        <div class="menu-summary-bar">
+        <div class="mb-summary-bar">
           <span>${menu.dishes.length} dish${menu.dishes.length !== 1 ? 'es' : ''}</span>
           <span>|</span>
           <span>Total servings: ${menu.dishes.reduce((s, d) => s + d.servings, 0)}</span>
@@ -118,40 +118,40 @@ export async function renderMenuBuilder(container, menuId) {
 
         <div class="menu-dishes" id="menu-dishes-list">
           ${CATEGORY_ORDER.filter(cat => grouped[cat]).map(cat => `
-            <div class="menu-category-section">
-              <h2 class="category-heading">${capitalize(cat)}s</h2>
+            <div class="mb-category-section">
+              <h2 class="mb-category-heading">${capitalize(cat)}s</h2>
               ${grouped[cat].map(dish => {
                 const hasConflict = dish.allergy_conflicts && dish.allergy_conflicts.length > 0;
                 return `
-                <div class="menu-dish-row ${hasConflict ? 'allergy-conflict' : ''}" data-dish-id="${dish.id}" draggable="true">
+                <div class="mb-dish-row ${hasConflict ? 'allergy-conflict' : ''}" data-dish-id="${dish.id}" draggable="true">
                   <div class="drag-handle" title="Drag to reorder">&#8942;&#8942;</div>
-                  <div class="dish-thumb">
+                  <div class="mb-dish-thumb">
                     ${dish.photo_path
                       ? `<img src="${escapeHtml(dish.photo_path)}" alt="${escapeHtml(dish.name)}">`
-                      : '<div class="no-thumb"></div>'
+                      : '<div class="mb-no-thumb"></div>'
                     }
                   </div>
-                  <div class="dish-info">
+                  <div class="mb-dish-info">
                     <a href="#/dishes/${dish.id}" class="dish-name-link"><strong>${escapeHtml(dish.name)}</strong></a>
                     ${renderAllergenBadges(dish.allergens, true)}
-                    ${hasConflict ? `<div class="allergy-warning">&#9888; Guest allergy: ${dish.allergy_conflicts.join(', ')}</div>` : ''}
+                    ${hasConflict ? `<div class="mb-allergy-warning">&#9888; Guest allergy: ${dish.allergy_conflicts.join(', ')}</div>` : ''}
                     ${dish.substitution_count > 0 ? `<span class="subs-badge" data-dish-id="${dish.id}" title="Has allergen substitutions">&#8644; ${dish.substitution_count} sub${dish.substitution_count > 1 ? 's' : ''}</span>` : ''}
                   </div>
-                  <div class="dish-cost-info">
+                  <div class="mb-cost-info">
                     ${dish.cost_per_serving > 0 ? `
-                      <span class="dish-cost-value">$${dish.cost_total.toFixed(2)}</span>
+                      <span class="mb-cost-value">$${dish.cost_total.toFixed(2)}</span>
                       ${hasSellPrice && dish.percent_of_menu_price !== null ? `
-                        <span class="dish-cost-percent">${dish.percent_of_menu_price}% of price</span>
+                        <span class="mb-cost-percent">${dish.percent_of_menu_price}% of price</span>
                       ` : ''}
                     ` : ''}
                   </div>
-                  <div class="servings-control">
+                  <div class="mb-servings">
                     <button class="btn btn-icon servings-dec" data-dish="${dish.id}">-</button>
-                    <span class="servings-count">${dish.servings}</span>
+                    <span class="mb-servings-count">${dish.servings}</span>
                     <button class="btn btn-icon servings-inc" data-dish="${dish.id}">+</button>
-                    <span class="servings-label">servings</span>
+                    <span class="mb-servings-label">servings</span>
                   </div>
-                  <div class="dish-row-actions">
+                  <div class="mb-row-actions">
                     <button class="btn btn-sm btn-danger remove-from-menu" data-dish="${dish.id}">Remove</button>
                   </div>
                 </div>
@@ -262,7 +262,7 @@ export async function renderMenuBuilder(container, menuId) {
     container.querySelector('#kitchen-print-btn')?.addEventListener('click', showKitchenPrint);
 
     // Photo lightbox
-    container.querySelectorAll('.dish-thumb img').forEach(img => {
+    container.querySelectorAll('.mb-dish-thumb img').forEach(img => {
       img.style.cursor = 'zoom-in';
       img.addEventListener('click', (e) => {
         e.stopPropagation();
@@ -318,7 +318,7 @@ export async function renderMenuBuilder(container, menuId) {
 
   // ---- Drag and Drop ----
   function setupDragDrop() {
-    const dishRows = container.querySelectorAll('.menu-dish-row[draggable]');
+    const dishRows = container.querySelectorAll('.mb-dish-row[draggable]');
     let draggedId = null;
 
     dishRows.forEach(row => {
@@ -522,72 +522,70 @@ export async function renderMenuBuilder(container, menuId) {
       const printWin = window.open('', '_blank');
 
       let html = `
-        <html><head><title>Kitchen Sheet - ${escapeHtml(data.menu.name)}</title>
+        <html><head><title>Service Sheet - ${escapeHtml(data.menu.name)}</title>
         <style>
           body { font-family: -apple-system, sans-serif; padding: 20px; color: #1a1a1a; }
           h1 { font-size: 1.6rem; margin-bottom: 4px; border-bottom: 3px solid #1a1a1a; padding-bottom: 8px; }
-          .meta { font-size: 0.9rem; color: #555; margin: 8px 0 16px; }
+          .meta { font-size: 0.9rem; color: #555; margin: 8px 0 20px; }
           .meta .alert { color: #d32f2f; font-weight: 700; }
-          .category-header { font-size: 1.2rem; margin-top: 24px; padding: 4px 0; border-bottom: 2px solid #333; text-transform: uppercase; letter-spacing: 0.05em; }
-          .dish-block { margin: 16px 0; page-break-inside: avoid; }
-          .dish-name { font-size: 1.1rem; font-weight: 700; margin-bottom: 2px; }
-          .dish-meta { font-size: 0.85rem; color: #555; margin-bottom: 6px; }
-          .allergen-tag { display: inline-block; padding: 1px 8px; font-size: 0.72rem; font-weight: 700; background: #ffcdd2; color: #b71c1c; border-radius: 10px; margin-right: 3px; }
-          table { width: 100%; border-collapse: collapse; margin: 4px 0; font-size: 0.9rem; }
-          th { text-align: left; border-bottom: 1px solid #999; padding: 4px 8px; font-size: 0.8rem; text-transform: uppercase; color: #555; }
-          td { padding: 3px 8px; border-bottom: 1px solid #eee; }
-          .notes { font-style: italic; font-size: 0.85rem; color: #333; margin-top: 6px; padding: 6px 8px; background: #f5f5f0; border-radius: 4px; }
-          .subs { font-size: 0.85rem; margin-top: 4px; padding: 4px 8px; background: #fff3e0; border-radius: 4px; }
+          .dish-block { margin: 0 0 20px; padding-bottom: 20px; border-bottom: 1px solid #ddd; page-break-inside: avoid; display: grid; grid-template-columns: 120px 1fr; gap: 0 16px; }
+          .course-num { font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: #888; padding-top: 3px; }
+          .course-cat { font-size: 0.7rem; color: #aaa; margin-top: 2px; text-transform: capitalize; }
+          .dish-name { font-size: 1.15rem; font-weight: 700; margin-bottom: 6px; }
+          .allergens { margin-bottom: 6px; }
+          .allergen-tag { display: inline-block; padding: 2px 8px; font-size: 0.72rem; font-weight: 700; background: #ffcdd2; color: #b71c1c; border-radius: 10px; margin-right: 3px; margin-bottom: 3px; }
+          .ingredients { font-size: 0.85rem; color: #444; margin-bottom: 6px; }
+          .ingredients span { margin-right: 6px; }
+          .ingredients span:not(:last-child)::after { content: ' ·'; color: #bbb; }
+          .notes { font-size: 0.85rem; color: #333; margin-top: 6px; padding: 6px 10px; background: #f5f5f0; border-left: 3px solid #999; }
+          .notes-label { font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: #888; margin-bottom: 2px; }
+          .subs { font-size: 0.82rem; margin-top: 6px; padding: 5px 10px; background: #fff3e0; border-left: 3px solid #e65100; }
           .subs strong { color: #e65100; }
           @media print { body { padding: 0; } }
         </style></head><body>
         <h1>${escapeHtml(data.menu.name)}</h1>
         <div class="meta">
           Printed: ${new Date().toLocaleDateString()}
-          ${data.expected_covers ? ` | <strong>Expected Covers: ${data.expected_covers}</strong>` : ''}
-          ${data.guest_allergies.length ? ` | <span class="alert">Guest Allergies: ${data.guest_allergies.join(', ').toUpperCase()}</span>` : ''}
+          ${data.expected_covers ? ` &nbsp;·&nbsp; <strong>Covers: ${data.expected_covers}</strong>` : ''}
+          ${data.guest_allergies.length ? ` &nbsp;·&nbsp; <span class="alert">&#9888; Guest Allergies: ${data.guest_allergies.join(', ').toUpperCase()}</span>` : ''}
         </div>
       `;
 
-      for (const cat of CATEGORY_ORDER) {
-        if (!data.grouped[cat]) continue;
-        html += `<div class="category-header">${capitalize(cat)}s</div>`;
-        for (const dish of data.grouped[cat]) {
-          html += `
-            <div class="dish-block">
-              <div class="dish-name">${escapeHtml(dish.name)}</div>
-              <div class="dish-meta">
-                ${dish.servings} serving${dish.servings > 1 ? 's' : ''}
-                ${dish.allergens.length ? ' | Allergens: ' + dish.allergens.map(a => `<span class="allergen-tag">${a}</span>`).join('') : ''}
-              </div>
-          `;
-          if (dish.ingredients.length) {
-            html += `<table><thead><tr><th>Ingredient</th><th>Qty</th><th>Unit</th><th>Prep</th></tr></thead><tbody>`;
-            for (const ing of dish.ingredients) {
-              html += `<tr><td>${escapeHtml(ing.ingredient_name)}</td><td>${ing.quantity}</td><td>${ing.unit}</td><td>${escapeHtml(ing.prep_note || '')}</td></tr>`;
-            }
-            html += `</tbody></table>`;
-          }
-          if (dish.substitutions && dish.substitutions.length) {
-            html += `<div class="subs"><strong>Substitutions:</strong> `;
-            html += dish.substitutions.map(s =>
-              `${escapeHtml(s.allergen)}: ${escapeHtml(s.original_ingredient)} &rarr; ${escapeHtml(s.substitute_ingredient)}${s.notes ? ' (' + escapeHtml(s.notes) + ')' : ''}`
-            ).join('; ');
-            html += `</div>`;
-          }
-          if (dish.chefs_notes) {
-            html += `<div class="notes">${escapeHtml(dish.chefs_notes)}</div>`;
-          }
+      data.dishes.forEach((dish, i) => {
+        html += `<div class="dish-block">`;
+        html += `<div><div class="course-num">Course ${i + 1}</div><div class="course-cat">${escapeHtml(dish.category || '')}</div></div>`;
+        html += `<div>`;
+        html += `<div class="dish-name">${escapeHtml(dish.name)}</div>`;
+
+        if (dish.allergens.length) {
+          html += `<div class="allergens">${dish.allergens.map(a => `<span class="allergen-tag">${escapeHtml(a)}</span>`).join('')}</div>`;
+        }
+
+        if (dish.ingredients.length) {
+          html += `<div class="ingredients">${dish.ingredients.map(ing => `<span>${escapeHtml(ing.ingredient_name)}</span>`).join('')}</div>`;
+        }
+
+        if (dish.substitutions && dish.substitutions.length) {
+          html += `<div class="subs"><strong>Subs:</strong> `;
+          html += dish.substitutions.map(s =>
+            `${escapeHtml(s.allergen)}: ${escapeHtml(s.original_ingredient)} &rarr; ${escapeHtml(s.substitute_ingredient)}${s.notes ? ' (' + escapeHtml(s.notes) + ')' : ''}`
+          ).join('; ');
           html += `</div>`;
         }
-      }
+
+        if (dish.chefs_notes) {
+          html += `<div class="notes"><div class="notes-label">Service Notes</div>${escapeHtml(dish.chefs_notes)}</div>`;
+        }
+
+        html += `</div></div>`;
+      });
 
       html += `</body></html>`;
       printWin.document.write(html);
       printWin.document.close();
       printWin.print();
     } catch (err) {
-      showToast('Failed to generate kitchen sheet: ' + err.message, 'error');
+      showToast('Failed to generate service sheet: ' + err.message, 'error');
     }
   }
 
@@ -611,10 +609,10 @@ export async function renderMenuBuilder(container, menuId) {
 
     const modal = openModal('Add Dishes', `
       <input type="text" id="dish-picker-search" class="input" placeholder="Search dishes...">
-      <div class="dish-picker-list" id="dish-picker-list">
+      <div class="mb-picker-list" id="mb-picker-list">
         ${available.map(d => `
-          <div class="dish-picker-item" data-id="${d.id}">
-            <div class="dish-picker-info">
+          <div class="mb-picker-item" data-id="${d.id}">
+            <div class="mb-picker-info">
               <strong>${escapeHtml(d.name)}</strong>
               <span class="category-badge">${escapeHtml(d.category)}</span>
               ${renderAllergenBadges(d.allergens, true)}
@@ -628,7 +626,7 @@ export async function renderMenuBuilder(container, menuId) {
     const searchInput = modal.querySelector('#dish-picker-search');
     searchInput.addEventListener('input', () => {
       const query = searchInput.value.toLowerCase();
-      modal.querySelectorAll('.dish-picker-item').forEach(item => {
+      modal.querySelectorAll('.mb-picker-item').forEach(item => {
         const name = item.querySelector('strong').textContent.toLowerCase();
         item.style.display = name.includes(query) ? '' : 'none';
       });
