@@ -80,8 +80,22 @@ function parseFraction(str) {
 
 function parseIngredientString(text) {
   text = text.trim()
+    // Strip zero-width / invisible Unicode chars that sneak in from web scraping
+    .replace(/[\u200B-\u200D\uFEFF\u00AD]/g, '')
+    // Decode common residual HTML entities
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&#\d+;/g, '')
+    // Normalize whitespace
     .replace(/\s+/g, ' ')
-    .replace(/\(.*?\)/g, '')  // strip parenthetical info
+    // Strip parenthetical info: (optional), (240ml), (finely diced), etc.
+    .replace(/\(.*?\)/g, '')
+    // Strip bracketed info: [optional], [or substitute X]
+    .replace(/\[.*?\]/g, '')
+    // Strip leading bullet / dash / arrow markers
+    .replace(/^[\s•·▪▸►\-–—]+/, '')
+    // Strip asterisks used as footnote or "optional" markers
+    .replace(/\*/g, '')
     .trim();
 
   // Try to extract leading quantity
@@ -113,8 +127,11 @@ function parseIngredientString(text) {
   // Strip leading "of "
   remaining = remaining.replace(/^of\s+/i, '');
 
-  // Clean up ingredient name
-  const name = remaining.replace(/,\s*$/, '').trim();
+  // Clean up ingredient name — strip trailing punctuation/special chars
+  const name = remaining
+    .replace(/[,;:.!\s]+$/, '')
+    .replace(/\s+/g, ' ')
+    .trim();
 
   return {
     name: name || text,
