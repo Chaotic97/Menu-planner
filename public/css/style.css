@@ -2371,10 +2371,12 @@ textarea.input { resize: vertical; min-height: 80px; }
   overflow-y: auto;
 }
 
-.fp-category-group {}
+.fp-category-group + .fp-category-group .fp-category-header {
+  border-top: 2px solid var(--border);
+}
 
 .fp-category-header {
-  padding: 6px 12px;
+  padding: 8px 14px;
   font-size: 0.7rem;
   font-weight: 700;
   text-transform: uppercase;
@@ -2388,14 +2390,14 @@ textarea.input { resize: vertical; min-height: 80px; }
 }
 
 .fp-ingredient-item {
-  padding: 10px 14px;
+  padding: 11px 14px;
   cursor: pointer;
   border-bottom: 1px solid var(--border);
   border-left: 3px solid transparent;
   transition: background 0.1s;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 3px;
   width: 100%;
   text-align: left;
   background: none;
