@@ -37,7 +37,7 @@ export function renderFlavorPairings(container) {
   let selectedItem = null;
   let filterCategory = '';
   let searchQuery = '';
-  let navHistory = []; // breadcrumb stack for linked-chip navigation
+  let navHistory = [];
 
   container.innerHTML = `
     <div class="page-header">
@@ -48,46 +48,44 @@ export function renderFlavorPairings(container) {
       Use alongside resources like <em>The Flavor Bible</em> for deeper exploration.
     </p>
 
-    <div class="fp-layout">
-      <div class="fp-sidebar">
-        <div class="fp-search-bar">
-          <input type="text" id="fp-search" class="input" placeholder="Search ingredients...">
-        </div>
-        <div class="fp-category-bar" id="fp-categories">
-          <button class="fp-cat-btn active" data-cat="">All</button>
-          ${CATEGORIES.map(c => `<button class="fp-cat-btn" data-cat="${c}">${c}</button>`).join('')}
-        </div>
-        <div id="fp-list" class="fp-ingredient-list"></div>
+    <div class="fp-controls">
+      <input type="text" id="fp-search" class="input" placeholder="Search ingredients...">
+      <div class="fp-category-bar" id="fp-categories">
+        <button class="fp-cat-btn active" data-cat="">All</button>
+        ${CATEGORIES.map(c => `<button class="fp-cat-btn" data-cat="${c}">${c}</button>`).join('')}
       </div>
+    </div>
 
-      <div class="fp-detail" id="fp-detail">
-        <div class="fp-detail-placeholder">
-          <div style="font-size:3rem;margin-bottom:12px;">🍋</div>
-          <p>Select an ingredient to see its flavor pairings</p>
-        </div>
+    <div class="fp-ingredient-strip" id="fp-strip"></div>
+
+    <div class="fp-detail" id="fp-detail">
+      <div class="fp-detail-placeholder">
+        <div style="font-size:3rem;margin-bottom:12px;">🍋</div>
+        <p>Select an ingredient above to see its flavor pairings</p>
       </div>
     </div>
   `;
 
-  const listEl = container.querySelector('#fp-list');
+  const stripEl = container.querySelector('#fp-strip');
   const detailEl = container.querySelector('#fp-detail');
 
-  // ── List helpers ────────────────────────────────────────────────────────────
+  // ── Ingredient strip ─────────────────────────────────────────────────────────
 
-  function ingredientItemHtml(item) {
+  function ingredientChipHtml(item) {
     const isActive = selectedItem?.id === item.id;
     const color = getCatColor(item.category);
-    return `
-      <button class="fp-ingredient-item${isActive ? ' active' : ''}"
-              data-id="${item.id}"
-              style="border-left-color:${isActive ? color : 'transparent'}">
-        <span class="fp-ingredient-name">${item.name}</span>
-        <span class="fp-ingredient-cat">${item.category}</span>
-      </button>
-    `;
+    const activeStyle = isActive
+      ? `background:${color}; border-color:${color}; color:#fff;`
+      : `border-color:${color}40;`;
+    return `<button
+      class="fp-ingredient-chip${isActive ? ' active' : ''}"
+      data-id="${item.id}"
+      data-cat="${item.category}"
+      style="${activeStyle}"
+    >${item.name}</button>`;
   }
 
-  function renderList() {
+  function renderStrip() {
     let items = FLAVOR_PAIRINGS;
     if (filterCategory) items = items.filter(p => p.category === filterCategory);
     if (searchQuery) {
@@ -99,42 +97,58 @@ export function renderFlavorPairings(container) {
     }
 
     if (!items.length) {
-      listEl.innerHTML = '<div class="fp-empty"><p>No results found.</p></div>';
+      stripEl.innerHTML = '<div class="fp-empty">No results found.</div>';
       return;
     }
 
     if (!filterCategory && !searchQuery) {
-      // Group by category with sticky section headers
+      // Grouped by category — each group gets a label + a row of chips
       const grouped = {};
       for (const item of items) {
         if (!grouped[item.category]) grouped[item.category] = [];
         grouped[item.category].push(item);
       }
-      listEl.innerHTML = Object.entries(grouped).map(([cat, catItems]) => `
-        <div class="fp-category-group">
-          <div class="fp-category-header" style="border-left-color:${getCatColor(cat)}">${cat}</div>
-          ${catItems.map(item => ingredientItemHtml(item)).join('')}
+      stripEl.innerHTML = Object.entries(grouped).map(([cat, catItems]) => `
+        <div class="fp-strip-group">
+          <div class="fp-strip-label" style="color:${getCatColor(cat)}">${cat}</div>
+          <div class="fp-strip-chips">
+            ${catItems.map(item => ingredientChipHtml(item)).join('')}
+          </div>
         </div>
       `).join('');
     } else {
-      listEl.innerHTML = items.map(item => ingredientItemHtml(item)).join('');
+      // Flat chip row for filtered / search results
+      stripEl.innerHTML = `<div class="fp-strip-group-flat">
+        ${items.map(item => ingredientChipHtml(item)).join('')}
+      </div>`;
     }
 
-    listEl.querySelectorAll('.fp-ingredient-item').forEach(btn => {
+    stripEl.querySelectorAll('.fp-ingredient-chip').forEach(btn => {
       btn.addEventListener('click', () => {
-        navHistory = []; // reset breadcrumb when navigating from list
+        navHistory = [];
         selectedItem = FLAVOR_PAIRINGS.find(p => p.id === btn.dataset.id);
-        updateActiveItems();
+        updateActiveChips();
         renderDetail();
+        // Scroll detail panel into view smoothly
+        detailEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
       });
     });
   }
 
-  function updateActiveItems() {
-    listEl.querySelectorAll('.fp-ingredient-item').forEach(btn => {
+  function updateActiveChips() {
+    stripEl.querySelectorAll('.fp-ingredient-chip').forEach(btn => {
       const isActive = btn.dataset.id === selectedItem?.id;
       btn.classList.toggle('active', isActive);
-      btn.style.borderLeftColor = isActive ? getCatColor(selectedItem.category) : 'transparent';
+      const color = getCatColor(btn.dataset.cat);
+      if (isActive) {
+        btn.style.background = color;
+        btn.style.borderColor = color;
+        btn.style.color = '#fff';
+      } else {
+        btn.style.background = '';
+        btn.style.borderColor = color + '40';
+        btn.style.color = '';
+      }
     });
   }
 
@@ -145,7 +159,7 @@ export function renderFlavorPairings(container) {
       detailEl.innerHTML = `
         <div class="fp-detail-placeholder">
           <div style="font-size:3rem;margin-bottom:12px;">🍋</div>
-          <p>Select an ingredient to see its flavor pairings</p>
+          <p>Select an ingredient above to see its flavor pairings</p>
         </div>`;
       return;
     }
@@ -203,22 +217,19 @@ export function renderFlavorPairings(container) {
       </div>
     `;
 
-    // Back button
     detailEl.querySelector('#fp-back-btn')?.addEventListener('click', () => {
       selectedItem = navHistory.pop();
-      updateActiveItems();
+      updateActiveChips();
       renderDetail();
-      detailEl.scrollTop = 0;
     });
 
-    // Navigate via linked pairing chips
     detailEl.querySelectorAll('.fp-pairing-chip.has-detail').forEach(chip => {
       chip.addEventListener('click', () => {
         const next = FLAVOR_PAIRINGS.find(p => p.id === chip.dataset.id);
         if (!next) return;
         navHistory.push(item);
         selectedItem = next;
-        updateActiveItems();
+        updateActiveChips();
         renderDetail();
         detailEl.scrollTop = 0;
       });
@@ -229,7 +240,7 @@ export function renderFlavorPairings(container) {
 
   container.querySelector('#fp-search').addEventListener('input', (e) => {
     searchQuery = e.target.value;
-    renderList();
+    renderStrip();
   });
 
   container.querySelector('#fp-categories').addEventListener('click', (e) => {
@@ -238,9 +249,9 @@ export function renderFlavorPairings(container) {
     filterCategory = btn.dataset.cat;
     container.querySelectorAll('.fp-cat-btn').forEach(b => b.classList.remove('active'));
     btn.classList.add('active');
-    renderList();
+    renderStrip();
   });
 
-  renderList();
+  renderStrip();
   renderDetail();
 }

@@ -2296,47 +2296,32 @@ textarea.input { resize: vertical; min-height: 80px; }
    Flavor Pairings Page
    ============================ */
 .fp-subtitle {
-  margin: -8px 0 20px;
+  margin: -8px 0 16px;
   color: var(--text-muted);
   font-size: 0.88rem;
   line-height: 1.5;
 }
 
-.fp-layout {
-  display: grid;
-  grid-template-columns: 280px 1fr;
-  gap: 24px;
-  align-items: start;
-}
-
-/* ── Sidebar ── */
-.fp-sidebar {
+/* ── Controls: search + category filter ── */
+.fp-controls {
   background: var(--surface);
   border-radius: var(--radius);
   box-shadow: var(--shadow);
-  overflow: hidden;
-  position: sticky;
-  top: 20px;
-  max-height: calc(100vh - 80px);
+  padding: 14px;
+  margin-bottom: 16px;
   display: flex;
   flex-direction: column;
+  gap: 10px;
 }
 
-.fp-search-bar {
-  padding: 12px;
-  border-bottom: 1px solid var(--border);
-}
-
-/* Horizontal-scroll category bar — no wrapping */
 .fp-category-bar {
   display: flex;
   flex-wrap: nowrap;
   gap: 6px;
-  padding: 10px 12px;
-  border-bottom: 1px solid var(--border);
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
   scrollbar-width: none;
+  padding-bottom: 2px;
 }
 .fp-category-bar::-webkit-scrollbar { display: none; }
 
@@ -2365,75 +2350,98 @@ textarea.input { resize: vertical; min-height: 80px; }
   border-color: var(--primary);
 }
 
-/* Ingredient list */
-.fp-ingredient-list {
-  flex: 1;
-  overflow-y: auto;
+/* ── Horizontally scrollable ingredient strip ── */
+.fp-ingredient-strip {
+  background: var(--surface);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 16px;
+  margin-bottom: 20px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+  display: flex;
+  align-items: flex-start;
+  gap: 0;
+  min-height: 72px;
+}
+.fp-ingredient-strip::-webkit-scrollbar { height: 4px; }
+.fp-ingredient-strip::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 2px;
 }
 
-.fp-category-group + .fp-category-group .fp-category-header {
-  border-top: 2px solid var(--border);
+/* Category group: label on top, chips in a row below */
+.fp-strip-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex-shrink: 0;
+  padding-right: 20px;
+  margin-right: 20px;
+  border-right: 1px solid var(--border);
+}
+.fp-strip-group:last-child {
+  border-right: none;
+  padding-right: 0;
+  margin-right: 0;
 }
 
-.fp-category-header {
-  padding: 8px 14px;
-  font-size: 0.7rem;
+.fp-strip-label {
+  font-size: 0.68rem;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.07em;
-  color: var(--text-muted);
-  background: var(--bg);
-  border-left: 3px solid var(--border);
-  position: sticky;
-  top: 0;
-  z-index: 1;
+  white-space: nowrap;
 }
 
-.fp-ingredient-item {
-  padding: 11px 14px;
-  cursor: pointer;
-  border-bottom: 1px solid var(--border);
-  border-left: 3px solid transparent;
-  transition: background 0.1s;
+.fp-strip-chips {
   display: flex;
-  flex-direction: column;
-  gap: 3px;
-  width: 100%;
-  text-align: left;
-  background: none;
+  flex-wrap: nowrap;
+  gap: 6px;
+}
+
+/* Flat row when a single category or search is active */
+.fp-strip-group-flat {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.fp-ingredient-chip {
+  padding: 7px 16px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: all 0.15s;
   font-family: var(--font);
-}
-.fp-ingredient-item:hover { background: var(--bg); }
-.fp-ingredient-item.active { background: rgba(45,106,79,0.07); }
-
-.fp-ingredient-name {
-  font-weight: 600;
-  font-size: 0.9rem;
   color: var(--text);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.fp-ingredient-chip:hover {
+  filter: brightness(1.08);
+  transform: translateY(-1px);
+  box-shadow: 0 2px 6px rgba(0,0,0,0.12);
+}
+.fp-ingredient-chip.active {
+  font-weight: 600;
 }
 
-.fp-ingredient-cat {
-  font-size: 0.72rem;
-  color: var(--text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
-
-/* ── Detail panel ── */
+/* ── Detail panel — full width ── */
 .fp-detail {
   background: var(--surface);
   border-radius: var(--radius);
   box-shadow: var(--shadow);
   padding: 24px;
-  overflow-y: auto;
-  max-height: calc(100vh - 80px);
-  position: sticky;
-  top: 20px;
 }
 
 .fp-detail-placeholder {
   text-align: center;
-  padding: 60px 20px;
+  padding: 40px 20px;
   color: var(--text-muted);
 }
 
@@ -2488,7 +2496,7 @@ textarea.input { resize: vertical; min-height: 80px; }
   margin-bottom: 10px;
 }
 
-/* Flavor profile tags — colour comes from inline style */
+/* Flavor profile tags */
 .fp-flavor-tags {
   display: flex;
   flex-wrap: wrap;
@@ -2508,7 +2516,6 @@ textarea.input { resize: vertical; min-height: 80px; }
   flex-wrap: wrap;
   gap: 8px;
 }
-
 .fp-pairing-chip {
   padding: 6px 14px;
   background: var(--bg);
@@ -2525,9 +2532,7 @@ textarea.input { resize: vertical; min-height: 80px; }
   color: white !important;
   border-color: var(--primary) !important;
 }
-.fp-pairing-chip.has-detail {
-  font-weight: 600;
-}
+.fp-pairing-chip.has-detail { font-weight: 600; }
 .fp-chip-arrow {
   margin-left: 4px;
   font-size: 0.75rem;
@@ -2546,28 +2551,15 @@ textarea.input { resize: vertical; min-height: 80px; }
   margin: 0;
 }
 
-.fp-attribution {
-  margin-top: 24px;
-  padding: 12px 16px;
-  background: rgba(237,108,2,0.08);
-  border-radius: var(--radius-sm);
-  font-size: 0.82rem;
-  color: var(--text-muted);
-  border-left: 3px solid var(--warning);
-}
-
 .fp-empty {
   text-align: center;
-  padding: 40px 20px;
+  padding: 20px;
   color: var(--text-muted);
   font-size: 0.9rem;
+  align-self: center;
 }
 
-@media (max-width: 768px) {
-  .fp-layout { grid-template-columns: 1fr; }
-  .fp-sidebar { position: static; max-height: 350px; }
-  .fp-detail { position: static; max-height: none; }
-}
+/* Layout is inherently single-column — no media query override needed */
 
 /* ============================
    Unit Converter Modal
