@@ -3,7 +3,7 @@ const multer = require('multer');
 const path = require('path');
 const { getDb } = require('../db/database');
 const { updateDishAllergens, getAllergenKeywords, addAllergenKeyword, deleteAllergenKeyword } = require('../services/allergenDetector');
-const { calculateDishCost, calculateFoodCostPercent, suggestPrice } = require('../services/costCalculator');
+const { calculateDishCost, calculateFoodCostPercent, suggestPrice, round2 } = require('../services/costCalculator');
 const { importRecipe } = require('../services/recipeImporter');
 const asyncHandler = require('../middleware/asyncHandler');
 
@@ -115,9 +115,17 @@ router.get('/:id', (req, res) => {
 
   // Calculate cost
   const costResult = calculateDishCost(dish.ingredients);
-  dish.cost = costResult;
-  dish.food_cost_percent = calculateFoodCostPercent(costResult.totalCost, dish.suggested_price);
-  dish.suggested_price_calc = suggestPrice(costResult.totalCost);
+
+  // Parse manual costs and add to total
+  let manualCosts = [];
+  try { manualCosts = JSON.parse(dish.manual_costs || '[]'); } catch {}
+  dish.manual_costs = manualCosts;
+  const manualTotal = round2(manualCosts.reduce((sum, item) => sum + (parseFloat(item.amount) || 0), 0));
+  const combinedTotal = round2(costResult.totalCost + manualTotal);
+  dish.cost = { ...costResult, manualTotal, combinedTotal };
+
+  dish.food_cost_percent = calculateFoodCostPercent(combinedTotal, dish.suggested_price);
+  dish.suggested_price_calc = suggestPrice(combinedTotal);
 
   res.json(dish);
 });
@@ -125,14 +133,14 @@ router.get('/:id', (req, res) => {
 // POST /api/dishes - Create dish
 router.post('/', (req, res) => {
   const db = getDb();
-  const { name, description, category, chefs_notes, suggested_price, ingredients, tags, substitutions } = req.body;
+  const { name, description, category, chefs_notes, suggested_price, ingredients, tags, substitutions, manual_costs } = req.body;
 
   if (!name) return res.status(400).json({ error: 'Name is required' });
 
   const result = db.prepare(`
-    INSERT INTO dishes (name, description, category, chefs_notes, suggested_price)
-    VALUES (?, ?, ?, ?, ?)
-  `).run(name, description || '', category || 'main', chefs_notes || '', suggested_price || 0);
+    INSERT INTO dishes (name, description, category, chefs_notes, suggested_price, manual_costs)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `).run(name, description || '', category || 'main', chefs_notes || '', suggested_price || 0, manual_costs ? JSON.stringify(manual_costs) : '[]');
 
   const dishId = result.lastInsertRowid;
 
@@ -249,10 +257,10 @@ router.put('/:id', (req, res) => {
   const dish = db.prepare('SELECT * FROM dishes WHERE id = ?').get(req.params.id);
   if (!dish) return res.status(404).json({ error: 'Dish not found' });
 
-  const { name, description, category, chefs_notes, suggested_price, ingredients, tags, substitutions } = req.body;
+  const { name, description, category, chefs_notes, suggested_price, ingredients, tags, substitutions, manual_costs } = req.body;
 
   db.prepare(`
-    UPDATE dishes SET name = ?, description = ?, category = ?, chefs_notes = ?, suggested_price = ?, updated_at = datetime('now')
+    UPDATE dishes SET name = ?, description = ?, category = ?, chefs_notes = ?, suggested_price = ?, manual_costs = ?, updated_at = datetime('now')
     WHERE id = ?
   `).run(
     name || dish.name,
@@ -260,6 +268,7 @@ router.put('/:id', (req, res) => {
     category || dish.category,
     chefs_notes !== undefined ? chefs_notes : dish.chefs_notes,
     suggested_price !== undefined ? suggested_price : dish.suggested_price,
+    manual_costs !== undefined ? JSON.stringify(manual_costs) : (dish.manual_costs || '[]'),
     req.params.id
   );
 

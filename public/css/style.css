@@ -532,6 +532,27 @@ textarea.input { resize: vertical; min-height: 80px; }
   background: var(--bg);
 }
 
+.manual-cost-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.manual-cost-row .manual-cost-label {
+  flex: 1;
+}
+
+.manual-cost-row .manual-cost-amount {
+  width: 90px;
+}
+
+.manual-cost-currency {
+  font-size: 0.9rem;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
 .text-danger { color: var(--danger); }
 .text-warning { color: var(--warning); }
 .text-success { color: var(--success); }

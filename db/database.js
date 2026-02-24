@@ -174,6 +174,7 @@ async function initialize() {
       updated_at TEXT DEFAULT (datetime('now'))
     )`,
     `ALTER TABLE menus ADD COLUMN allergen_covers TEXT DEFAULT '{}'`,
+    `ALTER TABLE dishes ADD COLUMN manual_costs TEXT DEFAULT '[]'`,
   ];
 
   for (const sql of MIGRATIONS) {

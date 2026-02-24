@@ -1,4 +1,4 @@
-import { getDish, createDish, updateDish, uploadDishPhoto, getIngredients, duplicateDish } from '../api.js';
+import { getDish, createDish, updateDish, uploadDishPhoto, getIngredients, duplicateDish, updateDishAllergen } from '../api.js';
 import { renderAllergenBadges } from '../components/allergenBadges.js';
 import { showToast } from '../components/toast.js';
 import { openLightbox } from '../components/lightbox.js';
@@ -130,11 +130,23 @@ export async function renderDishForm(container, dishId) {
             <button type="button" id="add-ingredient" class="btn btn-secondary">+ Add Ingredient</button>
           </div>
 
-          <!-- Allergens (auto-detected) -->
+          <!-- Allergens -->
           <div class="form-group">
-            <label>Detected Allergens</label>
-            <div id="allergen-preview">
-              ${dish ? renderAllergenBadges(dish.allergens) : '<span class="text-muted">Add ingredients to detect allergens</span>'}
+            <label>Allergens</label>
+            <div style="margin-bottom:8px;">
+              <span class="text-muted" style="font-size:0.83rem;">Auto-detected from ingredients:</span>
+              <div id="allergen-preview" style="margin-top:4px;min-height:24px;">
+                ${dish ? renderAllergenBadges(dish.allergens.filter(a => a.source === 'auto')) : '<span class="text-muted">Add ingredients to detect allergens</span>'}
+              </div>
+            </div>
+            <div>
+              <span class="text-muted" style="font-size:0.83rem;">Manual tags — click to toggle:</span>
+              <div class="allergen-toggle-grid" id="allergen-manual-toggles" style="margin-top:6px;">
+                ${ALLERGEN_LIST.map(a => {
+                  const isManual = dish && dish.allergens.some(al => al.allergen === a && al.source === 'manual');
+                  return `<button type="button" class="allergen-toggle ${isManual ? 'active' : ''}" data-allergen="${a}">${capitalize(a)}</button>`;
+                }).join('')}
+              </div>
             </div>
           </div>
 
@@ -153,6 +165,14 @@ export async function renderDishForm(container, dishId) {
             <label>Cost Breakdown</label>
             <div id="cost-breakdown">
               ${dish && dish.cost ? renderCostBreakdown(dish) : '<span class="text-muted">Add ingredients with costs to see breakdown</span>'}
+            </div>
+            <div style="margin-top:14px;">
+              <label style="font-size:0.9rem;font-weight:600;margin-bottom:4px;display:block;">Additional Cost Items</label>
+              <p class="text-muted" style="font-size:0.83rem;margin-bottom:8px;">Add labor, packaging, or overhead costs not tied to ingredients.</p>
+              <div id="manual-costs-list">
+                ${(dish && dish.manual_costs || []).map((item, i) => manualCostRow(item, i)).join('')}
+              </div>
+              <button type="button" id="add-manual-cost" class="btn btn-secondary">+ Add Cost Item</button>
             </div>
           </div>
 
@@ -183,6 +203,8 @@ export async function renderDishForm(container, dishId) {
 
   let ingredientCounter = ingredients.length;
   let subCounter = existingSubs.length;
+  let manualCostCounter = (dish && dish.manual_costs ? dish.manual_costs.length : 0);
+  const manualAllergens = new Set(); // tracks manually toggled allergens in create mode
 
   // Duplicate button (edit mode only)
   const dupBtn = container.querySelector('#duplicate-dish-btn');
@@ -353,6 +375,49 @@ export async function renderDishForm(container, dishId) {
     }
   });
 
+  // Manual allergen toggles
+  const allergenToggleGrid = container.querySelector('#allergen-manual-toggles');
+  allergenToggleGrid.addEventListener('click', async (e) => {
+    const btn = e.target.closest('.allergen-toggle');
+    if (!btn) return;
+    const allergen = btn.dataset.allergen;
+    const isActive = btn.classList.contains('active');
+
+    if (isEdit) {
+      try {
+        await updateDishAllergen(dishId, { allergen, action: isActive ? 'remove' : 'add' });
+        btn.classList.toggle('active');
+        showToast(isActive ? `Removed ${allergen}` : `Added ${allergen}`);
+      } catch (err) {
+        showToast('Failed to update allergen', 'error');
+      }
+    } else {
+      btn.classList.toggle('active');
+      if (!isActive) {
+        manualAllergens.add(allergen);
+      } else {
+        manualAllergens.delete(allergen);
+      }
+    }
+  });
+
+  // Manual cost items
+  const manualCostsList = container.querySelector('#manual-costs-list');
+  const addManualCostBtn = container.querySelector('#add-manual-cost');
+
+  addManualCostBtn.addEventListener('click', () => {
+    manualCostCounter++;
+    const div = document.createElement('div');
+    div.innerHTML = manualCostRow(null, manualCostCounter);
+    manualCostsList.appendChild(div.firstElementChild);
+  });
+
+  manualCostsList.addEventListener('click', (e) => {
+    if (e.target.closest('.remove-manual-cost')) {
+      e.target.closest('.manual-cost-row').remove();
+    }
+  });
+
   function updateAllergenPreview() {
     const names = Array.from(ingredientsList.querySelectorAll('.ing-name'))
       .map(el => el.value.trim())
@@ -457,6 +522,13 @@ export async function renderDishForm(container, dishId) {
       notes: row.querySelector('.sub-notes')?.value.trim() || '',
     })).filter(s => s.allergen && s.original_ingredient && s.substitute_ingredient);
 
+    // Collect manual cost items
+    const costRows = manualCostsList.querySelectorAll('.manual-cost-row');
+    const manual_costs = Array.from(costRows).map(row => ({
+      label: row.querySelector('.manual-cost-label').value.trim(),
+      amount: parseFloat(row.querySelector('.manual-cost-amount').value) || 0,
+    })).filter(item => item.label || item.amount > 0);
+
     const data = {
       name,
       description: container.querySelector('#dish-desc').value.trim(),
@@ -466,6 +538,7 @@ export async function renderDishForm(container, dishId) {
       ingredients: ingData,
       tags,
       substitutions,
+      manual_costs,
     };
 
     try {
@@ -479,6 +552,12 @@ export async function renderDishForm(container, dishId) {
           const formData = new FormData();
           formData.append('photo', file);
           await uploadDishPhoto(result.id, formData);
+        }
+        // Save manually toggled allergens
+        for (const allergen of manualAllergens) {
+          try {
+            await updateDishAllergen(result.id, { allergen, action: 'add' });
+          } catch {}
         }
         showToast('Dish created');
       }
@@ -535,6 +614,17 @@ function ingredientRow(ing, index) {
   `;
 }
 
+function manualCostRow(item, index) {
+  return `
+    <div class="manual-cost-row" data-index="${index}">
+      <input type="text" class="input manual-cost-label" placeholder="Label (e.g., Labor)" value="${escapeHtml(item ? item.label : '')}">
+      <span class="manual-cost-currency">$</span>
+      <input type="number" class="input manual-cost-amount" placeholder="0.00" step="0.01" min="0" value="${item ? item.amount : ''}">
+      <button type="button" class="btn btn-icon remove-manual-cost" title="Remove">&times;</button>
+    </div>
+  `;
+}
+
 function substitutionRow(sub, index) {
   return `
     <div class="substitution-row" data-index="${index}">
@@ -570,11 +660,24 @@ function renderCostBreakdown(dish) {
       <span>${item.cost !== null ? '$' + item.cost.toFixed(2) : (item.warning ? escapeHtml(item.warning) : 'N/A')}</span>
     </div>`;
   }
+
+  const ingredientTotal = dish.cost.totalCost;
+  const combinedTotal = dish.cost.combinedTotal !== undefined ? dish.cost.combinedTotal : ingredientTotal;
+  const hasManualCosts = combinedTotal > ingredientTotal;
+
   html += `<div class="cost-row cost-total">
-    <span>Total Dish Cost</span>
+    <span>${hasManualCosts ? 'Ingredient Cost' : 'Total Dish Cost'}</span>
     <span></span>
-    <span>$${dish.cost.totalCost.toFixed(2)}</span>
+    <span>$${ingredientTotal.toFixed(2)}</span>
   </div>`;
+
+  if (hasManualCosts) {
+    html += `<div class="cost-row cost-total">
+      <span>Total (incl. additional costs)</span>
+      <span></span>
+      <span>$${combinedTotal.toFixed(2)}</span>
+    </div>`;
+  }
 
   if (dish.food_cost_percent !== null) {
     html += `<div class="cost-row">
