@@ -135,7 +135,7 @@ router.get('/:id/kitchen-print', (req, res) => {
     FROM dish_ingredients di
     JOIN ingredients i ON i.id = di.ingredient_id
     WHERE di.dish_id = ?
-    ORDER BY i.name
+    ORDER BY di.sort_order
   `);
   const subsStmt = db.prepare('SELECT * FROM dish_substitutions WHERE dish_id = ? ORDER BY allergen');
 

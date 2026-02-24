@@ -534,9 +534,8 @@ export async function renderMenuBuilder(container, menuId) {
           .dish-name { font-size: 1.15rem; font-weight: 700; margin-bottom: 6px; }
           .allergens { margin-bottom: 6px; }
           .allergen-tag { display: inline-block; padding: 2px 8px; font-size: 0.72rem; font-weight: 700; background: #ffcdd2; color: #b71c1c; border-radius: 10px; margin-right: 3px; margin-bottom: 3px; }
-          .ingredients { font-size: 0.85rem; color: #444; margin-bottom: 6px; }
-          .ingredients span { margin-right: 6px; }
-          .ingredients span:not(:last-child)::after { content: ' ·'; color: #bbb; }
+          .ingredients { margin: 4px 0 8px; padding-left: 0; list-style: none; }
+          .ingredients li { font-size: 0.9rem; font-weight: 600; color: #1a1a1a; padding: 2px 0; border-bottom: 1px solid #f0f0f0; }
           .notes { font-size: 0.85rem; color: #333; margin-top: 6px; padding: 6px 10px; background: #f5f5f0; border-left: 3px solid #999; }
           .notes-label { font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: #888; margin-bottom: 2px; }
           .subs { font-size: 0.82rem; margin-top: 6px; padding: 5px 10px; background: #fff3e0; border-left: 3px solid #e65100; }
@@ -562,7 +561,7 @@ export async function renderMenuBuilder(container, menuId) {
         }
 
         if (dish.ingredients.length) {
-          html += `<div class="ingredients">${dish.ingredients.map(ing => `<span>${escapeHtml(ing.ingredient_name)}</span>`).join('')}</div>`;
+          html += `<ul class="ingredients">${dish.ingredients.map(ing => `<li>${escapeHtml(ing.ingredient_name)}</li>`).join('')}</ul>`;
         }
 
         if (dish.substitutions && dish.substitutions.length) {
