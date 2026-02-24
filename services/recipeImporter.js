@@ -79,23 +79,31 @@ function parseFraction(str) {
 }
 
 function parseIngredientString(text) {
-  text = text.trim()
-    // Strip zero-width / invisible Unicode chars that sneak in from web scraping
+  // Strip zero-width / invisible Unicode chars that sneak in from web scraping
+  text = text
     .replace(/[\u200B-\u200D\uFEFF\u00AD]/g, '')
-    // Decode common residual HTML entities
     .replace(/&nbsp;/gi, ' ')
     .replace(/&amp;/gi, '&')
     .replace(/&#\d+;/g, '')
-    // Normalize whitespace
     .replace(/\s+/g, ' ')
-    // Strip parenthetical info: (optional), (240ml), (finely diced), etc.
-    .replace(/\(.*?\)/g, '')
-    // Strip bracketed info: [optional], [or substitute X]
-    .replace(/\[.*?\]/g, '')
+    .trim();
+
+  // Strip all parenthetical content, looping to handle double/nested parens
+  // e.g. ((30 ml)) → first pass strips (30 ml) → () → second pass strips ()
+  let prev;
+  do { prev = text; text = text.replace(/\([^()]*\)/g, ''); } while (text !== prev);
+  text = text.replace(/[()]/g, ''); // remove any unmatched stray parens
+
+  // Same treatment for square brackets
+  do { prev = text; text = text.replace(/\[[^\[\]]*\]/g, ''); } while (text !== prev);
+  text = text.replace(/[\[\]]/g, '');
+
+  text = text
     // Strip leading bullet / dash / arrow markers
     .replace(/^[\s•·▪▸►\-–—]+/, '')
     // Strip asterisks used as footnote or "optional" markers
     .replace(/\*/g, '')
+    .replace(/\s+/g, ' ')
     .trim();
 
   // Try to extract leading quantity
