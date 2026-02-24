@@ -124,8 +124,8 @@ router.get('/:id', (req, res) => {
   // Get substitutions
   dish.substitutions = db.prepare('SELECT * FROM dish_substitutions WHERE dish_id = ? ORDER BY allergen, id').all(dish.id);
 
-  // Calculate cost
-  const costResult = calculateDishCost(dish.ingredients);
+  // Calculate cost (section header rows have no ingredient data — exclude them)
+  const costResult = calculateDishCost(dish.ingredients.filter(r => r.row_type === 'ingredient'));
 
   // Parse manual costs and add to total
   let manualCosts = [];
