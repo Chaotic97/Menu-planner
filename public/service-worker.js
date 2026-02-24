@@ -50,7 +50,21 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Static assets: cache-first
+  // JS / CSS: network-first so deployments show immediately; fall back to cache offline
+  if (url.pathname.match(/\.(js|css)$/)) {
+    event.respondWith(
+      fetch(request)
+        .then((res) => {
+          const clone = res.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));
+          return res;
+        })
+        .catch(() => caches.match(request))
+    );
+    return;
+  }
+
+  // Other static assets (HTML, images, fonts): cache-first
   event.respondWith(
     caches.match(request).then((cached) => {
       if (cached) return cached;

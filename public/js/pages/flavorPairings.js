@@ -69,6 +69,14 @@ export function renderFlavorPairings(container) {
   const stripEl = container.querySelector('#fp-strip');
   const detailEl = container.querySelector('#fp-detail');
 
+  // Convert vertical scroll to horizontal scroll when hovering the strip
+  stripEl.addEventListener('wheel', (e) => {
+    if (e.deltaY !== 0) {
+      e.preventDefault();
+      stripEl.scrollLeft += e.deltaY;
+    }
+  }, { passive: false });
+
   // ── Ingredient strip ─────────────────────────────────────────────────────────
 
   function ingredientChipHtml(item) {
