@@ -21,6 +21,7 @@ const routes = [
   { pattern: /^#\/specials$/, handler: () => renderSpecials(appContent) },
   { pattern: /^#\/service-notes$/, handler: () => renderServiceNotes(appContent) },
   { pattern: /^#\/flavor-pairings$/, handler: () => renderFlavorPairings(appContent) },
+  { pattern: /^#\/todos$/, handler: () => renderTodoView(appContent, null) },
   { pattern: /^#\/menus\/(\d+)\/todos$/, handler: (m) => renderTodoView(appContent, m[1]) },
   { pattern: /^#\/menus\/(\d+)$/, handler: (m) => renderMenuBuilder(appContent, m[1]) },
   { pattern: /^#\/menus$/, handler: () => renderMenuList(appContent) },
