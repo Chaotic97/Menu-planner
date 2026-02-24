@@ -118,8 +118,9 @@ export async function renderTodoView(container, menuId) {
           ${prepTasks.task_groups.map(group => `
             <div class="todo-group">
               <h3 class="todo-group-title">${escapeHtml(group.label)}</h3>
-              ${group.tasks.map((task, i) => {
-                const key = `prep-${group.timing}-${i}`;
+              ${group.tasks.map((task) => {
+                const slug = (task.dish + '-' + task.task).toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 60);
+                const key = `prep-${slug}`;
                 return `
                   <label class="todo-item ${checkedState[key] ? 'checked' : ''}">
                     <input type="checkbox" data-key="${key}" ${checkedState[key] ? 'checked' : ''}>

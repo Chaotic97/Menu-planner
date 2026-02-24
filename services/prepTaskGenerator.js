@@ -19,31 +19,18 @@ const TIMING_LABELS = {
 
 const TIMING_ORDER = ['day_before', 'morning_of', '1_2_hours_before', 'during_service', 'last_minute'];
 
-const VERB_PATTERN = /^(make|prep|prepare|marinate|soak|brine|rest|chill|freeze|defrost|thaw|blanch|reduce|toast|roast|bake|boil|simmer|strain|chop|dice|slice|mince|julienne|butcher|portion|temper|bloom|proof|ferment|pickle|cure|smoke|dry|rehydrate|mix|combine|whisk|fold|knead|roll|shape|pipe|set|refrigerate|warm|preheat|stock|infuse|season|trim|debone|fillet|zest|grate|crush|pound|sear|braise|deglaze|mount|emulsify|caramelize|char|grill|fry|deep fry|pan fry|poach|steam|sous vide|vacuum seal|hang|age|clarify|skim|pass|blend|puree|cool|store)/i;
-
-const TIME_PATTERN = /(\d+\s*(hr|hour|min|minute|day|night)s?\s*(before|ahead|prior))|overnight|advance|morning of|day before|in advance/i;
-
 function extractPrepTasks(chefNotes, dishName) {
   if (!chefNotes || !chefNotes.trim()) return [];
 
-  const sentences = chefNotes.split(/[.\n;]+/).map(s => s.trim()).filter(s => s.length > 2);
-  const tasks = [];
-
-  for (const sentence of sentences) {
-    const hasTime = TIME_PATTERN.test(sentence);
-    const hasVerb = VERB_PATTERN.test(sentence);
-
-    if (hasTime || hasVerb) {
-      tasks.push({
-        task: sentence,
-        dish: dishName,
-        timing: extractTiming(sentence),
-        source: 'chefs_notes',
-      });
-    }
-  }
-
-  return tasks;
+  // Include every sentence — the chef wrote it to guide prep, so it's always relevant.
+  // Timing keywords still bucket each task into the right service window.
+  const sentences = chefNotes.split(/[.\n;]+/).map(s => s.trim()).filter(s => s.length >= 8);
+  return sentences.map(sentence => ({
+    task: sentence,
+    dish: dishName,
+    timing: extractTiming(sentence),
+    source: 'chefs_notes',
+  }));
 }
 
 function generatePrepTasks(menuId) {
