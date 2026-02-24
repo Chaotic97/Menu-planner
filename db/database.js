@@ -175,6 +175,13 @@ async function initialize() {
     )`,
     `ALTER TABLE menus ADD COLUMN allergen_covers TEXT DEFAULT '{}'`,
     `ALTER TABLE dishes ADD COLUMN manual_costs TEXT DEFAULT '[]'`,
+    `ALTER TABLE dish_ingredients ADD COLUMN sort_order INTEGER DEFAULT 0`,
+    `CREATE TABLE IF NOT EXISTS dish_section_headers (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      dish_id INTEGER NOT NULL REFERENCES dishes(id) ON DELETE CASCADE,
+      label TEXT NOT NULL,
+      sort_order INTEGER DEFAULT 0
+    )`,
   ];
 
   for (const sql of MIGRATIONS) {

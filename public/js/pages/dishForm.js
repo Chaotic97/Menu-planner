@@ -47,11 +47,13 @@ export async function renderDishForm(container, dishId) {
   }
 
   // Build ingredients list from dish data or imported data
+  // dish.ingredients now contains merged rows: { row_type: 'ingredient'|'section', ... }
   let ingredients;
   if (dish) {
-    ingredients = dish.ingredients;
+    ingredients = dish.ingredients; // already has row_type from API
   } else if (importedData && importedData.ingredients) {
     ingredients = importedData.ingredients.map(ing => ({
+      row_type: 'ingredient',
       ingredient_name: ing.name,
       quantity: ing.quantity,
       unit: ing.unit,
@@ -125,9 +127,16 @@ export async function renderDishForm(container, dishId) {
           <div class="form-group">
             <label>Ingredients</label>
             <div id="ingredients-list">
-              ${ingredients.map((ing, i) => ingredientRow(ing, i)).join('')}
+              ${ingredients.map((ing, i) =>
+                ing.row_type === 'section'
+                  ? sectionHeaderRow(ing, i)
+                  : ingredientRow(ing, i)
+              ).join('')}
             </div>
-            <button type="button" id="add-ingredient" class="btn btn-secondary">+ Add Ingredient</button>
+            <div class="ing-add-buttons">
+              <button type="button" id="add-ingredient" class="btn btn-secondary">+ Add Ingredient</button>
+              <button type="button" id="add-section-header" class="btn btn-secondary">+ Add Section</button>
+            </div>
           </div>
 
           <!-- Allergens -->
@@ -195,6 +204,7 @@ export async function renderDishForm(container, dishId) {
   const form = container.querySelector('#dish-form');
   const ingredientsList = container.querySelector('#ingredients-list');
   const addBtn = container.querySelector('#add-ingredient');
+  const addSectionBtn = container.querySelector('#add-section-header');
   const photoArea = container.querySelector('#photo-upload-area');
   const photoInput = container.querySelector('#photo-input');
   const allergenPreview = container.querySelector('#allergen-preview');
@@ -202,6 +212,7 @@ export async function renderDishForm(container, dishId) {
   const addSubBtn = container.querySelector('#add-substitution');
 
   let ingredientCounter = ingredients.length;
+  let sectionCounter = 0;
   let subCounter = existingSubs.length;
   let manualCostCounter = (dish && dish.manual_costs ? dish.manual_costs.length : 0);
   const manualAllergens = new Set(); // tracks manually toggled allergens in create mode
@@ -272,11 +283,27 @@ export async function renderDishForm(container, dishId) {
     updateAllergenPreview();
   });
 
-  // Remove ingredient row
+  // Add section header row
+  addSectionBtn.addEventListener('click', () => {
+    sectionCounter++;
+    const div = document.createElement('div');
+    div.innerHTML = sectionHeaderRow(null, `s${sectionCounter}`);
+    ingredientsList.appendChild(div.firstElementChild);
+  });
+
+  // Clicks inside ingredients list (remove ingredient, remove section, unit converter)
   ingredientsList.addEventListener('click', (e) => {
+    // Remove ingredient row
     if (e.target.closest('.remove-ingredient')) {
       e.target.closest('.ingredient-row').remove();
       updateAllergenPreview();
+      return;
+    }
+
+    // Remove section header row
+    if (e.target.closest('.remove-section-header')) {
+      e.target.closest('.section-header-row').remove();
+      return;
     }
 
     // Unit converter button
@@ -491,6 +518,9 @@ export async function renderDishForm(container, dishId) {
   // Set up autocomplete on existing rows
   ingredientsList.querySelectorAll('.ing-name').forEach(setupAutocomplete);
 
+  // ── Drag-and-drop ────────────────────────────────────────────────────────────
+  setupIngredientDragDrop(ingredientsList);
+
   // Form submit
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -501,15 +531,26 @@ export async function renderDishForm(container, dishId) {
       return;
     }
 
-    const ingRows = ingredientsList.querySelectorAll('.ingredient-row');
-    const ingData = Array.from(ingRows).map(row => ({
-      name: row.querySelector('.ing-name').value.trim(),
-      quantity: parseFloat(row.querySelector('.ing-qty').value) || 0,
-      unit: row.querySelector('.ing-unit').value,
-      prep_note: row.querySelector('.ing-prep').value.trim(),
-      unit_cost: row.querySelector('.ing-unit-cost').value !== '' ? parseFloat(row.querySelector('.ing-unit-cost').value) : null,
-      base_unit: row.querySelector('.ing-base-unit').value,
-    })).filter(i => i.name);
+    // Collect ALL rows in DOM order (ingredients + section headers)
+    const allRows = ingredientsList.querySelectorAll('.ingredient-row, .section-header-row');
+    const ingData = Array.from(allRows).map((row, idx) => {
+      if (row.classList.contains('section-header-row')) {
+        const label = row.querySelector('.section-header-label').value.trim();
+        return label ? { section_header: label, sort_order: idx } : null;
+      } else {
+        const nameVal = row.querySelector('.ing-name').value.trim();
+        if (!nameVal) return null;
+        return {
+          name: nameVal,
+          quantity: parseFloat(row.querySelector('.ing-qty').value) || 0,
+          unit: row.querySelector('.ing-unit').value,
+          prep_note: row.querySelector('.ing-prep').value.trim(),
+          unit_cost: row.querySelector('.ing-unit-cost').value !== '' ? parseFloat(row.querySelector('.ing-unit-cost').value) : null,
+          base_unit: row.querySelector('.ing-base-unit').value,
+          sort_order: idx,
+        };
+      }
+    }).filter(Boolean);
 
     // Collect tags
     const tagsInput = container.querySelector('#dish-tags').value;
@@ -586,12 +627,28 @@ export async function renderDishForm(container, dishId) {
   }
 }
 
+// ── Row templates ────────────────────────────────────────────────────────────
+
+function sectionHeaderRow(header, index) {
+  const label = header ? escapeHtml(header.label || '') : '';
+  return `
+    <div class="section-header-row" data-index="${index}" draggable="true">
+      <span class="drag-handle" title="Drag to reorder">⠿</span>
+      <div class="section-header-input-wrap">
+        <input type="text" class="input section-header-label" placeholder="Section name (e.g. For the marinade)" value="${label}">
+      </div>
+      <button type="button" class="btn btn-icon remove-section-header" title="Remove section">&times;</button>
+    </div>
+  `;
+}
+
 function ingredientRow(ing, index) {
   const currentUnit = ing?.unit || 'g';
   const compat = compatibleUnits(currentUnit);
   const canConvert = compat.length > 0;
   return `
-    <div class="ingredient-row" data-index="${index}">
+    <div class="ingredient-row" data-index="${index}" draggable="true">
+      <span class="drag-handle" title="Drag to reorder">⠿</span>
       <div class="ing-main-controls">
         <div class="ing-field ing-name-field">
           <input type="text" class="input ing-name" placeholder="Ingredient name" value="${escapeHtml(ing ? ing.ingredient_name : '')}">
@@ -708,4 +765,139 @@ function renderCostBreakdown(dish) {
 
   html += '</div>';
   return html;
+}
+
+// ── Drag-and-drop for ingredient + section rows ───────────────────────────────
+
+function setupIngredientDragDrop(list) {
+  let dragSrc = null;
+
+  // ── HTML5 Drag API ──
+  list.addEventListener('dragstart', (e) => {
+    const row = e.target.closest('.ingredient-row, .section-header-row');
+    if (!row) return;
+    dragSrc = row;
+    // Delay adding class so the drag ghost captures the un-dimmed look
+    setTimeout(() => row.classList.add('dragging'), 0);
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', ''); // required for Firefox
+  });
+
+  list.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    const target = e.target.closest('.ingredient-row, .section-header-row');
+    if (!target || target === dragSrc) return;
+
+    list.querySelectorAll('.drop-above, .drop-below').forEach(el => {
+      el.classList.remove('drop-above', 'drop-below');
+    });
+
+    const rect = target.getBoundingClientRect();
+    if (e.clientY < rect.top + rect.height / 2) {
+      target.classList.add('drop-above');
+    } else {
+      target.classList.add('drop-below');
+    }
+    e.dataTransfer.dropEffect = 'move';
+  });
+
+  list.addEventListener('dragleave', (e) => {
+    // Only clear when leaving the list entirely
+    if (!list.contains(e.relatedTarget)) {
+      list.querySelectorAll('.drop-above, .drop-below').forEach(el => {
+        el.classList.remove('drop-above', 'drop-below');
+      });
+    }
+  });
+
+  list.addEventListener('drop', (e) => {
+    e.preventDefault();
+    const target = e.target.closest('.ingredient-row, .section-header-row');
+
+    list.querySelectorAll('.drop-above, .drop-below').forEach(el => {
+      el.classList.remove('drop-above', 'drop-below');
+    });
+
+    if (!target || !dragSrc || target === dragSrc) return;
+
+    const rect = target.getBoundingClientRect();
+    if (e.clientY < rect.top + rect.height / 2) {
+      list.insertBefore(dragSrc, target);
+    } else {
+      target.after(dragSrc);
+    }
+  });
+
+  list.addEventListener('dragend', () => {
+    if (dragSrc) dragSrc.classList.remove('dragging');
+    list.querySelectorAll('.drop-above, .drop-below').forEach(el => {
+      el.classList.remove('drop-above', 'drop-below');
+    });
+    dragSrc = null;
+  });
+
+  // ── Touch drag (handle only) ──
+  let touchRow = null;
+
+  list.addEventListener('touchstart', (e) => {
+    const handle = e.target.closest('.drag-handle');
+    if (!handle) return;
+    const row = handle.closest('.ingredient-row, .section-header-row');
+    if (!row) return;
+    touchRow = row;
+    row.classList.add('dragging');
+    e.preventDefault();
+  }, { passive: false });
+
+  list.addEventListener('touchmove', (e) => {
+    if (!touchRow) return;
+    e.preventDefault();
+
+    const touchY = e.touches[0].clientY;
+    const siblings = [...list.querySelectorAll('.ingredient-row, .section-header-row')]
+      .filter(r => r !== touchRow);
+
+    list.querySelectorAll('.drop-above, .drop-below').forEach(el => {
+      el.classList.remove('drop-above', 'drop-below');
+    });
+
+    for (const row of siblings) {
+      const rect = row.getBoundingClientRect();
+      if (touchY >= rect.top && touchY <= rect.bottom) {
+        if (touchY < rect.top + rect.height / 2) {
+          row.classList.add('drop-above');
+        } else {
+          row.classList.add('drop-below');
+        }
+        break;
+      }
+    }
+  }, { passive: false });
+
+  list.addEventListener('touchend', (e) => {
+    if (!touchRow) return;
+
+    const touchY = e.changedTouches[0].clientY;
+    const siblings = [...list.querySelectorAll('.ingredient-row, .section-header-row')]
+      .filter(r => r !== touchRow);
+
+    list.querySelectorAll('.drop-above, .drop-below').forEach(el => {
+      el.classList.remove('drop-above', 'drop-below');
+    });
+
+    for (const row of siblings) {
+      const rect = row.getBoundingClientRect();
+      if (touchY >= rect.top && touchY <= rect.bottom) {
+        if (touchY < rect.top + rect.height / 2) {
+          list.insertBefore(touchRow, row);
+        } else {
+          row.after(touchRow);
+        }
+        break;
+      }
+    }
+
+    touchRow.classList.remove('dragging');
+    touchRow = null;
+  });
 }

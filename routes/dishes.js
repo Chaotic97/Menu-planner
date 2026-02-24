@@ -93,14 +93,25 @@ router.get('/:id', (req, res) => {
   const dish = db.prepare('SELECT * FROM dishes WHERE id = ?').get(req.params.id);
   if (!dish) return res.status(404).json({ error: 'Dish not found' });
 
-  // Get ingredients
-  dish.ingredients = db.prepare(`
+  // Get ingredients (ordered by sort_order)
+  const ingRows = db.prepare(`
     SELECT di.*, i.name AS ingredient_name, i.unit_cost, i.base_unit, i.category AS ingredient_category
     FROM dish_ingredients di
     JOIN ingredients i ON i.id = di.ingredient_id
     WHERE di.dish_id = ?
-    ORDER BY di.id
+    ORDER BY di.sort_order, di.id
   `).all(dish.id);
+
+  // Get section headers
+  const sectionRows = db.prepare(
+    'SELECT id, label, sort_order FROM dish_section_headers WHERE dish_id = ? ORDER BY sort_order'
+  ).all(dish.id);
+
+  // Merge into a single ordered list (sections interspersed with ingredients)
+  dish.ingredients = [
+    ...ingRows.map(r => ({ ...r, row_type: 'ingredient' })),
+    ...sectionRows.map(r => ({ ...r, row_type: 'section' })),
+  ].sort((a, b) => a.sort_order - b.sort_order || a.id - b.id);
 
   // Get allergens
   dish.allergens = db.prepare('SELECT allergen, source FROM dish_allergens WHERE dish_id = ?').all(dish.id);
@@ -179,19 +190,31 @@ router.post('/:id/duplicate', (req, res) => {
 
   const newId = result.lastInsertRowid;
 
-  // Copy all dish_ingredients
+  // Copy all dish_ingredients (including sort_order)
   const ingredients = db.prepare(`
-    SELECT ingredient_id, quantity, unit, prep_note
+    SELECT ingredient_id, quantity, unit, prep_note, sort_order
     FROM dish_ingredients WHERE dish_id = ?
+    ORDER BY sort_order, id
   `).all(req.params.id);
 
   const insertDI = db.prepare(`
-    INSERT INTO dish_ingredients (dish_id, ingredient_id, quantity, unit, prep_note)
-    VALUES (?, ?, ?, ?, ?)
+    INSERT INTO dish_ingredients (dish_id, ingredient_id, quantity, unit, prep_note, sort_order)
+    VALUES (?, ?, ?, ?, ?, ?)
   `);
 
   for (const ing of ingredients) {
-    insertDI.run(newId, ing.ingredient_id, ing.quantity, ing.unit, ing.prep_note);
+    insertDI.run(newId, ing.ingredient_id, ing.quantity, ing.unit, ing.prep_note, ing.sort_order || 0);
+  }
+
+  // Copy section headers
+  const sectionHeaders = db.prepare(
+    'SELECT label, sort_order FROM dish_section_headers WHERE dish_id = ? ORDER BY sort_order'
+  ).all(req.params.id);
+  const insertHeader = db.prepare(
+    'INSERT INTO dish_section_headers (dish_id, label, sort_order) VALUES (?, ?, ?)'
+  );
+  for (const h of sectionHeaders) {
+    insertHeader.run(newId, h.label, h.sort_order);
   }
 
   // Copy substitutions
@@ -275,6 +298,7 @@ router.put('/:id', (req, res) => {
   // Replace ingredients if provided
   if (ingredients) {
     db.prepare('DELETE FROM dish_ingredients WHERE dish_id = ?').run(req.params.id);
+    db.prepare('DELETE FROM dish_section_headers WHERE dish_id = ?').run(req.params.id);
     saveIngredients(db, req.params.id, ingredients);
 
     // Re-detect allergens
@@ -352,42 +376,64 @@ router.delete('/allergen-keywords/:id', (req, res) => {
 function saveIngredients(db, dishId, ingredients) {
   if (!ingredients || !ingredients.length) return;
 
-  // Deduplicate by ingredient name (case-insensitive) before inserting.
-  // Some recipes (e.g. multi-section recipes) list the same ingredient in
-  // multiple sections which would violate the UNIQUE(dish_id, ingredient_id)
-  // constraint. Same name + same unit → sum quantities; different unit → keep first.
+  // Split into section headers and real ingredients, preserving DOM order (sort_order = index)
+  const headerItems = [];
+  const realItems = [];
+
+  for (let i = 0; i < ingredients.length; i++) {
+    const item = ingredients[i];
+    if (item.section_header) {
+      const label = String(item.section_header).trim();
+      if (label) headerItems.push({ label, sort_order: i });
+    } else {
+      const key = (item.name || '').trim();
+      if (key) realItems.push({ ...item, sort_order: i });
+    }
+  }
+
+  // Save section headers
+  if (headerItems.length) {
+    const insertHeader = db.prepare(
+      'INSERT INTO dish_section_headers (dish_id, label, sort_order) VALUES (?, ?, ?)'
+    );
+    for (const h of headerItems) {
+      insertHeader.run(dishId, h.label, h.sort_order);
+    }
+  }
+
+  // Deduplicate real ingredients by name (case-insensitive).
+  // Same name + same unit → sum quantities; different unit → keep first occurrence.
   const seen = new Map();
-  for (const ing of ingredients) {
-    const key = (ing.name || '').trim().toLowerCase();
-    if (!key) continue;
+  for (const ing of realItems) {
+    const key = ing.name.trim().toLowerCase();
     if (seen.has(key)) {
       const existing = seen.get(key);
       if (existing.unit === (ing.unit || 'each')) {
         existing.quantity = Math.round(((existing.quantity || 0) + (ing.quantity || 0)) * 1000) / 1000;
       }
-      // Different unit: keep existing, discard duplicate
+      // Different unit: keep first occurrence (preserves its sort_order)
     } else {
       seen.set(key, { ...ing });
     }
   }
-  const deduped = Array.from(seen.values());
 
   const insertIngredient = db.prepare('INSERT OR IGNORE INTO ingredients (name) VALUES (?)');
   const getIngredient = db.prepare('SELECT id FROM ingredients WHERE name = ? COLLATE NOCASE');
   const insertDishIngredient = db.prepare(`
-    INSERT INTO dish_ingredients (dish_id, ingredient_id, quantity, unit, prep_note)
-    VALUES (?, ?, ?, ?, ?)
+    INSERT INTO dish_ingredients (dish_id, ingredient_id, quantity, unit, prep_note, sort_order)
+    VALUES (?, ?, ?, ?, ?, ?)
   `);
   const updateIngredientCost = db.prepare(
     'UPDATE ingredients SET unit_cost = ?, base_unit = ? WHERE id = ?'
   );
 
-  for (const ing of deduped) {
+  for (const ing of seen.values()) {
     insertIngredient.run(ing.name);
     const row = getIngredient.get(ing.name);
     if (row) {
-      insertDishIngredient.run(dishId, row.id, ing.quantity || 0, ing.unit || 'each', ing.prep_note || '');
-      // Update ingredient cost if provided
+      insertDishIngredient.run(
+        dishId, row.id, ing.quantity || 0, ing.unit || 'each', ing.prep_note || '', ing.sort_order || 0
+      );
       if (ing.unit_cost !== undefined) {
         updateIngredientCost.run(
           ing.unit_cost !== null ? parseFloat(ing.unit_cost) : null,
