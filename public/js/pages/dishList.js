@@ -4,6 +4,7 @@ import { showToast } from '../components/toast.js';
 import { openModal, closeModal } from '../components/modal.js';
 import { openLightbox } from '../components/lightbox.js';
 import { CATEGORIES } from '../data/categories.js';
+import { escapeHtml } from '../utils/escapeHtml.js';
 
 export async function renderDishList(container) {
   // Load tags for filter
@@ -66,18 +67,18 @@ export async function renderDishList(container) {
         <div class="card dish-card" data-id="${dish.id}">
           <div class="card-image">
             ${dish.photo_path
-              ? `<img src="${dish.photo_path}" alt="${dish.name}" loading="lazy">`
+              ? `<img src="${escapeHtml(dish.photo_path)}" alt="${escapeHtml(dish.name)}" loading="lazy">`
               : '<div class="no-image"><span>No Photo</span></div>'
             }
             <button class="favorite-btn ${dish.is_favorite ? 'favorited' : ''}" data-id="${dish.id}" title="${dish.is_favorite ? 'Remove from favorites' : 'Add to favorites'}">&hearts;</button>
           </div>
           <div class="card-body">
-            <span class="category-badge">${dish.category}</span>
-            <h3 class="card-title">${dish.name}</h3>
-            ${dish.description ? `<p class="card-desc">${dish.description.substring(0, 80)}${dish.description.length > 80 ? '...' : ''}</p>` : ''}
+            <span class="category-badge">${escapeHtml(dish.category)}</span>
+            <h3 class="card-title">${escapeHtml(dish.name)}</h3>
+            ${dish.description ? `<p class="card-desc">${escapeHtml(dish.description.substring(0, 80))}${dish.description.length > 80 ? '...' : ''}</p>` : ''}
             ${renderAllergenBadges(dish.allergens, true)}
             ${dish.tags && dish.tags.length ? `
-              <div class="tag-badges">${dish.tags.map(t => `<span class="tag-badge">${t}</span>`).join('')}</div>
+              <div class="tag-badges">${dish.tags.map(t => `<span class="tag-badge">${escapeHtml(t)}</span>`).join('')}</div>
             ` : ''}
             ${dish.suggested_price ? `<div class="card-price">$${Number(dish.suggested_price).toFixed(2)}</div>` : ''}
           </div>

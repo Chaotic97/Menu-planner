@@ -5,12 +5,9 @@ const { getDb } = require('../db/database');
 const { updateDishAllergens, getAllergenKeywords, addAllergenKeyword, deleteAllergenKeyword } = require('../services/allergenDetector');
 const { calculateDishCost, calculateFoodCostPercent, suggestPrice } = require('../services/costCalculator');
 const { importRecipe } = require('../services/recipeImporter');
+const asyncHandler = require('../middleware/asyncHandler');
 
 const router = express.Router();
-
-// Broadcast helper (set by server.js after WebSocket init)
-let broadcast = () => {};
-router.setBroadcast = (fn) => { broadcast = fn; };
 
 // Photo upload config
 const storage = multer.diskStorage({
@@ -140,24 +137,7 @@ router.post('/', (req, res) => {
   const dishId = result.lastInsertRowid;
 
   // Add ingredients
-  if (ingredients && ingredients.length) {
-    const insertIngredient = db.prepare(`
-      INSERT OR IGNORE INTO ingredients (name) VALUES (?)
-    `);
-    const getIngredient = db.prepare('SELECT id FROM ingredients WHERE name = ? COLLATE NOCASE');
-    const insertDishIngredient = db.prepare(`
-      INSERT INTO dish_ingredients (dish_id, ingredient_id, quantity, unit, prep_note)
-      VALUES (?, ?, ?, ?, ?)
-    `);
-
-    for (const ing of ingredients) {
-      insertIngredient.run(ing.name);
-      const row = getIngredient.get(ing.name);
-      if (row) {
-        insertDishIngredient.run(dishId, row.id, ing.quantity || 0, ing.unit || 'g', ing.prep_note || '');
-      }
-    }
-  }
+  saveIngredients(db, dishId, ingredients);
 
   // Save tags
   saveDishTags(db, dishId, tags);
@@ -168,7 +148,7 @@ router.post('/', (req, res) => {
   // Detect allergens
   updateDishAllergens(dishId);
 
-  broadcast('dish_created', { id: dishId }, req.headers['x-client-id']);
+  req.broadcast('dish_created', { id: dishId }, req.headers['x-client-id']);
   res.status(201).json({ id: dishId });
 });
 
@@ -225,12 +205,12 @@ router.post('/:id/duplicate', (req, res) => {
 
   updateDishAllergens(newId);
 
-  broadcast('dish_created', { id: newId }, req.headers['x-client-id']);
+  req.broadcast('dish_created', { id: newId }, req.headers['x-client-id']);
   res.status(201).json({ id: newId });
 });
 
 // POST /api/dishes/import-url - Import recipe from URL
-router.post('/import-url', async (req, res) => {
+router.post('/import-url', asyncHandler(async (req, res) => {
   const { url } = req.body;
   if (!url) return res.status(400).json({ error: 'URL is required' });
 
@@ -240,7 +220,7 @@ router.post('/import-url', async (req, res) => {
   } catch (err) {
     res.status(422).json({ error: err.message });
   }
-});
+}));
 
 // POST /api/dishes/:id/favorite - Toggle favorite
 router.post('/:id/favorite', (req, res) => {
@@ -251,7 +231,7 @@ router.post('/:id/favorite', (req, res) => {
   const newVal = dish.is_favorite ? 0 : 1;
   db.prepare('UPDATE dishes SET is_favorite = ? WHERE id = ?').run(newVal, req.params.id);
 
-  broadcast('dish_updated', { id: parseInt(req.params.id) }, req.headers['x-client-id']);
+  req.broadcast('dish_updated', { id: parseInt(req.params.id) }, req.headers['x-client-id']);
   res.json({ is_favorite: newVal });
 });
 
@@ -259,7 +239,7 @@ router.post('/:id/favorite', (req, res) => {
 router.post('/:id/restore', (req, res) => {
   const db = getDb();
   db.prepare("UPDATE dishes SET deleted_at = NULL WHERE id = ?").run(req.params.id);
-  broadcast('dish_created', { id: parseInt(req.params.id) }, req.headers['x-client-id']);
+  req.broadcast('dish_created', { id: parseInt(req.params.id) }, req.headers['x-client-id']);
   res.json({ success: true });
 });
 
@@ -286,21 +266,7 @@ router.put('/:id', (req, res) => {
   // Replace ingredients if provided
   if (ingredients) {
     db.prepare('DELETE FROM dish_ingredients WHERE dish_id = ?').run(req.params.id);
-
-    const insertIngredient = db.prepare('INSERT OR IGNORE INTO ingredients (name) VALUES (?)');
-    const getIngredient = db.prepare('SELECT id FROM ingredients WHERE name = ? COLLATE NOCASE');
-    const insertDishIngredient = db.prepare(`
-      INSERT INTO dish_ingredients (dish_id, ingredient_id, quantity, unit, prep_note)
-      VALUES (?, ?, ?, ?, ?)
-    `);
-
-    for (const ing of ingredients) {
-      insertIngredient.run(ing.name);
-      const row = getIngredient.get(ing.name);
-      if (row) {
-        insertDishIngredient.run(req.params.id, row.id, ing.quantity || 0, ing.unit || 'g', ing.prep_note || '');
-      }
-    }
+    saveIngredients(db, req.params.id, ingredients);
 
     // Re-detect allergens
     updateDishAllergens(req.params.id);
@@ -316,7 +282,7 @@ router.put('/:id', (req, res) => {
     saveDishSubstitutions(db, req.params.id, substitutions);
   }
 
-  broadcast('dish_updated', { id: parseInt(req.params.id) }, req.headers['x-client-id']);
+  req.broadcast('dish_updated', { id: parseInt(req.params.id) }, req.headers['x-client-id']);
   res.json({ success: true });
 });
 
@@ -327,7 +293,7 @@ router.delete('/:id', (req, res) => {
   if (!dish) return res.status(404).json({ error: 'Dish not found' });
 
   db.prepare("UPDATE dishes SET deleted_at = datetime('now') WHERE id = ?").run(req.params.id);
-  broadcast('dish_deleted', { id: parseInt(req.params.id) }, req.headers['x-client-id']);
+  req.broadcast('dish_deleted', { id: parseInt(req.params.id) }, req.headers['x-client-id']);
   res.json({ success: true });
 });
 
@@ -338,7 +304,7 @@ router.post('/:id/photo', upload.single('photo'), (req, res) => {
 
   const photoPath = `/uploads/${req.file.filename}`;
   db.prepare('UPDATE dishes SET photo_path = ?, updated_at = datetime(\'now\') WHERE id = ?').run(photoPath, req.params.id);
-  broadcast('dish_updated', { id: parseInt(req.params.id) }, req.headers['x-client-id']);
+  req.broadcast('dish_updated', { id: parseInt(req.params.id) }, req.headers['x-client-id']);
   res.json({ photo_path: photoPath });
 });
 
@@ -373,6 +339,25 @@ router.delete('/allergen-keywords/:id', (req, res) => {
 });
 
 // --- Helper functions ---
+
+function saveIngredients(db, dishId, ingredients) {
+  if (!ingredients || !ingredients.length) return;
+
+  const insertIngredient = db.prepare('INSERT OR IGNORE INTO ingredients (name) VALUES (?)');
+  const getIngredient = db.prepare('SELECT id FROM ingredients WHERE name = ? COLLATE NOCASE');
+  const insertDishIngredient = db.prepare(`
+    INSERT INTO dish_ingredients (dish_id, ingredient_id, quantity, unit, prep_note)
+    VALUES (?, ?, ?, ?, ?)
+  `);
+
+  for (const ing of ingredients) {
+    insertIngredient.run(ing.name);
+    const row = getIngredient.get(ing.name);
+    if (row) {
+      insertDishIngredient.run(dishId, row.id, ing.quantity || 0, ing.unit || 'g', ing.prep_note || '');
+    }
+  }
+}
 
 function saveDishTags(db, dishId, tags) {
   if (!tags || !Array.isArray(tags)) return;

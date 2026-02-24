@@ -3,8 +3,8 @@ import { renderAllergenBadges } from '../components/allergenBadges.js';
 import { showToast } from '../components/toast.js';
 import { openModal, closeModal } from '../components/modal.js';
 import { openLightbox } from '../components/lightbox.js';
-
-const ALLERGEN_LIST = ['celery','gluten','crustaceans','eggs','fish','lupin','milk','molluscs','mustard','nuts','peanuts','sesame','soy','sulphites'];
+import { escapeHtml } from '../utils/escapeHtml.js';
+import { ALLERGEN_LIST, CATEGORY_ORDER, capitalize } from '../data/allergens.js';
 
 export async function renderMenuBuilder(container, menuId) {
   container.innerHTML = '<div class="loading">Loading menu...</div>';
@@ -30,8 +30,6 @@ export async function renderMenuBuilder(container, menuId) {
       grouped[cat].push(dish);
     }
 
-    const categoryOrder = ['starter', 'soup', 'salad', 'main', 'side', 'dessert', 'bread', 'sauce', 'beverage', 'other'];
-
     const hasSellPrice = menu.sell_price && menu.sell_price > 0;
     const foodCostClass = menu.menu_food_cost_percent > 35
       ? 'text-danger' : menu.menu_food_cost_percent > 30
@@ -41,8 +39,8 @@ export async function renderMenuBuilder(container, menuId) {
       <div class="page-header">
         <a href="#/menus" class="btn btn-back">&larr; Back</a>
         <div class="menu-title-area">
-          <h1 id="menu-title">${menu.name}</h1>
-          ${menu.description ? `<p class="subtitle">${menu.description}</p>` : ''}
+          <h1 id="menu-title">${escapeHtml(menu.name)}</h1>
+          ${menu.description ? `<p class="subtitle">${escapeHtml(menu.description)}</p>` : ''}
         </div>
         <div class="header-actions">
           <button id="add-dish-btn" class="btn btn-primary">+ Add Dish</button>
@@ -95,7 +93,7 @@ export async function renderMenuBuilder(container, menuId) {
               return ALLERGEN_LIST.map(a => `
                 <div class="allergen-cover-item">
                   <button type="button" class="allergen-toggle ${guestAllergies.includes(a) ? 'active' : ''}"
-                          data-allergen="${a}">${a.charAt(0).toUpperCase() + a.slice(1)}</button>
+                          data-allergen="${a}">${capitalize(a)}</button>
                   <input type="number" class="allergen-cover-count" data-allergen="${a}" placeholder="# covers"
                          min="0" max="999" value="${covers[a] || ''}"
                          style="display:${guestAllergies.includes(a) ? 'block' : 'none'};">
@@ -118,9 +116,9 @@ export async function renderMenuBuilder(container, menuId) {
         </div>
 
         <div class="menu-dishes" id="menu-dishes-list">
-          ${categoryOrder.filter(cat => grouped[cat]).map(cat => `
+          ${CATEGORY_ORDER.filter(cat => grouped[cat]).map(cat => `
             <div class="menu-category-section">
-              <h2 class="category-heading">${cat.charAt(0).toUpperCase() + cat.slice(1)}s</h2>
+              <h2 class="category-heading">${capitalize(cat)}s</h2>
               ${grouped[cat].map(dish => {
                 const hasConflict = dish.allergy_conflicts && dish.allergy_conflicts.length > 0;
                 return `
@@ -128,12 +126,12 @@ export async function renderMenuBuilder(container, menuId) {
                   <div class="drag-handle" title="Drag to reorder">&#8942;&#8942;</div>
                   <div class="dish-thumb">
                     ${dish.photo_path
-                      ? `<img src="${dish.photo_path}" alt="${dish.name}">`
+                      ? `<img src="${escapeHtml(dish.photo_path)}" alt="${escapeHtml(dish.name)}">`
                       : '<div class="no-thumb"></div>'
                     }
                   </div>
                   <div class="dish-info">
-                    <strong>${dish.name}</strong>
+                    <strong>${escapeHtml(dish.name)}</strong>
                     ${renderAllergenBadges(dish.allergens, true)}
                     ${hasConflict ? `<div class="allergy-warning">&#9888; Guest allergy: ${dish.allergy_conflicts.join(', ')}</div>` : ''}
                     ${dish.substitution_count > 0 ? `<span class="subs-badge" data-dish-id="${dish.id}" title="Has allergen substitutions">&#8644; ${dish.substitution_count} sub${dish.substitution_count > 1 ? 's' : ''}</span>` : ''}
@@ -462,11 +460,11 @@ export async function renderMenuBuilder(container, menuId) {
 
         for (const group of data.groups) {
           html += `<div class="todo-group">
-            <h3 class="todo-group-title">${group.category.charAt(0).toUpperCase() + group.category.slice(1)}</h3>`;
+            <h3 class="todo-group-title">${capitalize(group.category)}</h3>`;
           for (const item of group.items) {
             html += `<div class="todo-item" style="cursor:default;">
               <span class="todo-text">
-                <strong>${item.ingredient}</strong>
+                <strong>${escapeHtml(item.ingredient)}</strong>
                 <span class="todo-qty">${item.total_quantity} ${item.unit}</span>
                 ${item.estimated_cost !== null ? `<span class="todo-cost">$${item.estimated_cost.toFixed(2)}</span>` : ''}
               </span>
@@ -482,7 +480,7 @@ export async function renderMenuBuilder(container, menuId) {
         modal.querySelector('#scale-print-btn').addEventListener('click', () => {
           const printWin = window.open('', '_blank');
           printWin.document.write(`
-            <html><head><title>Scaled Shopping List - ${data.menu_name}</title>
+            <html><head><title>Scaled Shopping List - ${escapeHtml(data.menu_name)}</title>
             <style>
               body { font-family: -apple-system, sans-serif; padding: 20px; }
               h1 { font-size: 1.4rem; margin-bottom: 4px; }
@@ -490,16 +488,16 @@ export async function renderMenuBuilder(container, menuId) {
               .item { padding: 4px 0; display: flex; justify-content: space-between; }
               .summary { margin: 12px 0; padding: 8px; background: #f5f5f0; }
             </style></head><body>
-            <h1>Scaled Shopping List: ${data.menu_name}</h1>
+            <h1>Scaled Shopping List: ${escapeHtml(data.menu_name)}</h1>
             <div class="summary">
               <strong>${data.covers} covers</strong> (${data.scale_factor}x scale) |
               Estimated Total: <strong>$${data.total_estimated_cost.toFixed(2)}</strong>
             </div>
             ${data.groups.map(g => `
-              <h3>${g.category.charAt(0).toUpperCase() + g.category.slice(1)}</h3>
+              <h3>${capitalize(g.category)}</h3>
               ${g.items.map(i => `
                 <div class="item">
-                  <span>${i.ingredient} &mdash; ${i.total_quantity} ${i.unit}</span>
+                  <span>${escapeHtml(i.ingredient)} &mdash; ${i.total_quantity} ${i.unit}</span>
                   <span>${i.estimated_cost !== null ? '$' + i.estimated_cost.toFixed(2) : ''}</span>
                 </div>
               `).join('')}
@@ -520,11 +518,10 @@ export async function renderMenuBuilder(container, menuId) {
   async function showKitchenPrint() {
     try {
       const data = await getMenuKitchenPrint(menuId);
-      const categoryOrder = ['starter', 'soup', 'salad', 'main', 'side', 'dessert', 'bread', 'sauce', 'beverage', 'other'];
       const printWin = window.open('', '_blank');
 
       let html = `
-        <html><head><title>Kitchen Sheet - ${data.menu.name}</title>
+        <html><head><title>Kitchen Sheet - ${escapeHtml(data.menu.name)}</title>
         <style>
           body { font-family: -apple-system, sans-serif; padding: 20px; color: #1a1a1a; }
           h1 { font-size: 1.6rem; margin-bottom: 4px; border-bottom: 3px solid #1a1a1a; padding-bottom: 8px; }
@@ -543,7 +540,7 @@ export async function renderMenuBuilder(container, menuId) {
           .subs strong { color: #e65100; }
           @media print { body { padding: 0; } }
         </style></head><body>
-        <h1>${data.menu.name}</h1>
+        <h1>${escapeHtml(data.menu.name)}</h1>
         <div class="meta">
           Printed: ${new Date().toLocaleDateString()}
           ${data.expected_covers ? ` | <strong>Expected Covers: ${data.expected_covers}</strong>` : ''}
@@ -551,13 +548,13 @@ export async function renderMenuBuilder(container, menuId) {
         </div>
       `;
 
-      for (const cat of categoryOrder) {
+      for (const cat of CATEGORY_ORDER) {
         if (!data.grouped[cat]) continue;
-        html += `<div class="category-header">${cat.charAt(0).toUpperCase() + cat.slice(1)}s</div>`;
+        html += `<div class="category-header">${capitalize(cat)}s</div>`;
         for (const dish of data.grouped[cat]) {
           html += `
             <div class="dish-block">
-              <div class="dish-name">${dish.name}</div>
+              <div class="dish-name">${escapeHtml(dish.name)}</div>
               <div class="dish-meta">
                 ${dish.servings} serving${dish.servings > 1 ? 's' : ''}
                 ${dish.allergens.length ? ' | Allergens: ' + dish.allergens.map(a => `<span class="allergen-tag">${a}</span>`).join('') : ''}
@@ -566,19 +563,19 @@ export async function renderMenuBuilder(container, menuId) {
           if (dish.ingredients.length) {
             html += `<table><thead><tr><th>Ingredient</th><th>Qty</th><th>Unit</th><th>Prep</th></tr></thead><tbody>`;
             for (const ing of dish.ingredients) {
-              html += `<tr><td>${ing.ingredient_name}</td><td>${ing.quantity}</td><td>${ing.unit}</td><td>${ing.prep_note || ''}</td></tr>`;
+              html += `<tr><td>${escapeHtml(ing.ingredient_name)}</td><td>${ing.quantity}</td><td>${ing.unit}</td><td>${escapeHtml(ing.prep_note || '')}</td></tr>`;
             }
             html += `</tbody></table>`;
           }
           if (dish.substitutions && dish.substitutions.length) {
             html += `<div class="subs"><strong>Substitutions:</strong> `;
             html += dish.substitutions.map(s =>
-              `${s.allergen}: ${s.original_ingredient} &rarr; ${s.substitute_ingredient}${s.notes ? ' (' + s.notes + ')' : ''}`
+              `${escapeHtml(s.allergen)}: ${escapeHtml(s.original_ingredient)} &rarr; ${escapeHtml(s.substitute_ingredient)}${s.notes ? ' (' + escapeHtml(s.notes) + ')' : ''}`
             ).join('; ');
             html += `</div>`;
           }
           if (dish.chefs_notes) {
-            html += `<div class="notes">${dish.chefs_notes}</div>`;
+            html += `<div class="notes">${escapeHtml(dish.chefs_notes)}</div>`;
           }
           html += `</div>`;
         }
@@ -617,8 +614,8 @@ export async function renderMenuBuilder(container, menuId) {
         ${available.map(d => `
           <div class="dish-picker-item" data-id="${d.id}">
             <div class="dish-picker-info">
-              <strong>${d.name}</strong>
-              <span class="category-badge">${d.category}</span>
+              <strong>${escapeHtml(d.name)}</strong>
+              <span class="category-badge">${escapeHtml(d.category)}</span>
               ${renderAllergenBadges(d.allergens, true)}
             </div>
             <button class="btn btn-sm btn-primary add-to-menu-btn" data-id="${d.id}">Add</button>

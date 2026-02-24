@@ -1,24 +1,7 @@
 // Unit Converter Modal
 
-const UNITS = {
-  weight: {
-    label: 'Weight',
-    units: ['g', 'kg', 'oz', 'lb'],
-    toBase: { g: 1, kg: 1000, oz: 28.3495, lb: 453.592 }, // base = grams
-  },
-  volume: {
-    label: 'Volume',
-    units: ['ml', 'L', 'tsp', 'tbsp', 'fl oz', 'cup', 'pint', 'quart', 'gallon'],
-    toBase: { ml: 1, L: 1000, tsp: 4.92892, tbsp: 14.7868, 'fl oz': 29.5735, cup: 236.588, pint: 473.176, quart: 946.353, gallon: 3785.41 }, // base = ml
-  },
-  temperature: {
-    label: 'Temperature',
-    units: ['°C', '°F'],
-    toBase: null, // handled separately
-  },
-};
+import { UNIT_GROUPS, convertUnit } from '../utils/unitConversion.js';
 
-// Common kitchen reference table
 const KITCHEN_REFERENCE = [
   { label: '1 tsp',      metric: '5 ml' },
   { label: '1 tbsp',     metric: '15 ml / 3 tsp' },
@@ -37,25 +20,18 @@ const KITCHEN_REFERENCE = [
   { label: '220°C',      metric: '428°F (very hot)' },
 ];
 
-function convert(value, fromUnit, toUnit, category) {
+function formatResult(value, fromUnit, toUnit, category) {
   if (isNaN(value)) return '';
-  if (fromUnit === toUnit) return value.toFixed(4).replace(/\.?0+$/, '');
-
-  if (category === 'temperature') {
-    if (fromUnit === '°C' && toUnit === '°F') return ((value * 9/5) + 32).toFixed(1);
-    if (fromUnit === '°F' && toUnit === '°C') return (((value - 32) * 5/9)).toFixed(1);
-    return value;
-  }
-
-  const { toBase } = UNITS[category];
-  const baseValue = value * toBase[fromUnit];
-  return (baseValue / toBase[toUnit]).toFixed(4).replace(/\.?0+$/, '');
+  const result = convertUnit(value, fromUnit, toUnit, category);
+  if (result === null || result === undefined) return '';
+  if (category === 'temperature') return Number(result).toFixed(1);
+  return Number(result).toFixed(4).replace(/\.?0+$/, '');
 }
 
 function getAllConversions(value, fromUnit, category) {
   if (isNaN(value) || value === '') return [];
-  const units = UNITS[category].units.filter(u => u !== fromUnit);
-  return units.map(u => ({ unit: u, result: convert(Number(value), fromUnit, u, category) }));
+  const units = UNIT_GROUPS[category].units.filter(u => u !== fromUnit);
+  return units.map(u => ({ unit: u, result: formatResult(Number(value), fromUnit, u, category) }));
 }
 
 export function openUnitConverter() {
@@ -71,7 +47,7 @@ export function openUnitConverter() {
   overlay.className = 'modal-overlay';
 
   function buildHTML() {
-    const cat = UNITS[activeCategory];
+    const cat = UNIT_GROUPS[activeCategory];
     return `
       <div class="modal unit-converter-modal">
         <div class="modal-header">
@@ -80,7 +56,7 @@ export function openUnitConverter() {
         </div>
 
         <div class="uc-category-tabs">
-          ${Object.entries(UNITS).map(([key, val]) => `
+          ${Object.entries(UNIT_GROUPS).map(([key, val]) => `
             <button class="uc-tab-btn ${activeCategory === key ? 'active' : ''}" data-cat="${key}">${val.label}</button>
           `).join('')}
         </div>
@@ -164,7 +140,7 @@ export function openUnitConverter() {
     overlay.querySelectorAll('.uc-tab-btn').forEach(btn => {
       btn.addEventListener('click', () => {
         activeCategory = btn.dataset.cat;
-        fromUnit = UNITS[activeCategory].units[0];
+        fromUnit = UNIT_GROUPS[activeCategory].units[0];
         inputValue = '';
         mount();
       });

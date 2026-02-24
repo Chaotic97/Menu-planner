@@ -59,12 +59,7 @@ app.use('/uploads', express.static(uploadsDir));
 const server = http.createServer(app);
 
 // WebSocket setup
-let WebSocketServer;
-try {
-  WebSocketServer = require('ws').WebSocketServer;
-} catch {
-  console.warn('ws package not installed. Real-time sync disabled. Run: npm install ws');
-}
+const { WebSocketServer } = require('ws');
 
 const clients = new Map(); // clientId -> ws
 
@@ -77,48 +72,52 @@ function broadcast(type, payload, excludeClientId) {
   }
 }
 
-if (WebSocketServer) {
-  const wss = new WebSocketServer({ server });
+const wss = new WebSocketServer({ server });
 
-  wss.on('connection', (ws) => {
-    let clientId = null;
+wss.on('connection', (ws) => {
+  let clientId = null;
 
-    ws.on('message', (data) => {
-      try {
-        const msg = JSON.parse(data);
-        if (msg.type === 'identify' && msg.clientId) {
-          clientId = msg.clientId;
-          clients.set(clientId, ws);
-        }
-      } catch {}
-    });
-
-    ws.on('close', () => {
-      if (clientId) clients.delete(clientId);
-    });
+  ws.on('message', (data) => {
+    try {
+      const msg = JSON.parse(data);
+      if (msg.type === 'identify' && msg.clientId) {
+        clientId = msg.clientId;
+        clients.set(clientId, ws);
+      }
+    } catch {}
   });
-}
+
+  ws.on('close', () => {
+    if (clientId) clients.delete(clientId);
+  });
+});
 
 // Initialize database then start server
 async function start() {
   await getDb();
   console.log('Database ready.');
 
+  // Make broadcast available to all route handlers via req.broadcast
+  app.use((req, res, next) => {
+    req.broadcast = broadcast;
+    next();
+  });
+
   // Routes
   app.use('/api/auth', require('./routes/auth'));
-
-  const dishesRouter = require('./routes/dishes');
-  const menusRouter = require('./routes/menus');
-
-  // Inject broadcast function into routers
-  dishesRouter.setBroadcast(broadcast);
-  menusRouter.setBroadcast(broadcast);
-
-  app.use('/api/dishes', dishesRouter);
+  app.use('/api/dishes', require('./routes/dishes'));
   app.use('/api/ingredients', require('./routes/ingredients'));
-  app.use('/api/menus', menusRouter);
+  app.use('/api/menus', require('./routes/menus'));
   app.use('/api/todos', require('./routes/todos'));
   app.use('/api/service-notes', require('./routes/serviceNotes'));
+
+  // Global error handler — catches unhandled errors from async routes
+  app.use((err, req, res, _next) => {
+    console.error('Unhandled route error:', err);
+    res.status(err.status || 500).json({
+      error: process.env.NODE_ENV === 'production' ? 'Internal server error' : err.message,
+    });
+  });
 
   server.listen(PORT, () => {
     console.log(`Menu Planner running at http://localhost:${PORT}`);

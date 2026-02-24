@@ -5,37 +5,16 @@ import { openLightbox } from '../components/lightbox.js';
 import { CATEGORIES } from '../data/categories.js';
 import { UNITS } from '../data/units.js';
 import { loadAllergenKeywords, detectAllergensClient } from '../data/allergenKeywords.js';
-
-const ALLERGEN_LIST = ['celery','gluten','crustaceans','eggs','fish','lupin','milk','molluscs','mustard','nuts','peanuts','sesame','soy','sulphites'];
-
-// Unit conversion tables — base unit is g (weight) or ml (volume)
-const UNIT_GROUPS = {
-  weight: { units: ['g','kg','oz','lb'], toBase: { g:1, kg:1000, oz:28.3495, lb:453.592 } },
-  volume: { units: ['ml','L','tsp','tbsp','cup'], toBase: { ml:1, L:1000, tsp:4.92892, tbsp:14.7868, cup:236.588 } },
-};
-
-function getUnitGroup(unit) {
-  for (const [group, data] of Object.entries(UNIT_GROUPS)) {
-    if (data.units.includes(unit)) return { group, data };
-  }
-  return null;
-}
+import { escapeHtml } from '../utils/escapeHtml.js';
+import { convertUnit as rawConvert, compatibleUnits } from '../utils/unitConversion.js';
+import { ALLERGEN_LIST, capitalize } from '../data/allergens.js';
 
 function convertUnit(qty, fromUnit, toUnit) {
-  const g = getUnitGroup(fromUnit);
-  if (!g) return null;
-  const base = qty * g.data.toBase[fromUnit];
-  const result = base / g.data.toBase[toUnit];
-  // Round nicely
+  const result = rawConvert(qty, fromUnit, toUnit);
+  if (result === null) return null;
   if (result >= 100) return Math.round(result * 10) / 10;
   if (result >= 10)  return Math.round(result * 100) / 100;
   return Math.round(result * 10000) / 10000;
-}
-
-function compatibleUnits(fromUnit) {
-  const g = getUnitGroup(fromUnit);
-  if (!g) return [];
-  return g.data.units.filter(u => u !== fromUnit);
 }
 
 export async function renderDishForm(container, dishId) {
@@ -95,7 +74,7 @@ export async function renderDishForm(container, dishId) {
     </div>
     ${importedData ? `
       <div style="padding:12px 16px; background:#e8f5e9; border-radius:var(--radius-sm); margin-bottom:16px; font-size:0.9rem;">
-        Imported from: <a href="${importedData.source_url}" target="_blank" rel="noopener">${importedData.source_url}</a>.
+        Imported from: <a href="${escapeHtml(importedData.source_url)}" target="_blank" rel="noopener">${escapeHtml(importedData.source_url)}</a>.
         Review the details below and save when ready.
       </div>
     ` : ''}
@@ -104,7 +83,7 @@ export async function renderDishForm(container, dishId) {
         <div class="form-main">
           <div class="form-group">
             <label for="dish-name">Dish Name *</label>
-            <input type="text" id="dish-name" class="input" required value="${dish ? dish.name : (importedData ? importedData.name : '')}" placeholder="e.g., Pan-Seared Salmon">
+            <input type="text" id="dish-name" class="input" required value="${dish ? escapeHtml(dish.name) : (importedData ? escapeHtml(importedData.name) : '')}" placeholder="e.g., Pan-Seared Salmon">
           </div>
           <div class="form-row">
             <div class="form-group">
@@ -123,11 +102,11 @@ export async function renderDishForm(container, dishId) {
           </div>
           <div class="form-group">
             <label for="dish-tags">Tags</label>
-            <input type="text" id="dish-tags" class="input" placeholder="e.g., summer, grill, quick (comma-separated)" value="${existingTags.join(', ')}">
+            <input type="text" id="dish-tags" class="input" placeholder="e.g., summer, grill, quick (comma-separated)" value="${escapeHtml(existingTags.join(', '))}">
           </div>
           <div class="form-group">
             <label for="dish-desc">Description</label>
-            <textarea id="dish-desc" class="input" rows="2" placeholder="Brief description...">${dish ? dish.description : (importedData ? importedData.description : '')}</textarea>
+            <textarea id="dish-desc" class="input" rows="2" placeholder="Brief description...">${dish ? escapeHtml(dish.description) : (importedData ? escapeHtml(importedData.description) : '')}</textarea>
           </div>
 
           <!-- Photo Upload -->
@@ -135,7 +114,7 @@ export async function renderDishForm(container, dishId) {
             <label>Photo</label>
             <div class="photo-upload" id="photo-upload-area">
               ${dish && dish.photo_path
-                ? `<img src="${dish.photo_path}" alt="Dish photo" class="photo-preview" id="photo-preview">`
+                ? `<img src="${escapeHtml(dish.photo_path)}" alt="Dish photo" class="photo-preview" id="photo-preview">`
                 : '<div class="photo-placeholder" id="photo-preview"><span>Tap to upload photo</span></div>'
               }
               <input type="file" id="photo-input" accept="image/*" hidden>
@@ -180,7 +159,7 @@ export async function renderDishForm(container, dishId) {
           <!-- Chef's Notes -->
           <div class="form-group">
             <label for="dish-notes">Chef's Notes</label>
-            <textarea id="dish-notes" class="input" rows="4" placeholder="Prep instructions, timing notes, plating details...&#10;e.g., Marinate overnight. Sear skin-side down 4 minutes.">${dish ? dish.chefs_notes : (importedData ? importedData.instructions : '')}</textarea>
+            <textarea id="dish-notes" class="input" rows="4" placeholder="Prep instructions, timing notes, plating details...&#10;e.g., Marinate overnight. Sear skin-side down 4 minutes.">${dish ? escapeHtml(dish.chefs_notes) : (importedData ? escapeHtml(importedData.instructions) : '')}</textarea>
           </div>
         </div>
       </div>
@@ -534,7 +513,7 @@ function ingredientRow(ing, index) {
     <div class="ingredient-row" data-index="${index}">
       <div class="ing-main-controls">
         <div class="ing-field ing-name-field">
-          <input type="text" class="input ing-name" placeholder="Ingredient name" value="${ing ? ing.ingredient_name : ''}">
+          <input type="text" class="input ing-name" placeholder="Ingredient name" value="${escapeHtml(ing ? ing.ingredient_name : '')}">
         </div>
         <div class="ing-field ing-qty-field">
           <input type="number" class="input ing-qty" placeholder="Qty" step="0.01" min="0" value="${ing ? ing.quantity : ''}">
@@ -547,7 +526,7 @@ function ingredientRow(ing, index) {
         <button type="button" class="btn btn-icon ing-convert-btn" title="Convert unit"
                 ${!canConvert ? 'disabled style="opacity:0.35;cursor:not-allowed;"' : ''}>⇄</button>
         <div class="ing-field ing-prep-field">
-          <input type="text" class="input ing-prep" placeholder="Prep note (e.g., dice, marinate 24hr)" value="${ing ? ing.prep_note : ''}">
+          <input type="text" class="input ing-prep" placeholder="Prep note (e.g., dice, marinate 24hr)" value="${escapeHtml(ing ? ing.prep_note : '')}">
         </div>
         <button type="button" class="btn btn-icon remove-ingredient" title="Remove">&times;</button>
       </div>
@@ -562,18 +541,18 @@ function substitutionRow(sub, index) {
       <div class="sub-field sub-allergen-field">
         <select class="input sub-allergen" style="font-size:0.85rem;padding:6px 8px;min-height:36px;">
           <option value="">Allergen...</option>
-          ${ALLERGEN_LIST.map(a => `<option value="${a}" ${sub && sub.allergen === a ? 'selected' : ''}>${a.charAt(0).toUpperCase() + a.slice(1)}</option>`).join('')}
+          ${ALLERGEN_LIST.map(a => `<option value="${a}" ${sub && sub.allergen === a ? 'selected' : ''}>${capitalize(a)}</option>`).join('')}
         </select>
       </div>
       <div class="sub-field sub-original-field">
-        <input type="text" class="input sub-original" placeholder="Original ingredient" value="${sub ? sub.original_ingredient : ''}" style="font-size:0.85rem;padding:6px 8px;min-height:36px;">
+        <input type="text" class="input sub-original" placeholder="Original ingredient" value="${escapeHtml(sub ? sub.original_ingredient : '')}" style="font-size:0.85rem;padding:6px 8px;min-height:36px;">
       </div>
       <span class="sub-arrow">&rarr;</span>
       <div class="sub-field sub-substitute-field">
-        <input type="text" class="input sub-substitute" placeholder="Substitute" value="${sub ? sub.substitute_ingredient : ''}" style="font-size:0.85rem;padding:6px 8px;min-height:36px;">
+        <input type="text" class="input sub-substitute" placeholder="Substitute" value="${escapeHtml(sub ? sub.substitute_ingredient : '')}" style="font-size:0.85rem;padding:6px 8px;min-height:36px;">
       </div>
       <div class="sub-field sub-notes-field">
-        <input type="text" class="input sub-notes" placeholder="Notes" value="${sub ? (sub.notes || '') : ''}" style="font-size:0.85rem;padding:6px 8px;min-height:36px;">
+        <input type="text" class="input sub-notes" placeholder="Notes" value="${escapeHtml(sub ? (sub.notes || '') : '')}" style="font-size:0.85rem;padding:6px 8px;min-height:36px;">
       </div>
       <button type="button" class="btn btn-icon remove-sub" title="Remove">&times;</button>
     </div>
@@ -586,9 +565,9 @@ function renderCostBreakdown(dish) {
   let html = '<div class="cost-table">';
   for (const item of dish.cost.lineItems) {
     html += `<div class="cost-row">
-      <span>${item.ingredient}</span>
+      <span>${escapeHtml(item.ingredient)}</span>
       <span>${item.quantity} ${item.unit}</span>
-      <span>${item.cost !== null ? '$' + item.cost.toFixed(2) : (item.warning || 'N/A')}</span>
+      <span>${item.cost !== null ? '$' + item.cost.toFixed(2) : (item.warning ? escapeHtml(item.warning) : 'N/A')}</span>
     </div>`;
   }
   html += `<div class="cost-row cost-total">

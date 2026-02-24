@@ -2,6 +2,7 @@ import { getSpecials, createSpecial, updateSpecial, deleteSpecial, getDishes } f
 import { renderAllergenBadges } from '../components/allergenBadges.js';
 import { showToast } from '../components/toast.js';
 import { openModal, closeModal } from '../components/modal.js';
+import { escapeHtml } from '../utils/escapeHtml.js';
 
 // Helper: get Monday of current week
 function getMonday(d) {
@@ -96,18 +97,18 @@ export async function renderSpecials(container) {
         <div class="special-card ${!s.is_active ? 'special-inactive' : ''}" data-id="${s.id}">
           <div class="special-image">
             ${s.photo_path
-              ? `<img src="${s.photo_path}" alt="${s.dish_name}">`
+              ? `<img src="${escapeHtml(s.photo_path)}" alt="${escapeHtml(s.dish_name)}">`
               : '<div class="no-image"><span>No Photo</span></div>'
             }
           </div>
           <div class="special-body">
             <div class="special-header">
-              <span class="category-badge">${s.category}</span>
+              <span class="category-badge">${escapeHtml(s.category)}</span>
               ${!s.is_active ? '<span class="special-tag inactive">Inactive</span>' : ''}
             </div>
-            <h3>${s.dish_name}</h3>
-            ${s.dish_description ? `<p class="card-desc">${s.dish_description}</p>` : ''}
-            ${s.notes ? `<p class="special-notes">"${s.notes}"</p>` : ''}
+            <h3>${escapeHtml(s.dish_name)}</h3>
+            ${s.dish_description ? `<p class="card-desc">${escapeHtml(s.dish_description)}</p>` : ''}
+            ${s.notes ? `<p class="special-notes">"${escapeHtml(s.notes)}"</p>` : ''}
             ${renderAllergenBadges(s.allergens, true)}
             ${s.suggested_price ? `<div class="card-price">$${Number(s.suggested_price).toFixed(2)}</div>` : ''}
             <div class="special-dates">${formatWeek(s.week_start, s.week_end)}</div>
@@ -194,11 +195,11 @@ export async function renderSpecials(container) {
           <input type="text" id="special-dish-search" class="input" placeholder="Search dishes...">
           <div class="dish-picker-list" id="special-dish-list">
             ${allDishes.map(d => `
-              <label class="special-dish-option" data-name="${d.name.toLowerCase()}">
+              <label class="special-dish-option" data-name="${escapeHtml(d.name.toLowerCase())}">
                 <input type="radio" name="special_dish" value="${d.id}">
                 <span class="special-dish-label">
-                  <strong>${d.name}</strong>
-                  <span class="category-badge">${d.category}</span>
+                  <strong>${escapeHtml(d.name)}</strong>
+                  <span class="category-badge">${escapeHtml(d.category)}</span>
                 </span>
               </label>
             `).join('')}

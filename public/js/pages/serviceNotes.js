@@ -1,4 +1,6 @@
+import { getServiceNotes, getServiceNoteDates, createServiceNote, updateServiceNote, deleteServiceNote } from '../api.js';
 import { showToast } from '../components/toast.js';
+import { escapeHtml } from '../utils/escapeHtml.js';
 
 const SHIFTS = [
   { value: 'all',   label: 'All Day',   color: '#546e7a' },
@@ -58,8 +60,8 @@ export async function renderServiceNotes(container) {
   async function loadDatesWithNotes() {
     const monthStr = `${calYear}-${String(calMonth + 1).padStart(2, '0')}`;
     try {
-      const res = await fetch(`/api/service-notes/dates?month=${monthStr}`);
-      datesWithNotes = new Set(await res.json());
+      const dates = await getServiceNoteDates({ month: monthStr });
+      datesWithNotes = new Set(dates);
     } catch {}
   }
 
@@ -67,8 +69,7 @@ export async function renderServiceNotes(container) {
     const panel = document.getElementById('sn-notes-panel');
     panel.innerHTML = '<div class="loading">Loading...</div>';
     try {
-      const res = await fetch(`/api/service-notes?date=${selectedDate}`);
-      notes = await res.json();
+      notes = await getServiceNotes({ date: selectedDate });
       renderNotes();
     } catch {
       panel.innerHTML = '<div class="error">Failed to load notes.</div>';
@@ -141,14 +142,14 @@ export async function renderServiceNotes(container) {
                 <span class="sn-shift-badge" style="background:${color}18;color:${color};border:1px solid ${color}40;">
                   ${shiftLabel(note.shift)}
                 </span>
-                ${note.title ? `<span class="sn-note-title">${note.title}</span>` : ''}
+                ${note.title ? `<span class="sn-note-title">${escapeHtml(note.title)}</span>` : ''}
               </div>
               <div class="sn-note-actions">
                 <button class="btn btn-sm edit-note-btn" data-id="${note.id}">Edit</button>
                 <button class="btn btn-sm btn-danger delete-note-btn" data-id="${note.id}">Delete</button>
               </div>
             </div>
-            ${note.content ? `<div class="sn-note-content">${note.content.replace(/\n/g, '<br>')}</div>` : ''}
+            ${note.content ? `<div class="sn-note-content">${escapeHtml(note.content).replace(/\n/g, '<br>')}</div>` : ''}
           </div>
         `;
       }).join('');
@@ -169,7 +170,7 @@ export async function renderServiceNotes(container) {
       btn.addEventListener('click', async () => {
         if (!confirm('Delete this note?')) return;
         try {
-          await fetch(`/api/service-notes/${btn.dataset.id}`, { method: 'DELETE' });
+          await deleteServiceNote(btn.dataset.id);
           showToast('Note deleted', 'info');
           await loadNotes();
           await loadDatesWithNotes();
@@ -215,12 +216,12 @@ export async function renderServiceNotes(container) {
           <label>Title <span class="text-muted" style="font-weight:400;">(optional)</span></label>
           <input type="text" id="sn-title" class="input"
                  placeholder="e.g. 86 list, VIP table, Allergy alert, Staff reminder"
-                 value="${existingNote?.title || ''}">
+                 value="${escapeHtml(existingNote?.title || '')}">
         </div>
         <div class="form-group">
           <label>Notes</label>
           <textarea id="sn-content" class="input" rows="6"
-                    placeholder="Service notes, prep reminders, 86'd items, staff comms...">${existingNote?.content || ''}</textarea>
+                    placeholder="Service notes, prep reminders, 86'd items, staff comms...">${escapeHtml(existingNote?.content || '')}</textarea>
         </div>
         <div class="form-actions">
           <button class="btn btn-primary" id="sn-save-btn">${isEdit ? 'Save Changes' : 'Add Note'}</button>
@@ -253,11 +254,11 @@ export async function renderServiceNotes(container) {
       saveBtn.textContent = 'Saving...';
 
       try {
-        await fetch(isEdit ? `/api/service-notes/${existingNote.id}` : '/api/service-notes', {
-          method: isEdit ? 'PUT' : 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ date, shift, title, content }),
-        });
+        if (isEdit) {
+          await updateServiceNote(existingNote.id, { date, shift, title, content });
+        } else {
+          await createServiceNote({ date, shift, title, content });
+        }
         overlay.remove();
         if (date !== selectedDate) {
           selectedDate = date;

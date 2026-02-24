@@ -4,10 +4,6 @@ const { calculateDishCost } = require('../services/costCalculator');
 
 const router = express.Router();
 
-// Broadcast helper (set by server.js after WebSocket init)
-let broadcast = () => {};
-router.setBroadcast = (fn) => { broadcast = fn; };
-
 // Helper: compute cost for a single dish
 function getDishCost(db, dishId) {
   const ingredients = db.prepare(`
@@ -180,7 +176,7 @@ router.post('/', (req, res) => {
     'INSERT INTO menus (name, description, sell_price, expected_covers, guest_allergies, allergen_covers) VALUES (?, ?, ?, ?, ?, ?)'
   ).run(name, description || '', sell_price || 0, expected_covers || 0, guest_allergies || '', coversJson);
 
-  broadcast('menu_created', { id: result.lastInsertRowid }, req.headers['x-client-id']);
+  req.broadcast('menu_created', { id: result.lastInsertRowid }, req.headers['x-client-id']);
   res.status(201).json({ id: result.lastInsertRowid });
 });
 
@@ -206,7 +202,7 @@ router.put('/:id', (req, res) => {
   params.push(req.params.id);
   db.prepare(`UPDATE menus SET ${updates.join(', ')} WHERE id = ?`).run(...params);
 
-  broadcast('menu_updated', { id: parseInt(req.params.id) }, req.headers['x-client-id']);
+  req.broadcast('menu_updated', { id: parseInt(req.params.id) }, req.headers['x-client-id']);
   res.json({ success: true });
 });
 
@@ -217,7 +213,7 @@ router.delete('/:id', (req, res) => {
   if (!menu) return res.status(404).json({ error: 'Menu not found' });
 
   db.prepare("UPDATE menus SET deleted_at = datetime('now') WHERE id = ?").run(req.params.id);
-  broadcast('menu_deleted', { id: parseInt(req.params.id) }, req.headers['x-client-id']);
+  req.broadcast('menu_deleted', { id: parseInt(req.params.id) }, req.headers['x-client-id']);
   res.json({ success: true });
 });
 
@@ -225,7 +221,7 @@ router.delete('/:id', (req, res) => {
 router.post('/:id/restore', (req, res) => {
   const db = getDb();
   db.prepare("UPDATE menus SET deleted_at = NULL WHERE id = ?").run(req.params.id);
-  broadcast('menu_created', { id: parseInt(req.params.id) }, req.headers['x-client-id']);
+  req.broadcast('menu_created', { id: parseInt(req.params.id) }, req.headers['x-client-id']);
   res.json({ success: true });
 });
 
@@ -243,7 +239,7 @@ router.put('/:id/dishes/reorder', (req, res) => {
     stmt.run(item.sort_order, req.params.id, item.dish_id);
   }
 
-  broadcast('menu_updated', { id: parseInt(req.params.id) }, req.headers['x-client-id']);
+  req.broadcast('menu_updated', { id: parseInt(req.params.id) }, req.headers['x-client-id']);
   res.json({ success: true });
 });
 
@@ -261,7 +257,7 @@ router.post('/:id/dishes', (req, res) => {
     db.prepare('INSERT INTO menu_dishes (menu_id, dish_id, servings, sort_order) VALUES (?, ?, ?, ?)').run(
       req.params.id, dish_id, servings || 1, order
     );
-    broadcast('menu_updated', { id: parseInt(req.params.id) }, req.headers['x-client-id']);
+    req.broadcast('menu_updated', { id: parseInt(req.params.id) }, req.headers['x-client-id']);
     res.status(201).json({ success: true });
   } catch (err) {
     if (err.message && err.message.includes('UNIQUE')) {
@@ -286,7 +282,7 @@ router.put('/:id/dishes/:dishId', (req, res) => {
   params.push(req.params.id, req.params.dishId);
   db.prepare(`UPDATE menu_dishes SET ${updates.join(', ')} WHERE menu_id = ? AND dish_id = ?`).run(...params);
 
-  broadcast('menu_updated', { id: parseInt(req.params.id) }, req.headers['x-client-id']);
+  req.broadcast('menu_updated', { id: parseInt(req.params.id) }, req.headers['x-client-id']);
   res.json({ success: true });
 });
 
@@ -294,7 +290,7 @@ router.put('/:id/dishes/:dishId', (req, res) => {
 router.delete('/:id/dishes/:dishId', (req, res) => {
   const db = getDb();
   db.prepare('DELETE FROM menu_dishes WHERE menu_id = ? AND dish_id = ?').run(req.params.id, req.params.dishId);
-  broadcast('menu_updated', { id: parseInt(req.params.id) }, req.headers['x-client-id']);
+  req.broadcast('menu_updated', { id: parseInt(req.params.id) }, req.headers['x-client-id']);
   res.json({ success: true });
 });
 

@@ -3,6 +3,7 @@ const bcrypt = require('bcrypt');
 const crypto = require('crypto');
 const { getDb } = require('../db/database');
 const { sendPasswordResetEmail } = require('../services/emailService');
+const asyncHandler = require('../middleware/asyncHandler');
 
 const router = express.Router();
 const SALT_ROUNDS = 12;
@@ -16,17 +17,17 @@ function setSetting(db, key, value) {
 }
 
 // GET /api/auth/status - check if setup is complete and if user is logged in
-router.get('/status', async (req, res) => {
+router.get('/status', asyncHandler(async (req, res) => {
   const db = await getDb();
   const passwordRow = getSetting(db, 'password_hash');
   const isSetup = !!passwordRow;
   const isAuthenticated = !!(req.session && req.session.authenticated);
 
   res.json({ isSetup, isAuthenticated });
-});
+}));
 
 // POST /api/auth/setup - initial password + email setup
-router.post('/setup', async (req, res) => {
+router.post('/setup', asyncHandler(async (req, res) => {
   const db = await getDb();
   const existing = getSetting(db, 'password_hash');
 
@@ -53,10 +54,10 @@ router.post('/setup', async (req, res) => {
     if (err) return res.status(500).json({ error: 'Session error.' });
     res.json({ success: true });
   });
-});
+}));
 
 // POST /api/auth/login
-router.post('/login', async (req, res) => {
+router.post('/login', asyncHandler(async (req, res) => {
   const db = await getDb();
   const passwordRow = getSetting(db, 'password_hash');
 
@@ -79,7 +80,7 @@ router.post('/login', async (req, res) => {
     if (err) return res.status(500).json({ error: 'Session error.' });
     res.json({ success: true });
   });
-});
+}));
 
 // POST /api/auth/logout
 router.post('/logout', (req, res) => {
@@ -89,7 +90,7 @@ router.post('/logout', (req, res) => {
 });
 
 // POST /api/auth/forgot - send reset email
-router.post('/forgot', async (req, res) => {
+router.post('/forgot', asyncHandler(async (req, res) => {
   const db = await getDb();
   const emailRow = getSetting(db, 'email');
 
@@ -116,10 +117,10 @@ router.post('/forgot', async (req, res) => {
   }
 
   res.json({ success: true, message: 'If that email matches, a reset link has been sent.' });
-});
+}));
 
 // POST /api/auth/reset - reset password using token
-router.post('/reset', async (req, res) => {
+router.post('/reset', asyncHandler(async (req, res) => {
   const db = await getDb();
   const { token, password } = req.body;
 
@@ -156,10 +157,10 @@ router.post('/reset', async (req, res) => {
   db.prepare('DELETE FROM settings WHERE key = ?').run('reset_token_expires');
 
   res.json({ success: true });
-});
+}));
 
 // POST /api/auth/change-password - change password while logged in
-router.post('/change-password', async (req, res) => {
+router.post('/change-password', asyncHandler(async (req, res) => {
   if (!req.session || !req.session.authenticated) {
     return res.status(401).json({ error: 'Not authenticated.' });
   }
@@ -185,6 +186,6 @@ router.post('/change-password', async (req, res) => {
   setSetting(db, 'password_hash', hash);
 
   res.json({ success: true });
-});
+}));
 
 module.exports = router;

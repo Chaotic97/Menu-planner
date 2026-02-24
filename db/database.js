@@ -125,12 +125,9 @@ async function initialize() {
   sqlDb.run("PRAGMA foreign_keys = ON");
 
   // Run migrations for existing databases
-  try {
-    sqlDb.run("ALTER TABLE menus ADD COLUMN sell_price REAL DEFAULT 0");
-  } catch {} // column already exists
-
-  try {
-    sqlDb.run(`CREATE TABLE IF NOT EXISTS weekly_specials (
+  const MIGRATIONS = [
+    `ALTER TABLE menus ADD COLUMN sell_price REAL DEFAULT 0`,
+    `CREATE TABLE IF NOT EXISTS weekly_specials (
       id          INTEGER PRIMARY KEY AUTOINCREMENT,
       dish_id     INTEGER NOT NULL REFERENCES dishes(id) ON DELETE CASCADE,
       week_start  TEXT NOT NULL,
@@ -138,34 +135,20 @@ async function initialize() {
       notes       TEXT DEFAULT '',
       is_active   INTEGER DEFAULT 1,
       created_at  TEXT DEFAULT (datetime('now'))
-    )`);
-  } catch {}
-
-  // Feature 4: Favorites & Tags
-  try { sqlDb.run("ALTER TABLE dishes ADD COLUMN is_favorite INTEGER DEFAULT 0"); } catch {}
-
-  try {
-    sqlDb.run(`CREATE TABLE IF NOT EXISTS tags (
+    )`,
+    `ALTER TABLE dishes ADD COLUMN is_favorite INTEGER DEFAULT 0`,
+    `CREATE TABLE IF NOT EXISTS tags (
       id   INTEGER PRIMARY KEY AUTOINCREMENT,
       name TEXT NOT NULL UNIQUE COLLATE NOCASE
-    )`);
-  } catch {}
-
-  try {
-    sqlDb.run(`CREATE TABLE IF NOT EXISTS dish_tags (
+    )`,
+    `CREATE TABLE IF NOT EXISTS dish_tags (
       dish_id INTEGER NOT NULL REFERENCES dishes(id) ON DELETE CASCADE,
       tag_id  INTEGER NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
       PRIMARY KEY(dish_id, tag_id)
-    )`);
-  } catch {}
-
-  // Feature 5: Soft delete
-  try { sqlDb.run("ALTER TABLE dishes ADD COLUMN deleted_at TEXT DEFAULT NULL"); } catch {}
-  try { sqlDb.run("ALTER TABLE menus ADD COLUMN deleted_at TEXT DEFAULT NULL"); } catch {}
-
-  // Feature 7: Allergen substitutions
-  try {
-    sqlDb.run(`CREATE TABLE IF NOT EXISTS dish_substitutions (
+    )`,
+    `ALTER TABLE dishes ADD COLUMN deleted_at TEXT DEFAULT NULL`,
+    `ALTER TABLE menus ADD COLUMN deleted_at TEXT DEFAULT NULL`,
+    `CREATE TABLE IF NOT EXISTS dish_substitutions (
       id                    INTEGER PRIMARY KEY AUTOINCREMENT,
       dish_id               INTEGER NOT NULL REFERENCES dishes(id) ON DELETE CASCADE,
       allergen              TEXT NOT NULL,
@@ -174,24 +157,14 @@ async function initialize() {
       substitute_quantity   REAL,
       substitute_unit       TEXT,
       notes                 TEXT DEFAULT ''
-    )`);
-  } catch {}
-
-  // Feature 9: Expected covers & guest allergies
-  try { sqlDb.run("ALTER TABLE menus ADD COLUMN expected_covers INTEGER DEFAULT 0"); } catch {}
-  try { sqlDb.run("ALTER TABLE menus ADD COLUMN guest_allergies TEXT DEFAULT ''"); } catch {}
-
-  // Auth settings table
-  try {
-    sqlDb.run(`CREATE TABLE IF NOT EXISTS settings (
+    )`,
+    `ALTER TABLE menus ADD COLUMN expected_covers INTEGER DEFAULT 0`,
+    `ALTER TABLE menus ADD COLUMN guest_allergies TEXT DEFAULT ''`,
+    `CREATE TABLE IF NOT EXISTS settings (
       key   TEXT PRIMARY KEY,
       value TEXT NOT NULL
-    )`);
-  } catch {}
-
-  // Service notes
-  try {
-    sqlDb.run(`CREATE TABLE IF NOT EXISTS service_notes (
+    )`,
+    `CREATE TABLE IF NOT EXISTS service_notes (
       id         INTEGER PRIMARY KEY AUTOINCREMENT,
       date       TEXT NOT NULL,
       shift      TEXT DEFAULT 'all',
@@ -199,11 +172,14 @@ async function initialize() {
       content    TEXT NOT NULL DEFAULT '',
       created_at TEXT DEFAULT (datetime('now')),
       updated_at TEXT DEFAULT (datetime('now'))
-    )`);
-  } catch {}
+    )`,
+    `ALTER TABLE menus ADD COLUMN allergen_covers TEXT DEFAULT '{}'`,
+  ];
 
-  // Allergen cover counts per menu (JSON: {"gluten":3,"milk":2})
-  try { sqlDb.run("ALTER TABLE menus ADD COLUMN allergen_covers TEXT DEFAULT '{}'"); } catch {}
+  for (const sql of MIGRATIONS) {
+    try { sqlDb.run(sql); } catch {}
+  }
+  console.log('Migrations applied.');
 
   // Auto-purge soft-deleted records older than 7 days
   try { sqlDb.run("DELETE FROM dishes WHERE deleted_at IS NOT NULL AND deleted_at < datetime('now', '-7 days')"); } catch {}

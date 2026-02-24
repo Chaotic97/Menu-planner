@@ -2,8 +2,8 @@ import { getMenus, createMenu, deleteMenu, restoreMenu } from '../api.js';
 import { showToast } from '../components/toast.js';
 import { openModal, closeModal } from '../components/modal.js';
 import { renderAllergenBadges } from '../components/allergenBadges.js';
-
-const ALLERGEN_LIST = ['celery','gluten','crustaceans','eggs','fish','lupin','milk','molluscs','mustard','nuts','peanuts','sesame','soy','sulphites'];
+import { escapeHtml } from '../utils/escapeHtml.js';
+import { ALLERGEN_LIST, capitalize } from '../data/allergens.js';
 
 export async function renderMenuList(container) {
   container.innerHTML = `
@@ -34,8 +34,8 @@ export async function renderMenuList(container) {
           <div class="card menu-card" data-id="${menu.id}">
             <div class="card-body">
               <div class="menu-status ${menu.is_active ? 'active' : 'inactive'}">${menu.is_active ? 'Active' : 'Inactive'}</div>
-              <h3 class="card-title">${menu.name}</h3>
-              ${menu.description ? `<p class="card-desc">${menu.description}</p>` : ''}
+              <h3 class="card-title">${escapeHtml(menu.name)}</h3>
+              ${menu.description ? `<p class="card-desc">${escapeHtml(menu.description)}</p>` : ''}
               <div class="menu-stats">
                 <span>${menu.dish_count} dish${menu.dish_count !== 1 ? 'es' : ''}</span>
                 ${menu.sell_price ? `<span> &middot; $${Number(menu.sell_price).toFixed(2)}</span>` : ''}
@@ -49,7 +49,7 @@ export async function renderMenuList(container) {
                 try { covers = JSON.parse(menu.allergen_covers || '{}'); } catch {}
                 return `<div class="allergen-cover-badges" style="margin-top:4px;">
                   ${guestAllergies.map(a => `
-                    <span class="allergen-badge">${a.charAt(0).toUpperCase() + a.slice(1)}${covers[a] ? ` <span class="allergen-cover-num">×${covers[a]}</span>` : ''}</span>
+                    <span class="allergen-badge">${capitalize(a)}${covers[a] ? ` <span class="allergen-cover-num">&times;${covers[a]}</span>` : ''}</span>
                   `).join('')}
                 </div>`;
               })() : ''}
@@ -126,7 +126,7 @@ export async function renderMenuList(container) {
           <div class="allergen-cover-grid" id="new-menu-allergies">
             ${ALLERGEN_LIST.map(a => `
               <div class="allergen-cover-item">
-                <button type="button" class="allergen-toggle" data-allergen="${a}">${a.charAt(0).toUpperCase() + a.slice(1)}</button>
+                <button type="button" class="allergen-toggle" data-allergen="${a}">${capitalize(a)}</button>
                 <input type="number" class="allergen-cover-count" data-allergen="${a}" placeholder="# covers" min="0" max="999" style="display:none;">
               </div>
             `).join('')}
