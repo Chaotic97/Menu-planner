@@ -352,6 +352,26 @@ router.delete('/allergen-keywords/:id', (req, res) => {
 function saveIngredients(db, dishId, ingredients) {
   if (!ingredients || !ingredients.length) return;
 
+  // Deduplicate by ingredient name (case-insensitive) before inserting.
+  // Some recipes (e.g. multi-section recipes) list the same ingredient in
+  // multiple sections which would violate the UNIQUE(dish_id, ingredient_id)
+  // constraint. Same name + same unit → sum quantities; different unit → keep first.
+  const seen = new Map();
+  for (const ing of ingredients) {
+    const key = (ing.name || '').trim().toLowerCase();
+    if (!key) continue;
+    if (seen.has(key)) {
+      const existing = seen.get(key);
+      if (existing.unit === (ing.unit || 'each')) {
+        existing.quantity = Math.round(((existing.quantity || 0) + (ing.quantity || 0)) * 1000) / 1000;
+      }
+      // Different unit: keep existing, discard duplicate
+    } else {
+      seen.set(key, { ...ing });
+    }
+  }
+  const deduped = Array.from(seen.values());
+
   const insertIngredient = db.prepare('INSERT OR IGNORE INTO ingredients (name) VALUES (?)');
   const getIngredient = db.prepare('SELECT id FROM ingredients WHERE name = ? COLLATE NOCASE');
   const insertDishIngredient = db.prepare(`
@@ -362,11 +382,11 @@ function saveIngredients(db, dishId, ingredients) {
     'UPDATE ingredients SET unit_cost = ?, base_unit = ? WHERE id = ?'
   );
 
-  for (const ing of ingredients) {
+  for (const ing of deduped) {
     insertIngredient.run(ing.name);
     const row = getIngredient.get(ing.name);
     if (row) {
-      insertDishIngredient.run(dishId, row.id, ing.quantity || 0, ing.unit || 'g', ing.prep_note || '');
+      insertDishIngredient.run(dishId, row.id, ing.quantity || 0, ing.unit || 'each', ing.prep_note || '');
       // Update ingredient cost if provided
       if (ing.unit_cost !== undefined) {
         updateIngredientCost.run(
