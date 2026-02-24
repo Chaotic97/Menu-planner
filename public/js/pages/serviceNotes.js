@@ -120,7 +120,6 @@ export async function renderServiceNotes(container) {
     let html = `
       <div class="sn-notes-header">
         <h2>${formatDisplayDate(selectedDate)}</h2>
-        <button class="btn btn-primary btn-sm" id="sn-add-inline">+ Add Note</button>
       </div>
     `;
 
@@ -156,8 +155,6 @@ export async function renderServiceNotes(container) {
     }
 
     panel.innerHTML = html;
-
-    panel.querySelector('#sn-add-inline')?.addEventListener('click', () => openNoteModal());
 
     panel.querySelectorAll('.edit-note-btn').forEach(btn => {
       btn.addEventListener('click', () => {
