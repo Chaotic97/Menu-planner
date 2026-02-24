@@ -132,7 +132,7 @@ export async function renderMenuBuilder(container, menuId) {
                     }
                   </div>
                   <div class="dish-info">
-                    <strong>${escapeHtml(dish.name)}</strong>
+                    <a href="#/dishes/${dish.id}" class="dish-name-link"><strong>${escapeHtml(dish.name)}</strong></a>
                     ${renderAllergenBadges(dish.allergens, true)}
                     ${hasConflict ? `<div class="allergy-warning">&#9888; Guest allergy: ${dish.allergy_conflicts.join(', ')}</div>` : ''}
                     ${dish.substitution_count > 0 ? `<span class="subs-badge" data-dish-id="${dish.id}" title="Has allergen substitutions">&#8644; ${dish.substitution_count} sub${dish.substitution_count > 1 ? 's' : ''}</span>` : ''}

@@ -2915,6 +2915,16 @@ textarea.input { resize: vertical; min-height: 80px; }
   background: rgba(64,145,108,0.08);
 }
 
+/* Clickable dish name links (menu builder, specials) */
+.dish-name-link {
+  color: inherit;
+  text-decoration: none;
+}
+.dish-name-link:hover {
+  color: var(--primary);
+  text-decoration: underline;
+}
+
 /* ============================
    Dish View (read-only)
    ============================ */

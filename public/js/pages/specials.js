@@ -106,7 +106,7 @@ export async function renderSpecials(container) {
               <span class="category-badge">${escapeHtml(s.category)}</span>
               ${!s.is_active ? '<span class="special-tag inactive">Inactive</span>' : ''}
             </div>
-            <h3>${escapeHtml(s.dish_name)}</h3>
+            <h3><a href="#/dishes/${s.dish_id}" class="dish-name-link">${escapeHtml(s.dish_name)}</a></h3>
             ${s.dish_description ? `<p class="card-desc">${escapeHtml(s.dish_description)}</p>` : ''}
             ${s.notes ? `<p class="special-notes">"${escapeHtml(s.notes)}"</p>` : ''}
             ${renderAllergenBadges(s.allergens, true)}
