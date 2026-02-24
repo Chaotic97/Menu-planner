@@ -2295,13 +2295,21 @@ textarea.input { resize: vertical; min-height: 80px; }
 /* ============================
    Flavor Pairings Page
    ============================ */
+.fp-subtitle {
+  margin: -8px 0 20px;
+  color: var(--text-muted);
+  font-size: 0.88rem;
+  line-height: 1.5;
+}
+
 .fp-layout {
   display: grid;
-  grid-template-columns: 260px 1fr;
+  grid-template-columns: 280px 1fr;
   gap: 24px;
   align-items: start;
 }
 
+/* ── Sidebar ── */
 .fp-sidebar {
   background: var(--surface);
   border-radius: var(--radius);
@@ -2319,16 +2327,21 @@ textarea.input { resize: vertical; min-height: 80px; }
   border-bottom: 1px solid var(--border);
 }
 
+/* Horizontal-scroll category bar — no wrapping */
 .fp-category-bar {
   display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-  padding: 8px 12px;
+  flex-wrap: nowrap;
+  gap: 6px;
+  padding: 10px 12px;
   border-bottom: 1px solid var(--border);
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
 }
+.fp-category-bar::-webkit-scrollbar { display: none; }
 
 .fp-cat-btn {
-  padding: 3px 10px;
+  padding: 4px 12px;
   font-size: 0.75rem;
   font-weight: 600;
   border: 1px solid var(--border);
@@ -2337,36 +2350,64 @@ textarea.input { resize: vertical; min-height: 80px; }
   cursor: pointer;
   color: var(--text);
   font-family: var(--font);
-  transition: all 0.1s;
+  transition: all 0.15s;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
-
-.fp-cat-btn:hover, .fp-cat-btn.active {
+.fp-cat-btn:hover {
+  border-color: var(--primary);
+  color: var(--primary);
+  background: rgba(45,106,79,0.06);
+}
+.fp-cat-btn.active {
   background: var(--primary);
   color: white;
   border-color: var(--primary);
 }
 
+/* Ingredient list */
 .fp-ingredient-list {
   flex: 1;
   overflow-y: auto;
+}
+
+.fp-category-group {}
+
+.fp-category-header {
+  padding: 6px 12px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--text-muted);
+  background: var(--bg);
+  border-left: 3px solid var(--border);
+  position: sticky;
+  top: 0;
+  z-index: 1;
 }
 
 .fp-ingredient-item {
   padding: 10px 14px;
   cursor: pointer;
   border-bottom: 1px solid var(--border);
+  border-left: 3px solid transparent;
   transition: background 0.1s;
   display: flex;
   flex-direction: column;
   gap: 2px;
+  width: 100%;
+  text-align: left;
+  background: none;
+  font-family: var(--font);
 }
-
 .fp-ingredient-item:hover { background: var(--bg); }
-.fp-ingredient-item.active { background: rgba(45,106,79,0.1); border-left: 3px solid var(--primary); }
+.fp-ingredient-item.active { background: rgba(45,106,79,0.07); }
 
 .fp-ingredient-name {
   font-weight: 600;
   font-size: 0.9rem;
+  color: var(--text);
 }
 
 .fp-ingredient-cat {
@@ -2376,28 +2417,60 @@ textarea.input { resize: vertical; min-height: 80px; }
   letter-spacing: 0.04em;
 }
 
+/* ── Detail panel ── */
 .fp-detail {
   background: var(--surface);
   border-radius: var(--radius);
   box-shadow: var(--shadow);
   padding: 24px;
+  overflow-y: auto;
+  max-height: calc(100vh - 80px);
+  position: sticky;
+  top: 20px;
 }
 
+.fp-detail-placeholder {
+  text-align: center;
+  padding: 60px 20px;
+  color: var(--text-muted);
+}
+
+/* Breadcrumb / back button */
+.fp-breadcrumb {
+  margin-bottom: 16px;
+}
+.fp-back-btn {
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  font-family: var(--font);
+  transition: color 0.15s;
+}
+.fp-back-btn:hover { color: var(--primary); }
+
+/* Detail header with colour-coded left border */
 .fp-detail-header {
   margin-bottom: 20px;
+  padding: 2px 0 14px 16px;
+  border-left: 4px solid var(--primary);
+  border-bottom: 1px solid var(--border);
 }
 
 .fp-detail-name {
   font-size: 1.6rem;
   font-weight: 800;
   margin-bottom: 4px;
+  color: var(--text);
 }
 
 .fp-detail-cat {
-  font-size: 0.85rem;
-  color: var(--text-muted);
+  font-size: 0.8rem;
+  font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.06em;
 }
 
 .fp-section {
@@ -2405,29 +2478,29 @@ textarea.input { resize: vertical; min-height: 80px; }
 }
 
 .fp-section h3 {
-  font-size: 0.8rem;
+  font-size: 0.75rem;
   font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.07em;
   color: var(--text-muted);
   margin-bottom: 10px;
 }
 
+/* Flavor profile tags — colour comes from inline style */
 .fp-flavor-tags {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
 }
-
 .fp-flavor-tag {
   padding: 4px 12px;
-  background: rgba(45,106,79,0.1);
-  color: var(--primary);
+  border: 1px solid transparent;
   border-radius: 12px;
   font-size: 0.8rem;
   font-weight: 600;
 }
 
+/* Pairing chips */
 .fp-pairings-grid {
   display: flex;
   flex-wrap: wrap;
@@ -2441,23 +2514,25 @@ textarea.input { resize: vertical; min-height: 80px; }
   border-radius: 20px;
   font-size: 0.82rem;
   cursor: pointer;
-  transition: all 0.1s;
+  transition: all 0.15s;
   font-family: var(--font);
   color: var(--text);
 }
-
 .fp-pairing-chip:hover {
-  background: var(--primary);
-  color: white;
-  border-color: var(--primary);
+  background: var(--primary) !important;
+  color: white !important;
+  border-color: var(--primary) !important;
 }
-
 .fp-pairing-chip.has-detail {
-  border-color: var(--primary);
-  color: var(--primary);
   font-weight: 600;
 }
+.fp-chip-arrow {
+  margin-left: 4px;
+  font-size: 0.75rem;
+  opacity: 0.7;
+}
 
+/* Chef's notes */
 .fp-notes {
   font-size: 0.9rem;
   color: var(--text);
@@ -2466,6 +2541,7 @@ textarea.input { resize: vertical; min-height: 80px; }
   padding: 12px 16px;
   border-radius: var(--radius-sm);
   border-left: 3px solid var(--primary);
+  margin: 0;
 }
 
 .fp-attribution {
@@ -2480,13 +2556,15 @@ textarea.input { resize: vertical; min-height: 80px; }
 
 .fp-empty {
   text-align: center;
-  padding: 60px 20px;
+  padding: 40px 20px;
   color: var(--text-muted);
+  font-size: 0.9rem;
 }
 
 @media (max-width: 768px) {
   .fp-layout { grid-template-columns: 1fr; }
   .fp-sidebar { position: static; max-height: 350px; }
+  .fp-detail { position: static; max-height: none; }
 }
 
 /* ============================
