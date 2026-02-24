@@ -358,12 +358,23 @@ function saveIngredients(db, dishId, ingredients) {
     INSERT INTO dish_ingredients (dish_id, ingredient_id, quantity, unit, prep_note)
     VALUES (?, ?, ?, ?, ?)
   `);
+  const updateIngredientCost = db.prepare(
+    'UPDATE ingredients SET unit_cost = ?, base_unit = ? WHERE id = ?'
+  );
 
   for (const ing of ingredients) {
     insertIngredient.run(ing.name);
     const row = getIngredient.get(ing.name);
     if (row) {
       insertDishIngredient.run(dishId, row.id, ing.quantity || 0, ing.unit || 'g', ing.prep_note || '');
+      // Update ingredient cost if provided
+      if (ing.unit_cost !== undefined) {
+        updateIngredientCost.run(
+          ing.unit_cost !== null ? parseFloat(ing.unit_cost) : null,
+          ing.base_unit || ing.unit || 'g',
+          row.id
+        );
+      }
     }
   }
 }

@@ -507,6 +507,8 @@ export async function renderDishForm(container, dishId) {
       quantity: parseFloat(row.querySelector('.ing-qty').value) || 0,
       unit: row.querySelector('.ing-unit').value,
       prep_note: row.querySelector('.ing-prep').value.trim(),
+      unit_cost: row.querySelector('.ing-unit-cost').value !== '' ? parseFloat(row.querySelector('.ing-unit-cost').value) : null,
+      base_unit: row.querySelector('.ing-base-unit').value,
     })).filter(i => i.name);
 
     // Collect tags
@@ -608,6 +610,16 @@ function ingredientRow(ing, index) {
           <input type="text" class="input ing-prep" placeholder="Prep note (e.g., dice, marinate 24hr)" value="${escapeHtml(ing ? ing.prep_note : '')}">
         </div>
         <button type="button" class="btn btn-icon remove-ingredient" title="Remove">&times;</button>
+      </div>
+      <div class="ing-cost-row">
+        <span class="ing-cost-label">Unit cost: $</span>
+        <input type="number" class="input ing-unit-cost" placeholder="0.00" step="0.001" min="0"
+               value="${ing && ing.unit_cost ? ing.unit_cost : ''}">
+        <span class="ing-cost-label">per</span>
+        <select class="input ing-base-unit">
+          ${UNITS.map(u => `<option value="${u.value}" ${(ing && ing.base_unit ? ing.base_unit : currentUnit) === u.value ? 'selected' : ''}>${u.label}</option>`).join('')}
+        </select>
+        <span class="ing-cost-hint">${ing && ing.unit_cost ? `$${ing.unit_cost}/${ing.base_unit}` : 'No cost set'}</span>
       </div>
       <div class="ing-converter" style="display:none;"></div>
     </div>

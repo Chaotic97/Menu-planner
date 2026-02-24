@@ -532,6 +532,37 @@ textarea.input { resize: vertical; min-height: 80px; }
   background: var(--bg);
 }
 
+.ing-cost-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+  padding: 4px 0 2px 2px;
+  border-top: 1px dashed var(--border);
+}
+
+.ing-cost-row .ing-unit-cost {
+  width: 80px;
+}
+
+.ing-cost-row .ing-base-unit {
+  min-width: 70px;
+  width: 80px;
+}
+
+.ing-cost-label {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.ing-cost-hint {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  font-style: italic;
+  margin-left: 4px;
+}
+
 .manual-cost-row {
   display: flex;
   align-items: center;
