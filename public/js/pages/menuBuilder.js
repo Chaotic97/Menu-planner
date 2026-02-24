@@ -17,11 +17,12 @@ export async function renderMenuBuilder(container, menuId) {
     return;
   }
 
-  const guestAllergies = menu.guest_allergies
-    ? menu.guest_allergies.split(',').map(a => a.trim()).filter(Boolean)
-    : [];
-
   function render() {
+    // Re-derive guestAllergies from current menu state on every render
+    const guestAllergies = menu.guest_allergies
+      ? menu.guest_allergies.split(',').map(a => a.trim()).filter(Boolean)
+      : [];
+
     // Group dishes by category
     const grouped = {};
     for (const dish of menu.dishes) {
