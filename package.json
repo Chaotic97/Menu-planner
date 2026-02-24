@@ -6,7 +6,8 @@
   "scripts": {
     "start": "node server.js",
     "init-db": "node db/init.js",
-    "seed-sample": "node db/seed-sample.js"
+    "seed-sample": "node db/seed-sample.js",
+    "test": "jest --testPathPatterns=tests/"
   },
   "dependencies": {
     "bcrypt": "^6.0.0",
@@ -19,5 +20,8 @@
     "session-file-store": "^1.5.0",
     "sql.js": "^1.11.0",
     "ws": "^8.19.0"
+  },
+  "devDependencies": {
+    "jest": "^30.2.0"
   }
 }

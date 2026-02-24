@@ -98,4 +98,4 @@ function generatePrepTasks(menuId) {
   };
 }
 
-module.exports = { generatePrepTasks };
+module.exports = { generatePrepTasks, extractTiming, extractPrepTasks };

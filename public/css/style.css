@@ -4,24 +4,37 @@
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 :root {
+  /* --- Brand colours --- */
   --primary: #2d6a4f;
   --primary-light: #40916c;
   --primary-dark: #1b4332;
+
+  /* --- Semantic colours --- */
   --danger: #d32f2f;
   --danger-light: #ef5350;
   --warning: #ed6c02;
   --success: #2e7d32;
+
+  /* --- Surface & text --- */
   --bg: #f5f5f0;
   --surface: #ffffff;
   --text: #1a1a1a;
   --text-muted: #757575;
   --border: #e0e0e0;
+
+  /* --- Elevation --- */
   --shadow: 0 2px 8px rgba(0,0,0,0.08);
   --shadow-lg: 0 4px 16px rgba(0,0,0,0.12);
+
+  /* --- Geometry --- */
   --radius: 10px;
   --radius-sm: 6px;
+
+  /* --- Layout --- */
   --nav-height: 56px;
   --sidebar-width: 220px;
+
+  /* --- Typography --- */
   --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 }
 
@@ -50,7 +63,7 @@
 [data-theme="dark"] .no-image { background: #3a3a3a; }
 [data-theme="dark"] .special-image { background: #3a3a3a; }
 [data-theme="dark"] .photo-placeholder { background: #333; }
-[data-theme="dark"] .no-thumb { background: #333; }
+[data-theme="dark"] .mb-no-thumb { background: #333; }
 [data-theme="dark"] .menu-status.active { background: #1b3a2a; color: var(--success); }
 [data-theme="dark"] .menu-status.inactive { background: #3a2020; color: var(--danger); }
 [data-theme="dark"] .allergen-badge { color: #1a1a1a; }
@@ -58,6 +71,14 @@
 [data-theme="dark"] .autocomplete-item:hover { background: rgba(64,145,108,0.15); }
 [data-theme="dark"] .input:focus { box-shadow: 0 0 0 3px rgba(64,145,108,0.25); }
 [data-theme="dark"] .special-dish-option:hover { background: rgba(64,145,108,0.1); }
+
+/* --- Component-specific dark overrides (kept here so all dark-mode rules are in one place) --- */
+[data-theme="dark"] .favorite-btn { background: rgba(0,0,0,0.6); }
+[data-theme="dark"] .tag-badge { background: rgba(64,145,108,0.2); }
+[data-theme="dark"] .subs-badge { background: #3a2a1a; color: #ffb74d; }
+[data-theme="dark"] .po-category-row td { background: rgba(64,145,108,0.12); }
+[data-theme="dark"] .po-total-row td { background: #2a2a2a; }
+[data-theme="dark"] .ing-converter { background: rgba(64,145,108,0.08); }
 
 html {
   font-size: 16px;
@@ -454,21 +475,6 @@ textarea.input { resize: vertical; min-height: 80px; }
 /* ============================
    Ingredient Rows
    ============================ */
-/* Drag handle shared by ingredient rows and section headers */
-.drag-handle {
-  cursor: grab;
-  color: var(--text-muted);
-  font-size: 1.25rem;
-  padding: 0 4px;
-  user-select: none;
-  flex-shrink: 0;
-  line-height: 1;
-  opacity: 0.55;
-  transition: opacity 0.15s;
-}
-.drag-handle:hover { opacity: 1; }
-.drag-handle:active { cursor: grabbing; }
-
 /* Section header row */
 .section-header-row {
   display: flex;
@@ -507,24 +513,6 @@ textarea.input { resize: vertical; min-height: 80px; }
   min-width: 36px;
   min-height: 36px;
   flex-shrink: 0;
-}
-
-/* Drag state */
-.ingredient-row.dragging,
-.section-header-row.dragging {
-  opacity: 0.35;
-  outline: 2px dashed var(--primary);
-  border-radius: var(--radius-sm);
-}
-
-/* Drop position indicators */
-.ingredient-row.drop-above,
-.section-header-row.drop-above {
-  border-top: 2px solid var(--primary);
-}
-.ingredient-row.drop-below,
-.section-header-row.drop-below {
-  border-bottom: 2px solid var(--primary);
 }
 
 /* "Add Ingredient" + "Add Section" side by side */
@@ -702,7 +690,7 @@ textarea.input { resize: vertical; min-height: 80px; }
 /* ============================
    Menu Builder
    ============================ */
-.menu-summary-bar {
+.mb-summary-bar {
   display: flex;
   align-items: center;
   gap: 12px;
@@ -715,11 +703,11 @@ textarea.input { resize: vertical; min-height: 80px; }
   font-size: 0.9rem;
 }
 
-.menu-category-section {
+.mb-category-section {
   margin-bottom: 24px;
 }
 
-.category-heading {
+.mb-category-heading {
   font-size: 1.1rem;
   font-weight: 700;
   color: var(--primary-dark);
@@ -728,7 +716,7 @@ textarea.input { resize: vertical; min-height: 80px; }
   margin-bottom: 12px;
 }
 
-.menu-dish-row {
+.mb-dish-row {
   display: flex;
   align-items: center;
   gap: 12px;
@@ -739,7 +727,7 @@ textarea.input { resize: vertical; min-height: 80px; }
   box-shadow: var(--shadow);
 }
 
-.dish-thumb {
+.mb-dish-thumb {
   width: 50px;
   height: 50px;
   border-radius: var(--radius-sm);
@@ -748,27 +736,27 @@ textarea.input { resize: vertical; min-height: 80px; }
   background: var(--bg);
 }
 
-.dish-thumb img { width: 100%; height: 100%; object-fit: cover; }
-.no-thumb { width: 100%; height: 100%; background: var(--bg); }
+.mb-dish-thumb img { width: 100%; height: 100%; object-fit: cover; }
+.mb-no-thumb { width: 100%; height: 100%; background: var(--bg); }
 
-.dish-info { flex: 1; min-width: 0; }
-.dish-info strong { display: block; margin-bottom: 2px; }
+.mb-dish-info { flex: 1; min-width: 0; }
+.mb-dish-info strong { display: block; margin-bottom: 2px; }
 
-.servings-control {
+.mb-servings {
   display: flex;
   align-items: center;
   gap: 4px;
   flex-shrink: 0;
 }
 
-.servings-count {
+.mb-servings-count {
   min-width: 28px;
   text-align: center;
   font-weight: 700;
   font-size: 1.1rem;
 }
 
-.servings-label {
+.mb-servings-label {
   font-size: 0.8rem;
   color: var(--text-muted);
   margin-left: 2px;
@@ -795,7 +783,7 @@ textarea.input { resize: vertical; min-height: 80px; }
 /* ============================
    Menu Pricing Bar
    ============================ */
-.menu-pricing-bar {
+.mb-pricing-bar {
   background: var(--surface);
   border-radius: var(--radius);
   box-shadow: var(--shadow);
@@ -804,36 +792,36 @@ textarea.input { resize: vertical; min-height: 80px; }
   border-left: 4px solid var(--primary);
 }
 
-.pricing-input-group {
+.mb-pricing-group {
   display: flex;
   align-items: center;
   gap: 12px;
   margin-bottom: 16px;
 }
 
-.pricing-input-group label {
+.mb-pricing-group label {
   font-weight: 600;
   font-size: 0.9rem;
   white-space: nowrap;
 }
 
-.pricing-input-group .input {
+.mb-pricing-group .input {
   max-width: 180px;
 }
 
-.pricing-stats {
+.mb-pricing-stats {
   display: flex;
   gap: 24px;
   flex-wrap: wrap;
 }
 
-.pricing-stat {
+.mb-pricing-stat {
   display: flex;
   flex-direction: column;
   gap: 2px;
 }
 
-.pricing-label {
+.mb-pricing-label {
   font-size: 0.8rem;
   color: var(--text-muted);
   text-transform: uppercase;
@@ -841,19 +829,19 @@ textarea.input { resize: vertical; min-height: 80px; }
   font-weight: 600;
 }
 
-.pricing-value {
+.mb-pricing-value {
   font-size: 1.3rem;
   font-weight: 700;
 }
 
-.pricing-hint {
+.mb-pricing-hint {
   font-size: 0.9rem;
   color: var(--text-muted);
   font-style: italic;
 }
 
 /* Dish cost in menu builder rows */
-.dish-cost-info {
+.mb-cost-info {
   display: flex;
   flex-direction: column;
   align-items: flex-end;
@@ -862,12 +850,12 @@ textarea.input { resize: vertical; min-height: 80px; }
   min-width: 80px;
 }
 
-.dish-cost-value {
+.mb-cost-value {
   font-weight: 700;
   font-size: 0.95rem;
 }
 
-.dish-cost-percent {
+.mb-cost-percent {
   font-size: 0.75rem;
   color: var(--text-muted);
   white-space: nowrap;
@@ -1023,13 +1011,13 @@ textarea.input { resize: vertical; min-height: 80px; }
 /* ============================
    Dish Picker Modal
    ============================ */
-.dish-picker-list {
+.mb-picker-list {
   max-height: 400px;
   overflow-y: auto;
   margin-top: 12px;
 }
 
-.dish-picker-item {
+.mb-picker-item {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -1038,8 +1026,8 @@ textarea.input { resize: vertical; min-height: 80px; }
   gap: 12px;
 }
 
-.dish-picker-info { flex: 1; }
-.dish-picker-info strong { display: block; margin-bottom: 2px; }
+.mb-picker-info { flex: 1; }
+.mb-picker-info strong { display: block; margin-bottom: 2px; }
 
 /* ============================
    Todo / Task View
@@ -1322,6 +1310,7 @@ textarea.input { resize: vertical; min-height: 80px; }
 /* ============================
    Drag and Drop
    ============================ */
+/* Shared drag handle — ingredient rows, section headers, and menu builder dish rows */
 .drag-handle {
   cursor: grab;
   color: var(--text-muted);
@@ -1329,21 +1318,42 @@ textarea.input { resize: vertical; min-height: 80px; }
   padding: 4px 8px;
   user-select: none;
   flex-shrink: 0;
+  line-height: 1;
+  opacity: 0.55;
+  transition: opacity 0.15s;
   display: flex;
   align-items: center;
   min-width: 28px;
   min-height: 44px;
   touch-action: none;
 }
-
+.drag-handle:hover { opacity: 1; }
 .drag-handle:active { cursor: grabbing; }
 
-.menu-dish-row.dragging {
+/* Ingredient + section-header drag states */
+.ingredient-row.dragging,
+.section-header-row.dragging {
+  opacity: 0.35;
+  outline: 2px dashed var(--primary);
+  border-radius: var(--radius-sm);
+}
+
+/* Drop position indicators */
+.ingredient-row.drop-above,
+.section-header-row.drop-above {
+  border-top: 2px solid var(--primary);
+}
+.ingredient-row.drop-below,
+.section-header-row.drop-below {
+  border-bottom: 2px solid var(--primary);
+}
+
+/* Menu builder dish row drag states */
+.mb-dish-row.dragging {
   opacity: 0.4;
   transform: scale(0.98);
 }
-
-.menu-dish-row.drag-over {
+.mb-dish-row.drag-over {
   border-top: 3px solid var(--primary);
   margin-top: -3px;
 }
@@ -1373,9 +1383,9 @@ textarea.input { resize: vertical; min-height: 80px; }
 .favorite-btn:hover { transform: scale(1.15); }
 .favorite-btn.favorited { color: #e53935; }
 
-[data-theme="dark"] .favorite-btn { background: rgba(0,0,0,0.6); }
-
-/* Tags */
+/* ============================
+   Tags
+   ============================ */
 .tag-badges {
   display: flex;
   flex-wrap: wrap;
@@ -1392,8 +1402,6 @@ textarea.input { resize: vertical; min-height: 80px; }
   color: var(--primary);
   border-radius: 12px;
 }
-
-[data-theme="dark"] .tag-badge { background: rgba(64,145,108,0.2); }
 
 .filter-favorites-btn {
   padding: 8px 16px;
@@ -1436,7 +1444,7 @@ textarea.input { resize: vertical; min-height: 80px; }
 /* ============================
    Guest Allergy Conflicts
    ============================ */
-.menu-info-bar {
+.mb-info-bar {
   background: var(--surface);
   border-radius: var(--radius);
   box-shadow: var(--shadow);
@@ -1448,13 +1456,13 @@ textarea.input { resize: vertical; min-height: 80px; }
   align-items: flex-start;
 }
 
-.menu-info-group {
+.mb-info-group {
   display: flex;
   flex-direction: column;
   gap: 6px;
 }
 
-.menu-info-group label {
+.mb-info-group label {
   font-size: 0.8rem;
   font-weight: 600;
   color: var(--text-muted);
@@ -1487,11 +1495,11 @@ textarea.input { resize: vertical; min-height: 80px; }
   border-color: var(--danger);
 }
 
-.menu-dish-row.allergy-conflict {
+.mb-dish-row.allergy-conflict {
   border-left: 4px solid var(--danger);
 }
 
-.allergy-warning {
+.mb-allergy-warning {
   font-size: 0.75rem;
   color: var(--danger);
   font-weight: 600;
@@ -1554,8 +1562,6 @@ textarea.input { resize: vertical; min-height: 80px; }
   cursor: pointer;
 }
 
-[data-theme="dark"] .subs-badge { background: #3a2a1a; color: #ffb74d; }
-
 /* ============================
    Bottom Navigation (mobile)
    ============================ */
@@ -1582,17 +1588,17 @@ textarea.input { resize: vertical; min-height: 80px; }
   .header-actions { width: 100%; }
   .header-actions .btn { flex: 1; }
 
-  .menu-dish-row { flex-wrap: wrap; }
-  .servings-control { margin-left: auto; }
+  .mb-dish-row { flex-wrap: wrap; }
+  .mb-servings { margin-left: auto; }
 
   .todo-detail { max-width: 140px; }
 
-  .pricing-input-group {
+  .mb-pricing-group {
     flex-direction: column;
     align-items: flex-start;
   }
-  .pricing-input-group .input { max-width: 100%; }
-  .pricing-stats { gap: 16px; }
+  .mb-pricing-group .input { max-width: 100%; }
+  .mb-pricing-stats { gap: 16px; }
 
   .special-card { flex-direction: column; }
   .special-image { width: 100%; height: 160px; }
@@ -1603,7 +1609,7 @@ textarea.input { resize: vertical; min-height: 80px; }
     padding: 12px 16px;
   }
 
-  .dish-cost-info { min-width: 60px; }
+  .mb-cost-info { min-width: 60px; }
 
   .ingredient-row { flex-wrap: wrap; }
   .ing-name-field { flex: 1 1 100%; }
@@ -1667,8 +1673,8 @@ textarea.input { resize: vertical; min-height: 80px; }
   .toast.show { transform: translateY(0); }
 
   /* Menu builder rows: cleaner on small screens */
-  .menu-summary-bar { font-size: 0.8rem; gap: 8px; }
-  .dish-cost-info { display: none; } /* hide cost column, shown in summary bar */
+  .mb-summary-bar { font-size: 0.8rem; gap: 8px; }
+  .mb-cost-info { display: none; } /* hide cost column, shown in summary bar */
 
   /* Filter bar: tighter */
   .filter-bar { gap: 8px; }
@@ -2195,9 +2201,6 @@ textarea.input { resize: vertical; min-height: 80px; }
   min-width: 260px;
   color: var(--text-muted);
 }
-
-[data-theme="dark"] .po-category-row td { background: rgba(64,145,108,0.12); }
-[data-theme="dark"] .po-total-row td { background: #2a2a2a; }
 
 /* ============================
    Service Notes Calendar
@@ -2788,9 +2791,7 @@ textarea.input { resize: vertical; min-height: 80px; }
   white-space: nowrap;
 }
 
-/* ============================
-   Service Notes — shift picker & legend
-   ============================ */
+/* --- Service Notes: shift picker & legend --- */
 .sn-cal-legend {
   display: flex;
   align-items: center;
@@ -2842,9 +2843,7 @@ textarea.input { resize: vertical; min-height: 80px; }
   border-color: var(--sc, var(--primary));
 }
 
-/* ============================
-   Ingredient Row — inline unit converter
-   ============================ */
+/* --- Ingredient Rows: inline unit converter --- */
 .ing-main-controls {
   display: flex;
   align-items: center;
@@ -2853,9 +2852,6 @@ textarea.input { resize: vertical; min-height: 80px; }
   flex: 1;
   min-width: 0;
 }
-
-/* ingredient-row: drag handle + ing-main-controls side by side */
-.ingredient-row { flex-wrap: wrap; }
 
 .ing-convert-btn {
   flex-shrink: 0;
@@ -2911,11 +2907,10 @@ textarea.input { resize: vertical; min-height: 80px; }
   min-width: 80px;
 }
 
-[data-theme="dark"] .ing-converter {
-  background: rgba(64,145,108,0.08);
-}
-
-/* Clickable dish name links (menu builder, specials) */
+/* ============================
+   Dish Name Links
+   ============================ */
+/* Clickable name links in menu builder, specials, and list views */
 .dish-name-link {
   color: inherit;
   text-decoration: none;
@@ -3092,7 +3087,7 @@ textarea.input { resize: vertical; min-height: 80px; }
 .dv-sub-swap { font-size: 0.9rem; }
 .dv-sub-notes { font-size: 0.8rem; color: var(--text-muted); font-style: italic; }
 
-/* Responsive — single column on tablet/mobile */
+/* --- Dish View: responsive — single column on tablet/mobile --- */
 @media (max-width: 768px) {
   .dv-layout {
     grid-template-columns: 1fr;
