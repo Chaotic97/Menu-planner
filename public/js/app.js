@@ -1,5 +1,6 @@
 import { renderDishList } from './pages/dishList.js';
 import { renderDishForm } from './pages/dishForm.js';
+import { renderDishView } from './pages/dishView.js';
 import { renderMenuList } from './pages/menuList.js';
 import { renderMenuBuilder } from './pages/menuBuilder.js';
 import { renderTodoView } from './pages/todoView.js';
@@ -17,6 +18,7 @@ let isAuthenticated = false;
 const routes = [
   { pattern: /^#\/dishes\/new$/, handler: () => renderDishForm(appContent, null) },
   { pattern: /^#\/dishes\/(\d+)\/edit$/, handler: (m) => renderDishForm(appContent, m[1]) },
+  { pattern: /^#\/dishes\/(\d+)$/, handler: (m) => renderDishView(appContent, m[1]) },
   { pattern: /^#\/dishes$/, handler: () => renderDishList(appContent) },
   { pattern: /^#\/specials$/, handler: () => renderSpecials(appContent) },
   { pattern: /^#\/service-notes$/, handler: () => renderServiceNotes(appContent) },

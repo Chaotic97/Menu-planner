@@ -2914,3 +2914,181 @@ textarea.input { resize: vertical; min-height: 80px; }
 [data-theme="dark"] .ing-converter {
   background: rgba(64,145,108,0.08);
 }
+
+/* ============================
+   Dish View (read-only)
+   ============================ */
+.dv-layout {
+  display: grid;
+  grid-template-columns: 1fr 280px;
+  gap: 24px;
+  align-items: start;
+}
+
+.dv-main { min-width: 0; }
+.dv-sidebar { min-width: 0; }
+
+.dv-title {
+  flex: 1;
+  font-size: 1.6rem;
+  margin: 0;
+  line-height: 1.2;
+}
+
+/* Full-width hero photo */
+.dv-photo {
+  border-radius: var(--radius);
+  overflow: hidden;
+  margin-bottom: 16px;
+  max-height: 360px;
+}
+.dv-photo img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+/* Meta chips row */
+.dv-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 14px;
+}
+.dv-chip {
+  display: inline-block;
+  padding: 4px 12px;
+  border-radius: 20px;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+.dv-chip-category {
+  background: rgba(45,106,79,0.12);
+  color: var(--primary);
+}
+.dv-chip-price {
+  background: rgba(45,106,79,0.18);
+  color: var(--primary);
+  font-weight: 700;
+}
+.dv-chip-tag {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+}
+
+.dv-section-block {
+  margin-bottom: 14px;
+}
+.dv-description p {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.95rem;
+  line-height: 1.6;
+}
+
+/* Card block */
+.dv-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 18px 20px;
+  margin-bottom: 16px;
+}
+.dv-card-title {
+  margin: 0 0 14px;
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--text);
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+/* Ingredients list */
+.dv-ing-list { display: flex; flex-direction: column; gap: 0; }
+
+.dv-ing-section {
+  font-size: 0.82rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--primary);
+  padding: 12px 0 6px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 2px;
+}
+.dv-ing-section:first-child { padding-top: 0; }
+
+.dv-ing-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 7px 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.93rem;
+}
+.dv-ing-row:last-child { border-bottom: none; }
+
+.dv-ing-name { font-weight: 500; flex: 1; }
+.dv-ing-right {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-shrink: 0;
+  text-align: right;
+}
+.dv-ing-qty {
+  color: var(--text-muted);
+  font-size: 0.88rem;
+  white-space: nowrap;
+}
+.dv-ing-prep {
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  font-style: italic;
+}
+
+/* Chef's notes */
+.dv-notes {
+  margin: 0;
+  font-size: 0.93rem;
+  line-height: 1.7;
+  color: var(--text);
+  white-space: pre-line;
+}
+
+/* Costing */
+.dv-cost-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.92rem;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--border);
+}
+.dv-cost-row:last-child { border-bottom: none; }
+
+/* Substitutions */
+.dv-subs-list { display: flex; flex-direction: column; gap: 10px; }
+.dv-sub-row { display: flex; flex-direction: column; gap: 2px; }
+.dv-sub-allergen {
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--primary);
+}
+.dv-sub-swap { font-size: 0.9rem; }
+.dv-sub-notes { font-size: 0.8rem; color: var(--text-muted); font-style: italic; }
+
+/* Responsive — single column on tablet/mobile */
+@media (max-width: 768px) {
+  .dv-layout {
+    grid-template-columns: 1fr;
+  }
+  .dv-sidebar {
+    order: -1; /* costing + subs above ingredients on mobile */
+  }
+  .dv-title { font-size: 1.3rem; }
+}

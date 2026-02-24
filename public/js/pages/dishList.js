@@ -83,7 +83,7 @@ export async function renderDishList(container) {
             ${dish.suggested_price ? `<div class="card-price">$${Number(dish.suggested_price).toFixed(2)}</div>` : ''}
           </div>
           <div class="card-actions">
-            <a href="#/dishes/${dish.id}/edit" class="btn btn-sm">Edit</a>
+            <a href="#/dishes/${dish.id}" class="btn btn-sm">View</a>
             <button class="btn btn-sm btn-secondary duplicate-dish" data-id="${dish.id}">Duplicate</button>
             <button class="btn btn-sm btn-danger delete-dish" data-id="${dish.id}">Delete</button>
           </div>
@@ -94,7 +94,7 @@ export async function renderDishList(container) {
       grid.querySelectorAll('.dish-card').forEach(card => {
         card.addEventListener('click', (e) => {
           if (e.target.closest('.card-actions') || e.target.closest('.favorite-btn')) return;
-          window.location.hash = `#/dishes/${card.dataset.id}/edit`;
+          window.location.hash = `#/dishes/${card.dataset.id}`;
         });
       });
 
@@ -127,7 +127,7 @@ export async function renderDishList(container) {
           try {
             const result = await duplicateDish(btn.dataset.id);
             showToast('Dish duplicated');
-            window.location.hash = `#/dishes/${result.id}/edit`;
+            window.location.hash = `#/dishes/${result.id}`;
           } catch (err) {
             showToast(err.message, 'error');
           }
