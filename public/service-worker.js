@@ -1,4 +1,4 @@
-const CACHE_NAME = 'platestack-v1';
+const CACHE_NAME = 'platestack-v2';
 
 // Core app shell to pre-cache
 const PRECACHE_URLS = [
@@ -50,8 +50,8 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // JS / CSS: network-first so deployments show immediately; fall back to cache offline
-  if (url.pathname.match(/\.(js|css)$/)) {
+  // JS / CSS / HTML: network-first so deployments show immediately; fall back to cache offline
+  if (url.pathname.match(/\.(js|css|html)$/) || url.pathname === '/' || url.pathname.endsWith('/')) {
     event.respondWith(
       fetch(request)
         .then((res) => {
