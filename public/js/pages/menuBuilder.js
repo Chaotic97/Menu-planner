@@ -40,7 +40,12 @@ export async function renderMenuBuilder(container, menuId) {
       <div class="page-header">
         <a href="#/menus" class="btn btn-back">&larr; Back</a>
         <div class="menu-title-area">
-          <h1 id="menu-title">${escapeHtml(menu.name)}</h1>
+          <div class="menu-title-row">
+            <h1 id="menu-title">${escapeHtml(menu.name)}</h1>
+            <button id="edit-menu-name-btn" class="btn btn-icon" title="Edit menu name">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" width="16" height="16"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+            </button>
+          </div>
           ${menu.description ? `<p class="subtitle">${escapeHtml(menu.description)}</p>` : ''}
         </div>
         <div class="header-actions">
@@ -166,6 +171,48 @@ export async function renderMenuBuilder(container, menuId) {
         </div>
       `}
     `;
+
+    // Edit menu name / description
+    container.querySelector('#edit-menu-name-btn').addEventListener('click', () => {
+      const modal = openModal(`
+        <div class="modal-header">
+          <h2>Edit Menu</h2>
+          <button class="modal-close">&times;</button>
+        </div>
+        <form id="edit-menu-form" class="form">
+          <div class="form-group">
+            <label for="edit-menu-name">Menu Name *</label>
+            <input type="text" id="edit-menu-name" class="input" required value="${escapeHtml(menu.name)}">
+          </div>
+          <div class="form-group">
+            <label for="edit-menu-desc">Description</label>
+            <textarea id="edit-menu-desc" class="input" rows="2">${escapeHtml(menu.description || '')}</textarea>
+          </div>
+          <div class="form-actions">
+            <button type="submit" class="btn btn-primary">Save</button>
+          </div>
+        </form>
+      `);
+
+      modal.querySelector('.modal-close').addEventListener('click', () => closeModal(modal));
+
+      modal.querySelector('#edit-menu-form').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const name = modal.querySelector('#edit-menu-name').value.trim();
+        if (!name) return;
+        const description = modal.querySelector('#edit-menu-desc').value.trim();
+        try {
+          await updateMenu(menuId, { name, description });
+          menu.name = name;
+          menu.description = description;
+          closeModal(modal);
+          showToast('Menu updated');
+          render();
+        } catch (err) {
+          showToast(err.message, 'error');
+        }
+      });
+    });
 
     // Wire up sell price input
     const priceInput = container.querySelector('#menu-sell-price');

@@ -327,6 +327,7 @@ body {
 }
 
 .menu-title-area { flex: 1; }
+.menu-title-row { display: flex; align-items: center; gap: 8px; }
 
 /* ============================
    Buttons
