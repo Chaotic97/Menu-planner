@@ -61,10 +61,12 @@ function showAuthUI(authed) {
   const nav = document.querySelector('.top-nav');
   const bottomNav = document.getElementById('bottom-nav');
   const logoutBtn = document.getElementById('logout-btn');
+  const revealBtn = document.getElementById('sidebar-reveal-btn');
 
   if (nav) nav.style.display = authed ? '' : 'none';
   if (bottomNav) bottomNav.style.display = authed ? '' : 'none';
   if (logoutBtn) logoutBtn.style.display = authed ? '' : 'none';
+  if (revealBtn) revealBtn.style.display = authed ? '' : 'none';
 }
 
 async function handleLogout() {
@@ -143,21 +145,64 @@ function toggleTheme() {
   updateThemeIcon();
 }
 
+const _sunSvg = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M4.93 4.93l1.41 1.41m11.32 11.32 1.41 1.41M2 12h2m16 0h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>`;
+const _moonSvg = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>`;
+
 function updateThemeIcon() {
-  const btn = document.getElementById('theme-toggle');
-  if (!btn) return;
   const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
-  btn.innerHTML = isDark ? '&#9788;' : '&#9790;';
-  btn.title = isDark ? 'Switch to light mode' : 'Switch to dark mode';
+  const icon = document.getElementById('theme-icon');
+  const label = document.getElementById('theme-label');
+  const btn = document.getElementById('theme-toggle');
+  if (icon) icon.innerHTML = isDark ? _sunSvg : _moonSvg;
+  if (label) label.textContent = isDark ? 'Light mode' : 'Dark mode';
+  if (btn) btn.title = isDark ? 'Switch to light mode' : 'Switch to dark mode';
+}
+
+// Sidebar state management
+const _collapseIcon = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="11 17 6 12 11 7"/><polyline points="18 17 13 12 18 7"/></svg>`;
+const _expandIcon = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="13 17 18 12 13 7"/><polyline points="6 17 11 12 6 7"/></svg>`;
+
+function initSidebar() {
+  const saved = localStorage.getItem('sidebarState') || 'expanded';
+  document.documentElement.setAttribute('data-sidebar', saved);
+  updateSidebarToggleBtn();
+}
+
+function setSidebarState(state) {
+  document.documentElement.setAttribute('data-sidebar', state);
+  localStorage.setItem('sidebarState', state);
+  updateSidebarToggleBtn();
+}
+
+function updateSidebarToggleBtn() {
+  const btn = document.getElementById('sidebar-toggle-btn');
+  if (!btn) return;
+  const state = document.documentElement.getAttribute('data-sidebar');
+  if (state === 'expanded') {
+    btn.innerHTML = _collapseIcon;
+    btn.title = 'Collapse sidebar';
+    btn.setAttribute('aria-label', 'Collapse sidebar');
+  } else {
+    btn.innerHTML = _expandIcon;
+    btn.title = 'Expand sidebar';
+    btn.setAttribute('aria-label', 'Expand sidebar');
+  }
 }
 
 window.addEventListener('hashchange', router);
 window.addEventListener('DOMContentLoaded', async () => {
   initTheme();
+  initSidebar();
   document.getElementById('theme-toggle')?.addEventListener('click', toggleTheme);
   document.getElementById('logout-btn')?.addEventListener('click', handleLogout);
   document.getElementById('bottom-logout-btn')?.addEventListener('click', handleLogout);
   document.getElementById('unit-converter-nav-btn')?.addEventListener('click', () => openUnitConverter());
+  document.getElementById('sidebar-toggle-btn')?.addEventListener('click', () => {
+    const state = document.documentElement.getAttribute('data-sidebar');
+    setSidebarState(state === 'expanded' ? 'collapsed' : 'expanded');
+  });
+  document.getElementById('sidebar-close-btn')?.addEventListener('click', () => setSidebarState('hidden'));
+  document.getElementById('sidebar-reveal-btn')?.addEventListener('click', () => setSidebarState('expanded'));
 
   const authed = await checkAuth();
   if (authed) {
