@@ -1,6 +1,7 @@
 const express = require('express');
 const multer = require('multer');
 const path = require('path');
+const sharp = require('sharp');
 const { getDb } = require('../db/database');
 const { updateDishAllergens, getAllergenKeywords, addAllergenKeyword, deleteAllergenKeyword } = require('../services/allergenDetector');
 const { calculateDishCost, calculateFoodCostPercent, suggestPrice, round2 } = require('../services/costCalculator');
@@ -9,16 +10,9 @@ const asyncHandler = require('../middleware/asyncHandler');
 
 const router = express.Router();
 
-// Photo upload config
-const storage = multer.diskStorage({
-  destination: process.env.UPLOADS_PATH || path.join(__dirname, '..', 'uploads'),
-  filename: (req, file, cb) => {
-    const ext = path.extname(file.originalname);
-    cb(null, `dish-${Date.now()}${ext}`);
-  },
-});
+// Photo upload config — memory storage so sharp can process before writing to disk
 const upload = multer({
-  storage,
+  storage: multer.memoryStorage(),
   limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
   fileFilter: (req, file, cb) => {
     const allowed = /jpeg|jpg|png|gif|webp/;
@@ -27,6 +21,19 @@ const upload = multer({
     cb(null, ext && mime);
   },
 });
+
+const UPLOADS_DIR = process.env.UPLOADS_PATH || path.join(__dirname, '..', 'uploads');
+
+// Resize to max 1200px wide, convert to WebP at 80% quality
+async function processAndSavePhoto(buffer) {
+  const filename = `dish-${Date.now()}.webp`;
+  const dest = path.join(UPLOADS_DIR, filename);
+  await sharp(buffer)
+    .resize({ width: 1200, withoutEnlargement: true })
+    .webp({ quality: 80 })
+    .toFile(dest);
+  return filename;
+}
 
 // GET /api/dishes/tags/all — list all tags (BEFORE /:id)
 router.get('/tags/all', (req, res) => {
@@ -355,15 +362,16 @@ router.delete('/:id', (req, res) => {
 });
 
 // POST /api/dishes/:id/photo - Upload photo
-router.post('/:id/photo', upload.single('photo'), (req, res) => {
+router.post('/:id/photo', upload.single('photo'), asyncHandler(async (req, res) => {
   const db = getDb();
   if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
 
-  const photoPath = `/uploads/${req.file.filename}`;
+  const filename = await processAndSavePhoto(req.file.buffer);
+  const photoPath = `/uploads/${filename}`;
   db.prepare('UPDATE dishes SET photo_path = ?, updated_at = datetime(\'now\') WHERE id = ?').run(photoPath, req.params.id);
   req.broadcast('dish_updated', { id: parseInt(req.params.id) }, req.headers['x-client-id']);
   res.json({ photo_path: photoPath });
-});
+}));
 
 // POST /api/dishes/:id/allergens - Manual allergen override
 router.post('/:id/allergens', (req, res) => {
