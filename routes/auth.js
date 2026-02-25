@@ -4,9 +4,13 @@ const crypto = require('crypto');
 const { getDb } = require('../db/database');
 const { sendPasswordResetEmail } = require('../services/emailService');
 const asyncHandler = require('../middleware/asyncHandler');
+const { createRateLimit } = require('../middleware/rateLimit');
 
 const router = express.Router();
 const SALT_ROUNDS = 12;
+
+// Strict limit for login/forgot/reset: 10 attempts per 15 min per IP
+const authRateLimit = createRateLimit({ windowMs: 15 * 60 * 1000, max: 10, message: 'Too many attempts. Please wait 15 minutes before trying again.' });
 
 function getSetting(db, key) {
   return db.prepare('SELECT value FROM settings WHERE key = ?').get(key);
@@ -57,7 +61,7 @@ router.post('/setup', asyncHandler(async (req, res) => {
 }));
 
 // POST /api/auth/login
-router.post('/login', asyncHandler(async (req, res) => {
+router.post('/login', authRateLimit, asyncHandler(async (req, res) => {
   const db = await getDb();
   const passwordRow = getSetting(db, 'password_hash');
 
@@ -90,7 +94,7 @@ router.post('/logout', (req, res) => {
 });
 
 // POST /api/auth/forgot - send reset email
-router.post('/forgot', asyncHandler(async (req, res) => {
+router.post('/forgot', authRateLimit, asyncHandler(async (req, res) => {
   const db = await getDb();
   const emailRow = getSetting(db, 'email');
 
@@ -120,7 +124,7 @@ router.post('/forgot', asyncHandler(async (req, res) => {
 }));
 
 // POST /api/auth/reset - reset password using token
-router.post('/reset', asyncHandler(async (req, res) => {
+router.post('/reset', authRateLimit, asyncHandler(async (req, res) => {
   const db = await getDb();
   const { token, password } = req.body;
 

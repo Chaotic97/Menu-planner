@@ -3356,3 +3356,117 @@ textarea.input { resize: vertical; min-height: 80px; }
 .dv-comp-item:last-child {
   border-bottom: none;
 }
+
+/* ============================
+   Allergen Keywords (.ak-)
+   ============================ */
+.ak-intro {
+  color: var(--text-muted);
+  margin-bottom: 20px;
+  max-width: 640px;
+}
+
+.ak-add-form {
+  padding: 20px;
+  margin-bottom: 24px;
+}
+
+.ak-add-form h3 {
+  font-size: 1rem;
+  font-weight: 600;
+  margin-bottom: 12px;
+}
+
+.ak-form-row {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.ak-form-row .input:first-child {
+  flex: 1 1 200px;
+  min-width: 0;
+}
+
+.ak-form-row select.input {
+  flex: 0 1 160px;
+}
+
+.ak-keywords-list {
+  display: grid;
+  gap: 16px;
+}
+
+.ak-group {
+  padding: 16px 20px;
+}
+
+.ak-group-header {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.ak-allergen-name {
+  font-weight: 600;
+  font-size: 1rem;
+}
+
+.ak-count {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.ak-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.ak-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: rgba(var(--primary-rgb), 0.1);
+  border: 1px solid rgba(var(--primary-rgb), 0.25);
+  border-radius: 100px;
+  padding: 3px 4px 3px 10px;
+  font-size: 0.85rem;
+  color: var(--text);
+}
+
+.ak-chip-label {
+  line-height: 1.4;
+}
+
+.ak-chip-delete {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  border-radius: 50%;
+  padding: 3px;
+  cursor: pointer;
+  color: var(--text-muted);
+  transition: background 0.15s, color 0.15s;
+  flex-shrink: 0;
+}
+
+.ak-chip-delete:hover {
+  background: rgba(var(--primary-rgb), 0.15);
+  color: var(--danger);
+}
+
+.ak-empty {
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+/* --- Allergen Keywords: dark overrides --- */
+[data-theme="dark"] .ak-chip {
+  background: rgba(64, 145, 108, 0.15);
+  border-color: rgba(64, 145, 108, 0.3);
+}
