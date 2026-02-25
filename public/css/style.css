@@ -1735,9 +1735,10 @@ textarea.input { resize: vertical; min-height: 80px; }
   /* Hide labels in nav-right on mobile (icon-only in top bar) */
   .nav-right .nav-label { display: none; }
 
-  /* Compact top nav */
+  /* Compact top nav — grow to clear Dynamic Island / notch on iOS */
   .top-nav {
-    padding: 0 16px;
+    padding: env(safe-area-inset-top, 0px) 16px 0;
+    height: calc(var(--nav-height) + env(safe-area-inset-top, 0px));
     gap: 12px;
   }
   .nav-brand { font-size: 1.1rem; }
