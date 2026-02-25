@@ -527,6 +527,10 @@ export async function renderMenuBuilder(container, menuId) {
 
         modal.querySelector('#scale-print-btn').addEventListener('click', () => {
           const printWin = window.open('', '_blank');
+          if (!printWin) {
+            showToast('Popup blocked — please allow popups for this site and try again.', 'error');
+            return;
+          }
           printWin.document.write(`
             <html><head><title>Scaled Shopping List - ${escapeHtml(data.menu_name)}</title>
             <style>
@@ -564,13 +568,13 @@ export async function renderMenuBuilder(container, menuId) {
 
   // ---- Kitchen Print ----
   async function showKitchenPrint() {
+    const printWin = window.open('', '_blank');
+    if (!printWin) {
+      showToast('Popup blocked — please allow popups for this site and try again.', 'error');
+      return;
+    }
     try {
       const data = await getMenuKitchenPrint(menuId);
-      const printWin = window.open('', '_blank');
-      if (!printWin) {
-        showToast('Popup blocked — please allow popups for this site and try again.', 'error');
-        return;
-      }
 
       let html = `
         <html><head><title>Service Sheet - ${escapeHtml(data.menu.name)}</title>
