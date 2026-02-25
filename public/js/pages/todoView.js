@@ -1,5 +1,6 @@
-import { getMenus, getShoppingList, getPrepTasks } from '../api.js';
+import { getMenus, getShoppingList, getPrepTasks, getMenuKitchenPrint } from '../api.js';
 import { escapeHtml } from '../utils/escapeHtml.js';
+import { showToast } from '../components/toast.js';
 
 export async function renderTodoView(container, menuId) {
   // menuId can be null (standalone #/todos tab) or an id (from #/menus/:id/todos)
@@ -28,7 +29,10 @@ export async function renderTodoView(container, menuId) {
             <option value="">— Choose a menu —</option>
             ${menus.map(m => `<option value="${m.id}" ${m.id == mid ? 'selected' : ''}>${escapeHtml(m.name)}</option>`).join('')}
           </select>
-          ${mid ? `<button id="print-btn" class="btn btn-secondary">Print</button>` : ''}
+          ${mid ? `
+            <button id="print-btn" class="btn btn-secondary">Print</button>
+            <button id="prep-sheet-btn" class="btn btn-secondary">Print Prep Sheet</button>
+          ` : ''}
         </div>
       </div>
 
@@ -47,6 +51,54 @@ export async function renderTodoView(container, menuId) {
     });
 
     container.querySelector('#print-btn')?.addEventListener('click', () => window.print());
+
+    container.querySelector('#prep-sheet-btn')?.addEventListener('click', async () => {
+      if (!activeMenuId) return;
+      try {
+        const data = await getMenuKitchenPrint(activeMenuId);
+        const printWin = window.open('', '_blank');
+        let html = `
+          <html><head><title>Prep Sheet - ${escapeHtml(data.menu.name)}</title>
+          <style>
+            body { font-family: -apple-system, sans-serif; padding: 20px; color: #1a1a1a; }
+            h1 { font-size: 1.5rem; margin-bottom: 4px; border-bottom: 3px solid #1a1a1a; padding-bottom: 8px; }
+            .meta { font-size: 0.9rem; color: #555; margin: 8px 0 24px; }
+            .dish-block { margin-bottom: 28px; padding-bottom: 20px; border-bottom: 1px solid #ddd; page-break-inside: avoid; }
+            .dish-name { font-size: 1.2rem; font-weight: 700; margin-bottom: 10px; }
+            table { width: 100%; border-collapse: collapse; margin-bottom: 10px; font-size: 0.88rem; }
+            th { text-align: left; padding: 4px 8px; background: #f0f0ec; border-bottom: 2px solid #ccc; }
+            td { padding: 4px 8px; border-bottom: 1px solid #eee; }
+            .notes-label { font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: #888; margin-top: 8px; margin-bottom: 2px; }
+            .notes { font-size: 0.85rem; color: #333; padding: 6px 10px; background: #f5f5f0; border-left: 3px solid #999; white-space: pre-line; }
+            @media print { body { padding: 0; } }
+          </style></head><body>
+          <h1>Prep Sheet: ${escapeHtml(data.menu.name)}</h1>
+          <div class="meta">Printed: ${new Date().toLocaleDateString()}${data.expected_covers ? ` &nbsp;·&nbsp; Covers: ${data.expected_covers}` : ''}</div>
+        `;
+        for (const dish of data.dishes) {
+          html += `<div class="dish-block"><div class="dish-name">${escapeHtml(dish.name)}</div>`;
+          if (dish.ingredients && dish.ingredients.length) {
+            html += `<table><thead><tr><th>Ingredient</th><th>Qty</th><th>Unit</th><th>Prep Note</th></tr></thead><tbody>`;
+            for (const ing of dish.ingredients) {
+              html += `<tr><td>${escapeHtml(ing.ingredient_name)}</td><td>${ing.quantity || ''}</td><td>${escapeHtml(ing.unit || '')}</td><td>${escapeHtml(ing.prep_note || '')}</td></tr>`;
+            }
+            html += `</tbody></table>`;
+          } else {
+            html += `<p style="font-size:0.85rem;color:#888;">No ingredients listed.</p>`;
+          }
+          if (dish.chefs_notes) {
+            html += `<div class="notes-label">Chef's Notes</div><div class="notes">${escapeHtml(dish.chefs_notes)}</div>`;
+          }
+          html += `</div>`;
+        }
+        html += `</body></html>`;
+        printWin.document.write(html);
+        printWin.document.close();
+        printWin.print();
+      } catch (err) {
+        showToast('Failed to generate prep sheet: ' + err.message, 'error');
+      }
+    });
 
     if (mid) {
       await loadContent(mid);

@@ -182,6 +182,12 @@ async function initialize() {
       label TEXT NOT NULL,
       sort_order INTEGER DEFAULT 0
     )`,
+    `CREATE TABLE IF NOT EXISTS dish_components (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      dish_id    INTEGER NOT NULL REFERENCES dishes(id) ON DELETE CASCADE,
+      name       TEXT NOT NULL,
+      sort_order INTEGER DEFAULT 0
+    )`,
   ];
 
   for (const sql of MIGRATIONS) {

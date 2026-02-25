@@ -67,6 +67,8 @@ export async function renderDishForm(container, dishId) {
   const existingTags = dish ? (dish.tags || []) : [];
   // Substitutions
   const existingSubs = dish ? (dish.substitutions || []) : [];
+  // Service Components (never populated from URL import)
+  const existingComponents = dish ? (dish.components || []) : [];
 
   container.innerHTML = `
     <div class="page-header">
@@ -167,6 +169,16 @@ export async function renderDishForm(container, dishId) {
               ${existingSubs.map((sub, i) => substitutionRow(sub, i)).join('')}
             </div>
             <button type="button" id="add-substitution" class="btn btn-secondary">+ Add Substitution</button>
+          </div>
+
+          <!-- Service Components -->
+          <div class="form-group">
+            <label>Service Components</label>
+            <p class="text-muted" style="font-size:0.85rem;margin-bottom:8px;">Pre-prepped items on the plate at service (e.g. duck liver parfait, brioche croutons, truffle gel). These appear on the service sheet instead of raw ingredients.</p>
+            <div id="components-list">
+              ${existingComponents.map((comp, i) => componentRow(comp, i)).join('')}
+            </div>
+            <button type="button" id="add-component" class="btn btn-secondary">+ Add Component</button>
           </div>
 
           <!-- Cost Breakdown -->
@@ -521,6 +533,24 @@ export async function renderDishForm(container, dishId) {
   // ── Drag-and-drop ────────────────────────────────────────────────────────────
   setupIngredientDragDrop(ingredientsList);
 
+  // ── Service Components ───────────────────────────────────────────────────────
+  const componentsList = container.querySelector('#components-list');
+  let componentCounter = existingComponents.length;
+
+  container.querySelector('#add-component').addEventListener('click', () => {
+    const div = document.createElement('div');
+    div.innerHTML = componentRow(null, componentCounter++);
+    componentsList.appendChild(div.firstElementChild);
+  });
+
+  componentsList.addEventListener('click', (e) => {
+    if (e.target.closest('.remove-component')) {
+      e.target.closest('.component-row').remove();
+    }
+  });
+
+  setupComponentDragDrop(componentsList);
+
   // Form submit
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -572,6 +602,13 @@ export async function renderDishForm(container, dishId) {
       amount: parseFloat(row.querySelector('.manual-cost-amount').value) || 0,
     })).filter(item => item.label || item.amount > 0);
 
+    // Collect service components
+    const compRows = componentsList.querySelectorAll('.component-row');
+    const components = Array.from(compRows).map((row, idx) => ({
+      name: row.querySelector('.comp-name').value.trim(),
+      sort_order: idx,
+    })).filter(c => c.name);
+
     const data = {
       name,
       description: container.querySelector('#dish-desc').value.trim(),
@@ -582,6 +619,7 @@ export async function renderDishForm(container, dishId) {
       tags,
       substitutions,
       manual_costs,
+      components,
     };
 
     try {
@@ -679,6 +717,17 @@ function ingredientRow(ing, index) {
         <span class="ing-cost-hint">${ing && ing.unit_cost ? `$${ing.unit_cost}/${ing.base_unit}` : 'No cost set'}</span>
       </div>
       <div class="ing-converter" style="display:none;"></div>
+    </div>
+  `;
+}
+
+function componentRow(comp, index) {
+  const name = comp ? escapeHtml(comp.name || '') : '';
+  return `
+    <div class="component-row" data-index="${index}" draggable="true">
+      <span class="drag-handle" title="Drag to reorder">&#11835;</span>
+      <input type="text" class="input comp-name" placeholder="e.g. brioche croutons" value="${name}">
+      <button type="button" class="btn btn-icon remove-component" title="Remove">&times;</button>
     </div>
   `;
 }
@@ -897,6 +946,99 @@ function setupIngredientDragDrop(list) {
       }
     }
 
+    touchRow.classList.remove('dragging');
+    touchRow = null;
+  });
+}
+
+// ── Drag-and-drop for service component rows ──────────────────────────────────
+
+function setupComponentDragDrop(list) {
+  let dragSrc = null;
+
+  list.addEventListener('dragstart', (e) => {
+    const row = e.target.closest('.component-row');
+    if (!row) return;
+    dragSrc = row;
+    setTimeout(() => row.classList.add('dragging'), 0);
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', '');
+  });
+
+  list.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    const target = e.target.closest('.component-row');
+    if (!target || target === dragSrc) return;
+    list.querySelectorAll('.drop-above, .drop-below').forEach(el => el.classList.remove('drop-above', 'drop-below'));
+    const rect = target.getBoundingClientRect();
+    target.classList.add(e.clientY < rect.top + rect.height / 2 ? 'drop-above' : 'drop-below');
+    e.dataTransfer.dropEffect = 'move';
+  });
+
+  list.addEventListener('dragleave', (e) => {
+    if (!list.contains(e.relatedTarget)) {
+      list.querySelectorAll('.drop-above, .drop-below').forEach(el => el.classList.remove('drop-above', 'drop-below'));
+    }
+  });
+
+  list.addEventListener('drop', (e) => {
+    e.preventDefault();
+    const target = e.target.closest('.component-row');
+    list.querySelectorAll('.drop-above, .drop-below').forEach(el => el.classList.remove('drop-above', 'drop-below'));
+    if (!target || !dragSrc || target === dragSrc) return;
+    const rect = target.getBoundingClientRect();
+    if (e.clientY < rect.top + rect.height / 2) {
+      list.insertBefore(dragSrc, target);
+    } else {
+      target.after(dragSrc);
+    }
+  });
+
+  list.addEventListener('dragend', () => {
+    if (dragSrc) dragSrc.classList.remove('dragging');
+    list.querySelectorAll('.drop-above, .drop-below').forEach(el => el.classList.remove('drop-above', 'drop-below'));
+    dragSrc = null;
+  });
+
+  // Touch support
+  let touchRow = null;
+  list.addEventListener('touchstart', (e) => {
+    const handle = e.target.closest('.drag-handle');
+    if (!handle) return;
+    touchRow = handle.closest('.component-row');
+    if (!touchRow) return;
+    touchRow.classList.add('dragging');
+    e.preventDefault();
+  }, { passive: false });
+
+  list.addEventListener('touchmove', (e) => {
+    if (!touchRow) return;
+    e.preventDefault();
+    const touchY = e.touches[0].clientY;
+    const siblings = [...list.querySelectorAll('.component-row')].filter(r => r !== touchRow);
+    list.querySelectorAll('.drop-above, .drop-below').forEach(el => el.classList.remove('drop-above', 'drop-below'));
+    for (const row of siblings) {
+      const rect = row.getBoundingClientRect();
+      if (touchY >= rect.top && touchY <= rect.bottom) {
+        row.classList.add(touchY < rect.top + rect.height / 2 ? 'drop-above' : 'drop-below');
+        break;
+      }
+    }
+  }, { passive: false });
+
+  list.addEventListener('touchend', (e) => {
+    if (!touchRow) return;
+    const touchY = e.changedTouches[0].clientY;
+    const siblings = [...list.querySelectorAll('.component-row')].filter(r => r !== touchRow);
+    list.querySelectorAll('.drop-above, .drop-below').forEach(el => el.classList.remove('drop-above', 'drop-below'));
+    for (const row of siblings) {
+      const rect = row.getBoundingClientRect();
+      if (touchY >= rect.top && touchY <= rect.bottom) {
+        if (touchY < rect.top + rect.height / 2) list.insertBefore(touchRow, row);
+        else row.after(touchRow);
+        break;
+      }
+    }
     touchRow.classList.remove('dragging');
     touchRow = null;
   });

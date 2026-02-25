@@ -138,11 +138,15 @@ router.get('/:id/kitchen-print', (req, res) => {
     ORDER BY di.sort_order
   `);
   const subsStmt = db.prepare('SELECT * FROM dish_substitutions WHERE dish_id = ? ORDER BY allergen');
+  const componentStmt = db.prepare(
+    'SELECT name, sort_order FROM dish_components WHERE dish_id = ? ORDER BY sort_order, id'
+  );
 
   for (const dish of dishes) {
     dish.allergens = allergenStmt.all(dish.id).map(a => a.allergen);
     dish.ingredients = ingredientStmt.all(dish.id);
     dish.substitutions = subsStmt.all(dish.id);
+    dish.components = componentStmt.all(dish.id);
   }
 
   // Group by category

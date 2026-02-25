@@ -124,6 +124,11 @@ router.get('/:id', (req, res) => {
   // Get substitutions
   dish.substitutions = db.prepare('SELECT * FROM dish_substitutions WHERE dish_id = ? ORDER BY allergen, id').all(dish.id);
 
+  // Get service components
+  dish.components = db.prepare(
+    'SELECT id, name, sort_order FROM dish_components WHERE dish_id = ? ORDER BY sort_order, id'
+  ).all(dish.id);
+
   // Calculate cost (section header rows have no ingredient data — exclude them)
   const costResult = calculateDishCost(dish.ingredients.filter(r => r.row_type === 'ingredient'));
 
@@ -144,7 +149,7 @@ router.get('/:id', (req, res) => {
 // POST /api/dishes - Create dish
 router.post('/', (req, res) => {
   const db = getDb();
-  const { name, description, category, chefs_notes, suggested_price, ingredients, tags, substitutions, manual_costs } = req.body;
+  const { name, description, category, chefs_notes, suggested_price, ingredients, tags, substitutions, manual_costs, components } = req.body;
 
   if (!name) return res.status(400).json({ error: 'Name is required' });
 
@@ -163,6 +168,9 @@ router.post('/', (req, res) => {
 
   // Save substitutions
   saveDishSubstitutions(db, dishId, substitutions);
+
+  // Save service components
+  saveDishComponents(db, dishId, components);
 
   // Detect allergens
   updateDishAllergens(dishId);
@@ -234,6 +242,15 @@ router.post('/:id/duplicate', (req, res) => {
     insertTag.run(newId, t.tag_id);
   }
 
+  // Copy service components
+  const comps = db.prepare(
+    'SELECT name, sort_order FROM dish_components WHERE dish_id = ? ORDER BY sort_order, id'
+  ).all(req.params.id);
+  const insertComp = db.prepare('INSERT INTO dish_components (dish_id, name, sort_order) VALUES (?, ?, ?)');
+  for (const c of comps) {
+    insertComp.run(newId, c.name, c.sort_order);
+  }
+
   updateDishAllergens(newId);
 
   req.broadcast('dish_created', { id: newId }, req.headers['x-client-id']);
@@ -280,7 +297,7 @@ router.put('/:id', (req, res) => {
   const dish = db.prepare('SELECT * FROM dishes WHERE id = ?').get(req.params.id);
   if (!dish) return res.status(404).json({ error: 'Dish not found' });
 
-  const { name, description, category, chefs_notes, suggested_price, ingredients, tags, substitutions, manual_costs } = req.body;
+  const { name, description, category, chefs_notes, suggested_price, ingredients, tags, substitutions, manual_costs, components } = req.body;
 
   db.prepare(`
     UPDATE dishes SET name = ?, description = ?, category = ?, chefs_notes = ?, suggested_price = ?, manual_costs = ?, updated_at = datetime('now')
@@ -313,6 +330,11 @@ router.put('/:id', (req, res) => {
   // Update substitutions if provided
   if (substitutions !== undefined) {
     saveDishSubstitutions(db, req.params.id, substitutions);
+  }
+
+  // Update service components if provided
+  if (components !== undefined) {
+    saveDishComponents(db, req.params.id, components);
   }
 
   req.broadcast('dish_updated', { id: parseInt(req.params.id) }, req.headers['x-client-id']);
@@ -458,6 +480,19 @@ function saveDishTags(db, dishId, tags) {
     if (tag) {
       db.prepare('INSERT OR IGNORE INTO dish_tags (dish_id, tag_id) VALUES (?, ?)').run(dishId, tag.id);
     }
+  }
+}
+
+function saveDishComponents(db, dishId, components) {
+  if (!components || !Array.isArray(components)) return;
+
+  db.prepare('DELETE FROM dish_components WHERE dish_id = ?').run(dishId);
+
+  const insert = db.prepare('INSERT INTO dish_components (dish_id, name, sort_order) VALUES (?, ?, ?)');
+  for (let i = 0; i < components.length; i++) {
+    const name = (components[i].name || '').trim();
+    if (!name) continue;
+    insert.run(dishId, name, components[i].sort_order !== undefined ? components[i].sort_order : i);
   }
 }
 

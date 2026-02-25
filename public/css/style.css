@@ -3097,3 +3097,50 @@ textarea.input { resize: vertical; min-height: 80px; }
   }
   .dv-title { font-size: 1.3rem; }
 }
+
+/* ============================
+   Service Components (dish form)
+   ============================ */
+.component-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.component-row .comp-name {
+  flex: 1;
+  min-width: 0;
+}
+
+.remove-component {
+  color: var(--danger);
+  border: none;
+  background: none;
+  font-size: 1.4rem;
+  cursor: pointer;
+  padding: 4px 8px;
+  min-width: 36px;
+  min-height: 36px;
+}
+
+/* ============================
+   Service Components (dish view)
+   ============================ */
+.dv-comp-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.dv-comp-item {
+  padding: 7px 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.93rem;
+  font-weight: 500;
+  color: var(--text);
+}
+
+.dv-comp-item:last-child {
+  border-bottom: none;
+}

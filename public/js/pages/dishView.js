@@ -105,6 +105,15 @@ export async function renderDishView(container, dishId) {
           ${renderIngredients()}
         </div>
 
+        ${dish.components && dish.components.length ? `
+          <div class="dv-card">
+            <h3 class="dv-card-title">Service Components</h3>
+            <ul class="dv-comp-list">
+              ${dish.components.map(c => `<li class="dv-comp-item">${escapeHtml(c.name)}</li>`).join('')}
+            </ul>
+          </div>
+        ` : ''}
+
         ${dish.chefs_notes ? `
           <div class="dv-card">
             <h3 class="dv-card-title">Chef's Notes</h3>

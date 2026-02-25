@@ -560,8 +560,10 @@ export async function renderMenuBuilder(container, menuId) {
           html += `<div class="allergens">${dish.allergens.map(a => `<span class="allergen-tag">${escapeHtml(a)}</span>`).join('')}</div>`;
         }
 
-        if (dish.ingredients.length) {
-          html += `<ul class="ingredients">${dish.ingredients.map(ing => `<li>${escapeHtml(ing.ingredient_name)}</li>`).join('')}</ul>`;
+        if (dish.components && dish.components.length) {
+          html += `<ul class="ingredients">${dish.components.map(c => `<li>${escapeHtml(c.name)}</li>`).join('')}</ul>`;
+        } else {
+          html += `<p style="font-size:0.85rem;color:#888;margin:4px 0 8px;font-style:italic;">No service components added.</p>`;
         }
 
         if (dish.substitutions && dish.substitutions.length) {
