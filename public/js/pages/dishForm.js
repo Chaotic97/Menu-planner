@@ -1,4 +1,4 @@
-import { getDish, createDish, updateDish, uploadDishPhoto, getIngredients, duplicateDish, updateDishAllergen } from '../api.js';
+import { getDish, createDish, updateDish, uploadDishPhoto, deleteDishPhoto, getIngredients, duplicateDish, updateDishAllergen } from '../api.js';
 import { renderAllergenBadges } from '../components/allergenBadges.js';
 import { showToast } from '../components/toast.js';
 import { openLightbox } from '../components/lightbox.js';
@@ -74,7 +74,10 @@ export async function renderDishForm(container, dishId) {
     <div class="page-header">
       <a href="#/dishes" class="btn btn-back">&larr; Back</a>
       <h1>${isEdit ? 'Edit Dish' : 'New Dish'}</h1>
-      ${isEdit ? '<button id="duplicate-dish-btn" class="btn btn-secondary">Duplicate</button>' : ''}
+      <div class="header-actions">
+        ${isEdit ? '<button id="duplicate-dish-btn" class="btn btn-secondary">Duplicate</button>' : ''}
+        ${isEdit ? '<button type="button" id="header-save-btn" class="btn btn-primary">Save Changes</button>' : ''}
+      </div>
     </div>
     ${importedData ? `
       <div style="padding:12px 16px; background:#e8f5e9; border-radius:var(--radius-sm); margin-bottom:16px; font-size:0.9rem;">
@@ -118,7 +121,10 @@ export async function renderDishForm(container, dishId) {
             <label>Photo</label>
             <div class="photo-upload" id="photo-upload-area">
               ${dish && dish.photo_path
-                ? `<img src="${escapeHtml(dish.photo_path)}" alt="Dish photo" class="photo-preview" id="photo-preview">`
+                ? `<div class="photo-preview-wrap" id="photo-preview-wrap">
+                    <img src="${escapeHtml(dish.photo_path)}" alt="Dish photo" class="photo-preview" id="photo-preview">
+                    <button type="button" class="photo-delete-btn" id="photo-delete-btn" title="Remove photo">&times;</button>
+                  </div>`
                 : '<div class="photo-placeholder" id="photo-preview"><span>Tap to upload photo</span></div>'
               }
               <input type="file" id="photo-input" accept="image/*" hidden>
@@ -251,6 +257,12 @@ export async function renderDishForm(container, dishId) {
     });
   }
 
+  // Header save button (edit mode only)
+  const headerSaveBtn = container.querySelector('#header-save-btn');
+  if (headerSaveBtn) {
+    headerSaveBtn.addEventListener('click', () => form.requestSubmit());
+  }
+
   // If imported data has ingredients, trigger allergen preview
   if (importedData && ingredients.length) {
     setTimeout(() => updateAllergenPreview(), 0);
@@ -258,12 +270,39 @@ export async function renderDishForm(container, dishId) {
 
   // Photo upload + lightbox
   photoArea.addEventListener('click', (e) => {
+    if (e.target.closest('#photo-delete-btn')) return; // handled separately
     const preview = container.querySelector('#photo-preview');
-    if (preview.tagName === 'IMG' && e.target === preview) {
+    if (preview && preview.tagName === 'IMG' && e.target === preview) {
       openLightbox(preview.src, dish ? dish.name : 'Preview');
       return;
     }
     photoInput.click();
+  });
+
+  // Photo delete button
+  photoArea.addEventListener('click', async (e) => {
+    const deleteBtn = e.target.closest('#photo-delete-btn');
+    if (!deleteBtn) return;
+    e.stopPropagation();
+
+    if (isEdit) {
+      deleteBtn.disabled = true;
+      try {
+        await deleteDishPhoto(dishId);
+        showToast('Photo removed');
+      } catch (err) {
+        showToast('Failed to remove photo', 'error');
+        deleteBtn.disabled = false;
+        return;
+      }
+    }
+
+    // Reset UI to placeholder
+    const wrap = container.querySelector('#photo-preview-wrap');
+    if (wrap) {
+      wrap.outerHTML = '<div class="photo-placeholder" id="photo-preview"><span>Tap to upload photo</span></div>';
+    }
+    photoInput.value = '';
   });
 
   photoInput.addEventListener('change', async () => {
@@ -271,12 +310,17 @@ export async function renderDishForm(container, dishId) {
     if (!file) return;
 
     const reader = new FileReader();
-    reader.onload = (e) => {
-      const preview = container.querySelector('#photo-preview');
-      if (preview.tagName === 'IMG') {
-        preview.src = e.target.result;
-      } else {
-        preview.outerHTML = `<img src="${e.target.result}" alt="Dish photo" class="photo-preview" id="photo-preview">`;
+    reader.onload = (evt) => {
+      const existingWrap = container.querySelector('#photo-preview-wrap');
+      const existingPlaceholder = container.querySelector('#photo-preview');
+      const newHtml = `<div class="photo-preview-wrap" id="photo-preview-wrap">
+        <img src="${evt.target.result}" alt="Dish photo" class="photo-preview" id="photo-preview">
+        <button type="button" class="photo-delete-btn" id="photo-delete-btn" title="Remove photo">&times;</button>
+      </div>`;
+      if (existingWrap) {
+        existingWrap.outerHTML = newHtml;
+      } else if (existingPlaceholder) {
+        existingPlaceholder.outerHTML = newHtml;
       }
     };
     reader.readAsDataURL(file);

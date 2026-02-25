@@ -373,6 +373,23 @@ router.post('/:id/photo', upload.single('photo'), asyncHandler(async (req, res) 
   res.json({ photo_path: photoPath });
 }));
 
+// DELETE /api/dishes/:id/photo - Remove photo
+router.delete('/:id/photo', asyncHandler(async (req, res) => {
+  const db = getDb();
+  const dish = db.prepare('SELECT photo_path FROM dishes WHERE id = ? AND deleted_at IS NULL').get(req.params.id);
+  if (!dish) return res.status(404).json({ error: 'Dish not found' });
+
+  if (dish.photo_path) {
+    const fs = require('fs');
+    const filePath = path.join(UPLOADS_DIR, path.basename(dish.photo_path));
+    try { fs.unlinkSync(filePath); } catch {}
+  }
+
+  db.prepare('UPDATE dishes SET photo_path = NULL, updated_at = datetime(\'now\') WHERE id = ?').run(req.params.id);
+  req.broadcast('dish_updated', { id: parseInt(req.params.id) }, req.headers['x-client-id']);
+  res.json({ success: true });
+}));
+
 // POST /api/dishes/:id/allergens - Manual allergen override
 router.post('/:id/allergens', (req, res) => {
   const db = getDb();

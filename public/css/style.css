@@ -773,6 +773,7 @@ textarea.input { resize: vertical; min-height: 80px; }
   border-radius: var(--radius);
   overflow: hidden;
   transition: border-color 0.15s;
+  position: relative;
 }
 
 .photo-upload:hover { border-color: var(--primary); }
@@ -792,6 +793,32 @@ textarea.input { resize: vertical; min-height: 80px; }
   object-fit: cover;
   display: block;
 }
+
+.photo-preview-wrap {
+  position: relative;
+}
+
+.photo-delete-btn {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  font-size: 1.2rem;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s;
+  z-index: 2;
+}
+
+.photo-delete-btn:hover { background: rgba(200, 30, 30, 0.8); }
 
 /* ============================
    Menu Builder
@@ -1382,7 +1409,7 @@ textarea.input { resize: vertical; min-height: 80px; }
 
 .lightbox-close {
   position: absolute;
-  top: 16px;
+  top: max(16px, calc(env(safe-area-inset-top, 0px) + 16px));
   right: 16px;
   background: rgba(255,255,255,0.15);
   border: none;
