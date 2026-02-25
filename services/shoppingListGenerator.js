@@ -117,6 +117,7 @@ function generateShoppingList(menuId) {
   return {
     menu_id: menuId,
     menu_name: menu.name,
+    expected_covers: menu.expected_covers || 0,
     generated_at: new Date().toISOString(),
     groups: sortedGroups,
     total_estimated_cost: round2(totalCost),

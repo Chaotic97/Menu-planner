@@ -118,14 +118,14 @@ router.get('/:id', (req, res) => {
 // GET /api/menus/:id/kitchen-print - Full menu data for kitchen print
 router.get('/:id/kitchen-print', (req, res) => {
   const db = getDb();
-  const menu = db.prepare('SELECT * FROM menus WHERE id = ?').get(req.params.id);
+  const menu = db.prepare('SELECT * FROM menus WHERE id = ? AND deleted_at IS NULL').get(req.params.id);
   if (!menu) return res.status(404).json({ error: 'Menu not found' });
 
   const dishes = db.prepare(`
     SELECT d.*, md.servings, md.sort_order
     FROM menu_dishes md
     JOIN dishes d ON d.id = md.dish_id
-    WHERE md.menu_id = ?
+    WHERE md.menu_id = ? AND d.deleted_at IS NULL
     ORDER BY md.sort_order, d.category, d.name
   `).all(menu.id);
 

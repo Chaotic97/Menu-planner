@@ -57,6 +57,10 @@ export async function renderTodoView(container, menuId) {
       try {
         const data = await getMenuKitchenPrint(activeMenuId);
         const printWin = window.open('', '_blank');
+        if (!printWin) {
+          showToast('Popup blocked — please allow popups for this site and try again.', 'error');
+          return;
+        }
         let html = `
           <html><head><title>Prep Sheet - ${escapeHtml(data.menu.name)}</title>
           <style>
