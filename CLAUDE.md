@@ -46,11 +46,11 @@ routes/
   todos.js                       — Shopping list and prep task endpoints
   serviceNotes.js                — Daily kitchen notes CRUD
 public/
-  index.html                     — SPA shell: nav, bottom tab bar, offline banner, SW registration
+  index.html                     — SPA shell: sidebar nav (SVG icon slots + labels), mobile bottom tab bar, offline banner, SW registration. Sidebar has three states: expanded (240px), collapsed (64px icon rail), hidden (0px reveal button shown).
   manifest.json + service-worker.js — PWA assets
   css/style.css                  — All styles (~3100 lines). See CSS conventions.
   js/
-    app.js                       — Hash router, auth check, theme, route table
+    app.js                       — Hash router, auth check, theme, sidebar state (initSidebar / setSidebarState / updateSidebarToggleBtn), route table
     api.js                       — SOLE HTTP layer. Never call fetch() elsewhere.
     sync.js                      — WebSocket client. Dispatches sync:TYPE events on window.
     utils/escapeHtml.js          — escapeHtml(). Must wrap all user content in templates.
@@ -148,7 +148,18 @@ Rules:
    import { renderMyPage } from './pages/myPage.js';
    { pattern: /^#\/my-page$/, handler: () => renderMyPage(appContent) },
    ```
-3. Add nav links in `public/index.html` (top nav + bottom tab bar for mobile).
+3. Add nav links in `public/index.html` (top nav + bottom tab bar for mobile). Each nav link uses an icon slot and a label — copy the existing pattern exactly:
+   ```html
+   <a href="#/my-page" class="nav-link" title="My Page">
+     <span class="nav-icon" aria-hidden="true">
+       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+         <!-- replace with your icon paths -->
+       </svg>
+     </span>
+     <span class="nav-label">My Page</span>
+   </a>
+   ```
+   Add a matching entry in the bottom tab bar (`bottom-nav-link` / `bottom-nav-icon` / `bottom-nav-label`). The `title` attribute doubles as the tooltip in collapsed sidebar mode.
 4. Add backend route + `api.js` client function if server data is needed.
 5. Add CSS under a new named section with a feature prefix (e.g. `.mp-` for "my page").
 
@@ -342,6 +353,19 @@ green ≤30% · yellow 30–35% · red >35%
 ### Responsive breakpoints
 ≥481px: sidebar nav, no bottom tab bar. ≤480px: bottom tab bar, no sidebar. Use these exact values; do not invent new breakpoints.
 
+### Sidebar state system
+The sidebar has three states stored on `<html data-sidebar="...">` and persisted in `localStorage` under the key `sidebarState`:
+
+| Value | Width | Behaviour |
+|-------|-------|-----------|
+| `expanded` | 240px | Icon + label visible |
+| `collapsed` | 64px | Icon only; labels hidden; `title` attr serves as tooltip |
+| `hidden` | 0px | Sidebar off-screen; floating `.sidebar-reveal-btn` shown |
+
+Use `setSidebarState(state)` in `app.js` to change state — it updates the attribute, persists to localStorage, and refreshes the toggle button icon in one call. The early inline `<script>` in `<head>` sets the attribute before the stylesheet renders to prevent a layout shift.
+
+The `data-sidebar` attribute is set on `<html>` alongside `data-theme` so a single selector like `html[data-sidebar="collapsed"] .nav-label { display: none; }` works without specificity fights.
+
 ---
 
 ## CSS conventions
@@ -371,7 +395,9 @@ Sub-sections (responsive overrides, etc.):
 Global components (`.btn`, `.card`, `.modal`, `.toast`, `.input`, `.drag-handle`) are unprefixed. New features with more than ~3 classes get a prefix; add it to this table.
 
 ### CSS variables
-All design tokens in `:root` at top of `style.css`. Groups: Brand colours (`--primary-*`) · Semantic (`--danger`, `--warning`, `--success`) · Surface & text (`--bg`, `--surface`, `--text`, `--border`) · Elevation (`--shadow`, `--shadow-lg`) · Geometry (`--radius`, `--radius-sm`) · Layout (`--nav-height`, `--sidebar-width`) · Typography (`--font`).
+All design tokens in `:root` at top of `style.css`. Groups: Brand colours (`--primary-*`, `--primary-rgb`) · Semantic (`--danger`, `--warning`, `--success`) · Surface & text (`--bg`, `--surface`, `--text`, `--border`) · Elevation (`--shadow`, `--shadow-lg`) · Geometry (`--radius`, `--radius-sm`) · Layout (`--nav-height`, `--sidebar-width`, `--sidebar-collapsed-width`) · Typography (`--font`).
+
+`--primary-rgb` holds the raw RGB components of `--primary` (e.g. `45, 106, 79`) so you can use `rgba(var(--primary-rgb), 0.1)` for tinted backgrounds. Both `:root` and `[data-theme="dark"]` define it.
 
 Dark mode: `[data-theme="dark"]` block immediately below `:root`. Component-specific dark overrides go at the end of that block under `/* --- Component-specific dark overrides --- */`. Do not scatter dark mode rules through the file.
 

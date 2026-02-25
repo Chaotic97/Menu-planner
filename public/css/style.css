@@ -1732,6 +1732,9 @@ textarea.input { resize: vertical; min-height: 80px; }
   .nav-links { display: none; }
   .btn-logout { display: none !important; }
 
+  /* Hide labels in nav-right on mobile (icon-only in top bar) */
+  .nav-right .nav-label { display: none; }
+
   /* Compact top nav */
   .top-nav {
     padding: 0 16px;
