@@ -5,6 +5,7 @@ import { openModal, closeModal } from '../components/modal.js';
 import { openLightbox } from '../components/lightbox.js';
 import { escapeHtml } from '../utils/escapeHtml.js';
 import { ALLERGEN_LIST, CATEGORY_ORDER, capitalize } from '../data/allergens.js';
+import { printSheet } from '../utils/printSheet.js';
 
 export async function renderMenuBuilder(container, menuId) {
   container.innerHTML = '<div class="loading">Loading menu...</div>';
@@ -526,12 +527,7 @@ export async function renderMenuBuilder(container, menuId) {
         resultDiv.innerHTML = html;
 
         modal.querySelector('#scale-print-btn').addEventListener('click', () => {
-          const printWin = window.open('', '_blank');
-          if (!printWin) {
-            showToast('Popup blocked — please allow popups for this site and try again.', 'error');
-            return;
-          }
-          printWin.document.write(`
+          const html = `
             <html><head><title>Scaled Shopping List - ${escapeHtml(data.menu_name)}</title>
             <style>
               body { font-family: -apple-system, sans-serif; padding: 20px; }
@@ -555,9 +551,8 @@ export async function renderMenuBuilder(container, menuId) {
               `).join('')}
             `).join('')}
             </body></html>
-          `);
-          printWin.document.close();
-          printWin.print();
+          `;
+          printSheet(html);
         });
 
       } catch (err) {
@@ -568,11 +563,6 @@ export async function renderMenuBuilder(container, menuId) {
 
   // ---- Kitchen Print ----
   async function showKitchenPrint() {
-    const printWin = window.open('', '_blank');
-    if (!printWin) {
-      showToast('Popup blocked — please allow popups for this site and try again.', 'error');
-      return;
-    }
     try {
       const data = await getMenuKitchenPrint(menuId);
 
@@ -637,9 +627,7 @@ export async function renderMenuBuilder(container, menuId) {
       });
 
       html += `</body></html>`;
-      printWin.document.write(html);
-      printWin.document.close();
-      printWin.print();
+      printSheet(html);
     } catch (err) {
       showToast('Failed to generate service sheet: ' + err.message, 'error');
     }

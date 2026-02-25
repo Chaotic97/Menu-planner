@@ -1,6 +1,7 @@
 import { getMenus, getShoppingList, getPrepTasks, getMenuKitchenPrint } from '../api.js';
 import { escapeHtml } from '../utils/escapeHtml.js';
 import { showToast } from '../components/toast.js';
+import { printSheet } from '../utils/printSheet.js';
 
 export async function renderTodoView(container, menuId) {
   // menuId can be null (standalone #/todos tab) or an id (from #/menus/:id/todos)
@@ -55,11 +56,6 @@ export async function renderTodoView(container, menuId) {
     container.querySelector('#prep-sheet-btn')?.addEventListener('click', async () => {
       if (!activeMenuId) return;
       try {
-        const printWin = window.open('', '_blank');
-        if (!printWin) {
-          showToast('Popup blocked — please allow popups for this site and try again.', 'error');
-          return;
-        }
         const data = await getMenuKitchenPrint(activeMenuId);
         let html = `
           <html><head><title>Prep Sheet - ${escapeHtml(data.menu.name)}</title>
@@ -74,7 +70,6 @@ export async function renderTodoView(container, menuId) {
             td { padding: 4px 8px; border-bottom: 1px solid #eee; }
             .notes-label { font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: #888; margin-top: 8px; margin-bottom: 2px; }
             .notes { font-size: 0.85rem; color: #333; padding: 6px 10px; background: #f5f5f0; border-left: 3px solid #999; white-space: pre-line; }
-            @media print { body { padding: 0; } }
           </style></head><body>
           <h1>Prep Sheet: ${escapeHtml(data.menu.name)}</h1>
           <div class="meta">Printed: ${new Date().toLocaleDateString()}${data.expected_covers ? ` &nbsp;·&nbsp; Covers: ${data.expected_covers}` : ''}</div>
@@ -96,9 +91,7 @@ export async function renderTodoView(container, menuId) {
           html += `</div>`;
         }
         html += `</body></html>`;
-        printWin.document.write(html);
-        printWin.document.close();
-        printWin.print();
+        printSheet(html);
       } catch (err) {
         showToast('Failed to generate prep sheet: ' + err.message, 'error');
       }
