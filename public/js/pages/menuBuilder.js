@@ -574,8 +574,8 @@ export async function renderMenuBuilder(container, menuId) {
           html += `</div>`;
         }
 
-        if (dish.chefs_notes) {
-          html += `<div class="notes"><div class="notes-label">Service Notes</div>${escapeHtml(dish.chefs_notes)}</div>`;
+        if (dish.service_notes) {
+          html += `<div class="notes"><div class="notes-label">Service Notes</div>${escapeHtml(dish.service_notes)}</div>`;
         }
 
         html += `</div></div>`;

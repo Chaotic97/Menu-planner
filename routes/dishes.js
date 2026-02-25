@@ -149,14 +149,14 @@ router.get('/:id', (req, res) => {
 // POST /api/dishes - Create dish
 router.post('/', (req, res) => {
   const db = getDb();
-  const { name, description, category, chefs_notes, suggested_price, ingredients, tags, substitutions, manual_costs, components } = req.body;
+  const { name, description, category, chefs_notes, service_notes, suggested_price, ingredients, tags, substitutions, manual_costs, components } = req.body;
 
   if (!name) return res.status(400).json({ error: 'Name is required' });
 
   const result = db.prepare(`
-    INSERT INTO dishes (name, description, category, chefs_notes, suggested_price, manual_costs)
-    VALUES (?, ?, ?, ?, ?, ?)
-  `).run(name, description || '', category || 'main', chefs_notes || '', suggested_price || 0, manual_costs ? JSON.stringify(manual_costs) : '[]');
+    INSERT INTO dishes (name, description, category, chefs_notes, service_notes, suggested_price, manual_costs)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+  `).run(name, description || '', category || 'main', chefs_notes || '', service_notes || '', suggested_price || 0, manual_costs ? JSON.stringify(manual_costs) : '[]');
 
   const dishId = result.lastInsertRowid;
 
@@ -186,13 +186,14 @@ router.post('/:id/duplicate', (req, res) => {
   if (!source) return res.status(404).json({ error: 'Dish not found' });
 
   const result = db.prepare(`
-    INSERT INTO dishes (name, description, category, chefs_notes, suggested_price)
-    VALUES (?, ?, ?, ?, ?)
+    INSERT INTO dishes (name, description, category, chefs_notes, service_notes, suggested_price)
+    VALUES (?, ?, ?, ?, ?, ?)
   `).run(
     'Copy of ' + source.name,
     source.description,
     source.category,
     source.chefs_notes,
+    source.service_notes || '',
     source.suggested_price
   );
 
@@ -297,16 +298,17 @@ router.put('/:id', (req, res) => {
   const dish = db.prepare('SELECT * FROM dishes WHERE id = ?').get(req.params.id);
   if (!dish) return res.status(404).json({ error: 'Dish not found' });
 
-  const { name, description, category, chefs_notes, suggested_price, ingredients, tags, substitutions, manual_costs, components } = req.body;
+  const { name, description, category, chefs_notes, service_notes, suggested_price, ingredients, tags, substitutions, manual_costs, components } = req.body;
 
   db.prepare(`
-    UPDATE dishes SET name = ?, description = ?, category = ?, chefs_notes = ?, suggested_price = ?, manual_costs = ?, updated_at = datetime('now')
+    UPDATE dishes SET name = ?, description = ?, category = ?, chefs_notes = ?, service_notes = ?, suggested_price = ?, manual_costs = ?, updated_at = datetime('now')
     WHERE id = ?
   `).run(
     name || dish.name,
     description !== undefined ? description : dish.description,
     category || dish.category,
     chefs_notes !== undefined ? chefs_notes : dish.chefs_notes,
+    service_notes !== undefined ? service_notes : (dish.service_notes || ''),
     suggested_price !== undefined ? suggested_price : dish.suggested_price,
     manual_costs !== undefined ? JSON.stringify(manual_costs) : (dish.manual_costs || '[]'),
     req.params.id

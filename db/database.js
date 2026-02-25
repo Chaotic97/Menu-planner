@@ -188,6 +188,7 @@ async function initialize() {
       name       TEXT NOT NULL,
       sort_order INTEGER DEFAULT 0
     )`,
+    `ALTER TABLE dishes ADD COLUMN service_notes TEXT DEFAULT ''`,
   ];
 
   for (const sql of MIGRATIONS) {

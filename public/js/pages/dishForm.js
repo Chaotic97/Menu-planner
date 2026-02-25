@@ -200,7 +200,15 @@ export async function renderDishForm(container, dishId) {
           <!-- Chef's Notes -->
           <div class="form-group">
             <label for="dish-notes">Chef's Notes</label>
-            <textarea id="dish-notes" class="input" rows="4" placeholder="Prep instructions, timing notes, plating details...&#10;e.g., Marinate overnight. Sear skin-side down 4 minutes.">${dish ? escapeHtml(dish.chefs_notes) : (importedData ? escapeHtml(importedData.instructions) : '')}</textarea>
+            <p class="text-muted" style="font-size:0.85rem;margin-bottom:8px;">Prep instructions, recipe method, timing — shown on the prep sheet.</p>
+            <textarea id="dish-notes" class="input" rows="4" placeholder="e.g., Marinate overnight. Sear skin-side down 4 minutes.">${dish ? escapeHtml(dish.chefs_notes) : (importedData ? escapeHtml(importedData.instructions) : '')}</textarea>
+          </div>
+
+          <!-- Service Notes -->
+          <div class="form-group">
+            <label for="dish-service-notes">Service Notes</label>
+            <p class="text-muted" style="font-size:0.85rem;margin-bottom:8px;">Front-of-house guidance, plating reminders, allergy alerts — shown on the service sheet.</p>
+            <textarea id="dish-service-notes" class="input" rows="3" placeholder="e.g., Serve immediately. Warn staff re: nut allergy. Garnish plate-side.">${dish ? escapeHtml(dish.service_notes || '') : ''}</textarea>
           </div>
         </div>
       </div>
@@ -614,6 +622,7 @@ export async function renderDishForm(container, dishId) {
       description: container.querySelector('#dish-desc').value.trim(),
       category: container.querySelector('#dish-category').value,
       chefs_notes: container.querySelector('#dish-notes').value.trim(),
+      service_notes: container.querySelector('#dish-service-notes').value.trim(),
       suggested_price: parseFloat(container.querySelector('#dish-price').value) || 0,
       ingredients: ingData,
       tags,

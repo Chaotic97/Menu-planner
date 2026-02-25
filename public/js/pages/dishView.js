@@ -121,6 +121,13 @@ export async function renderDishView(container, dishId) {
           </div>
         ` : ''}
 
+        ${dish.service_notes ? `
+          <div class="dv-card">
+            <h3 class="dv-card-title">Service Notes</h3>
+            <p class="dv-notes">${escapeHtml(dish.service_notes).replace(/\n/g, '<br>')}</p>
+          </div>
+        ` : ''}
+
       </div>
 
       <!-- Right / sidebar column -->
