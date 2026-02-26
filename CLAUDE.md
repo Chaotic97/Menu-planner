@@ -31,8 +31,9 @@ db/
 middleware/
   auth.js                        — Blocks unauthenticated /api/* requests. PUBLIC_PATHS list is the bypass list.
   asyncHandler.js                — Wraps async route handlers so thrown errors reach the global error handler
+  rateLimit.js                   — createRateLimit({ windowMs, max, message }) — in-memory sliding-window rate limiter (no external dependency). Applied to /api/auth/login, /forgot, /reset at 10 req/15 min.
 services/
-  allergenDetector.js            — updateDishAllergens(dishId), getAllergenKeywords()
+  allergenDetector.js            — updateDishAllergens(dishId), getAllergenKeywords(), addAllergenKeyword(keyword, allergen), deleteAllergenKeyword(id)
   costCalculator.js              — calculateDishCost(), calculateFoodCostPercent(), suggestPrice(), convertUnits(), normalizeUnit(), round2()
   emailService.js                — sendPasswordResetEmail(toAddress, resetUrl)
   prepTaskGenerator.js           — generatePrepTasks(menuId), extractPrepTasks(notes, dishName), extractTiming(text)
@@ -48,15 +49,18 @@ routes/
 public/
   index.html                     — SPA shell: sidebar nav (SVG icon slots + labels), mobile bottom tab bar, offline banner, SW registration. Sidebar has three states: expanded (240px), collapsed (64px icon rail), hidden (0px reveal button shown).
   manifest.json + service-worker.js — PWA assets
-  css/style.css                  — All styles (~3100 lines). See CSS conventions.
+  css/style.css                  — All styles (~3460 lines). See CSS conventions.
   js/
     app.js                       — Hash router, auth check, theme, sidebar state (initSidebar / setSidebarState / updateSidebarToggleBtn), route table
     api.js                       — SOLE HTTP layer. Never call fetch() elsewhere.
     sync.js                      — WebSocket client. Dispatches sync:TYPE events on window.
-    utils/escapeHtml.js          — escapeHtml(). Must wrap all user content in templates.
+    utils/
+      escapeHtml.js              — escapeHtml(). Must wrap all user content in templates.
+      printSheet.js              — printSheet(html) — renders a full HTML string as a fixed full-viewport overlay, then defers window.print() by two rAFs to guarantee @media print styles are applied before the browser captures its snapshot. Cleans up via afterprint + 60s fallback.
     pages/                       — One file per page. Each exports renderXxx(container).
       dishList.js · dishForm.js · dishView.js · menuList.js · menuBuilder.js
       todoView.js · serviceNotes.js · flavorPairings.js · specials.js · login.js
+      allergenKeywords.js        — Allergen keywords management: list grouped by allergen, add custom keyword/allergen pairs, delete keywords. Route: #/allergen-keywords.
     components/
       modal.js                   — openModal(htmlContent) / closeModal()
       toast.js                   — showToast(message, options)
@@ -236,6 +240,8 @@ Rules for new tests:
 | POST | `/api/dishes/:id/allergens` | Body: `{ allergen, action: 'add'|'remove', source: 'manual' }` |
 | GET | `/api/dishes/tags/all` | All tags |
 | GET | `/api/dishes/allergen-keywords/all` | All keyword→allergen mappings |
+| POST | `/api/dishes/allergen-keywords` | Body: `{ keyword, allergen }` → 201 `{ success: true }` |
+| DELETE | `/api/dishes/allergen-keywords/:id` | Remove a keyword by id |
 
 ### Ingredients
 | Method | Path | Notes |
@@ -284,15 +290,15 @@ Rules for new tests:
 | DELETE | `/api/menus/specials/:id` | Hard delete |
 
 ### Auth (all public — no session required)
-| Method | Path |
-|--------|------|
-| GET | `/api/auth/status` |
-| POST | `/api/auth/login` |
-| POST | `/api/auth/logout` |
-| POST | `/api/auth/setup` |
-| POST | `/api/auth/forgot` |
-| POST | `/api/auth/reset` |
-| POST | `/api/auth/change-password` |
+| Method | Path | Notes |
+|--------|------|-------|
+| GET | `/api/auth/status` | |
+| POST | `/api/auth/login` | Rate-limited: 10 req / 15 min per IP |
+| POST | `/api/auth/logout` | |
+| POST | `/api/auth/setup` | |
+| POST | `/api/auth/forgot` | Rate-limited: 10 req / 15 min per IP |
+| POST | `/api/auth/reset` | Rate-limited: 10 req / 15 min per IP |
+| POST | `/api/auth/change-password` | |
 
 ---
 
@@ -322,6 +328,20 @@ Rules for new tests:
 ---
 
 ## Key patterns and gotchas
+
+### Auth rate limiting
+`/api/auth/login`, `/forgot`, and `/reset` are protected by `middleware/rateLimit.js` at 10 requests per 15 minutes per IP. The limiter is in-memory and has no external dependency. To add rate limiting to a new route: `const { createRateLimit } = require('../middleware/rateLimit')` then pass the result as middleware before the handler. The response on 429 includes a `Retry-After` header (seconds).
+
+### Database indexes
+Five indexes are created via migrations in `db/database.js` on the most-queried filter/join columns: `dishes.deleted_at`, `menu_dishes.menu_id`, `dish_ingredients.dish_id`, `dish_allergens.dish_id`, `service_notes.date`. When adding new queries that filter or join on a non-primary-key column in a hot path, add a corresponding `CREATE INDEX IF NOT EXISTS` migration.
+
+### Print sheets (printSheet.js)
+`printSheet(html)` in `public/js/utils/printSheet.js` is the sole print utility. All three print paths use it (kitchen service sheet, prep sheet, scaled shopping list). Key behaviours:
+- The overlay is `position: fixed; inset: 0; z-index: max` on screen — it covers the viewport so the user sees what they're printing before the dialog opens.
+- `window.print()` is deferred by two `requestAnimationFrame` calls so the browser has completed its style recalculation and paint before taking the print snapshot. Calling it synchronously (without the rAF defer) causes Chrome/Safari to capture a stale render state and print the app screen instead.
+- At `@media print` the overlay resets to `position: static` so content flows normally across pages.
+- Cleanup (remove overlay + injected styles) happens via `afterprint` event + 60-second fallback.
+- Do not call `window.print()` directly from page code — always go through `printSheet()`.
 
 ### Session save before response (do not remove)
 The login route calls `req.session.save(cb)` before `res.json()`. Without this, the session file may not be on disk before the browser receives the cookie — login appears broken. Do not remove this pattern.
@@ -391,6 +411,7 @@ Sub-sections (responsive overrides, etc.):
 | `.uc-` | Unit Converter |
 | `.ing-` | Ingredient rows (dish form) |
 | `.mb-` | Menu Builder |
+| `.ak-` | Allergen Keywords |
 
 Global components (`.btn`, `.card`, `.modal`, `.toast`, `.input`, `.drag-handle`) are unprefixed. New features with more than ~3 classes get a prefix; add it to this table.
 
