@@ -7,6 +7,7 @@ import { renderTodoView } from './pages/todoView.js';
 import { renderSpecials } from './pages/specials.js';
 import { renderServiceNotes } from './pages/serviceNotes.js';
 import { renderFlavorPairings } from './pages/flavorPairings.js';
+import { renderAllergenKeywords } from './pages/allergenKeywords.js';
 import { openUnitConverter } from './components/unitConverter.js';
 import { renderLogin } from './pages/login.js';
 import { connectSync } from './sync.js';
@@ -23,6 +24,7 @@ const routes = [
   { pattern: /^#\/specials$/, handler: () => renderSpecials(appContent) },
   { pattern: /^#\/service-notes$/, handler: () => renderServiceNotes(appContent) },
   { pattern: /^#\/flavor-pairings$/, handler: () => renderFlavorPairings(appContent) },
+  { pattern: /^#\/allergen-keywords$/, handler: () => renderAllergenKeywords(appContent) },
   { pattern: /^#\/todos$/, handler: () => renderTodoView(appContent, null) },
   { pattern: /^#\/menus\/(\d+)\/todos$/, handler: (m) => renderTodoView(appContent, m[1]) },
   { pattern: /^#\/menus\/(\d+)$/, handler: (m) => renderMenuBuilder(appContent, m[1]) },

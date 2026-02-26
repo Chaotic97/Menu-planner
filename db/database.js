@@ -189,6 +189,11 @@ async function initialize() {
       sort_order INTEGER DEFAULT 0
     )`,
     `ALTER TABLE dishes ADD COLUMN service_notes TEXT DEFAULT ''`,
+    `CREATE INDEX IF NOT EXISTS idx_dishes_deleted_at ON dishes(deleted_at)`,
+    `CREATE INDEX IF NOT EXISTS idx_menu_dishes_menu_id ON menu_dishes(menu_id)`,
+    `CREATE INDEX IF NOT EXISTS idx_dish_ingredients_dish_id ON dish_ingredients(dish_id)`,
+    `CREATE INDEX IF NOT EXISTS idx_dish_allergens_dish_id ON dish_allergens(dish_id)`,
+    `CREATE INDEX IF NOT EXISTS idx_service_notes_date ON service_notes(date)`,
   ];
 
   for (const sql of MIGRATIONS) {

@@ -84,6 +84,8 @@ export const getPrepTasks = (menuId) => request(`/todos/menu/${menuId}/prep-task
 
 // Allergen keywords
 export const getAllergenKeywords = () => request('/dishes/allergen-keywords/all');
+export const addAllergenKeyword = (data) => request('/dishes/allergen-keywords', { method: 'POST', body: data });
+export const deleteAllergenKeyword = (id) => request(`/dishes/allergen-keywords/${id}`, { method: 'DELETE' });
 
 // Service Notes
 export const getServiceNotes = (params) => {
