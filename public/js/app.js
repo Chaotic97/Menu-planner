@@ -7,9 +7,10 @@ import { renderTodoView } from './pages/todoView.js';
 import { renderSpecials } from './pages/specials.js';
 import { renderServiceNotes } from './pages/serviceNotes.js';
 import { renderFlavorPairings } from './pages/flavorPairings.js';
-import { renderAllergenKeywords } from './pages/allergenKeywords.js';
+import { renderSettings } from './pages/settings.js';
 import { openUnitConverter } from './components/unitConverter.js';
 import { renderLogin } from './pages/login.js';
+import { authStatus, authLogout } from './api.js';
 import { connectSync } from './sync.js';
 
 const appContent = document.getElementById('app-content');
@@ -24,7 +25,7 @@ const routes = [
   { pattern: /^#\/specials$/, handler: () => renderSpecials(appContent) },
   { pattern: /^#\/service-notes$/, handler: () => renderServiceNotes(appContent) },
   { pattern: /^#\/flavor-pairings$/, handler: () => renderFlavorPairings(appContent) },
-  { pattern: /^#\/allergen-keywords$/, handler: () => renderAllergenKeywords(appContent) },
+  { pattern: /^#\/settings$/, handler: () => renderSettings(appContent) },
   { pattern: /^#\/todos$/, handler: () => renderTodoView(appContent, null) },
   { pattern: /^#\/menus\/(\d+)\/todos$/, handler: (m) => renderTodoView(appContent, m[1]) },
   { pattern: /^#\/menus\/(\d+)$/, handler: (m) => renderMenuBuilder(appContent, m[1]) },
@@ -34,8 +35,7 @@ const routes = [
 
 async function checkAuth() {
   try {
-    const res = await fetch('/api/auth/status');
-    const data = await res.json();
+    const data = await authStatus();
 
     if (!data.isSetup) {
       showAuthUI(false);
@@ -72,7 +72,7 @@ function showAuthUI(authed) {
 }
 
 async function handleLogout() {
-  await fetch('/api/auth/logout', { method: 'POST' });
+  try { await authLogout(); } catch {}
   window.location.hash = '#/login';
   window.location.reload();
 }

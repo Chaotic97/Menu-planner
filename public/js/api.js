@@ -87,6 +87,32 @@ export const getAllergenKeywords = () => request('/dishes/allergen-keywords/all'
 export const addAllergenKeyword = (data) => request('/dishes/allergen-keywords', { method: 'POST', body: data });
 export const deleteAllergenKeyword = (id) => request(`/dishes/allergen-keywords/${id}`, { method: 'DELETE' });
 
+// Auth — public endpoints (no 401 redirect)
+async function authRequest(path, options = {}) {
+  const url = `${BASE}${path}`;
+  const config = {
+    headers: { 'Content-Type': 'application/json' },
+    ...options,
+  };
+  if (config.body && typeof config.body === 'object' && !(config.body instanceof FormData)) {
+    config.body = JSON.stringify(config.body);
+  }
+  const res = await fetch(url, config);
+  const data = await res.json().catch(() => ({ error: res.statusText }));
+  if (!res.ok) {
+    throw new Error(data.error || 'Request failed');
+  }
+  return data;
+}
+
+export const authStatus = () => authRequest('/auth/status');
+export const authLogin = (data) => authRequest('/auth/login', { method: 'POST', body: data });
+export const authSetup = (data) => authRequest('/auth/setup', { method: 'POST', body: data });
+export const authForgot = (data) => authRequest('/auth/forgot', { method: 'POST', body: data });
+export const authReset = (data) => authRequest('/auth/reset', { method: 'POST', body: data });
+export const authLogout = () => authRequest('/auth/logout', { method: 'POST' });
+export const changePassword = (data) => request('/auth/change-password', { method: 'POST', body: data });
+
 // Service Notes
 export const getServiceNotes = (params) => {
   const qs = new URLSearchParams(params).toString();
