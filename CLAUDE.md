@@ -39,6 +39,7 @@ services/
   prepTaskGenerator.js           — generatePrepTasks(menuId), extractPrepTasks(notes, dishName), extractTiming(text). Prefers structured dish_directions; falls back to chefs_notes text parsing.
   recipeImporter.js              — importRecipe(url) — scrapes a URL and returns a dish-shaped object (incl. directions[]). Has SSRF protection (blocks private IPs, enforces https, timeout + size limits).
   docxImporter.js                — importDocx(buffer) — parses Meez .docx exports into a dish-shaped object (incl. directions[]).
+  specialsExporter.js            — exportSpecialsDocx(weekStart) — generates .docx file of active weekly specials with dish details.
   shoppingListGenerator.js       — generateShoppingList(menuId) — aggregates + unit-normalises menu ingredients
 routes/
   auth.js                        — Login, logout, setup, forgot/reset password, change password
@@ -290,6 +291,7 @@ Rules for new tests:
 | Method | Path | Notes |
 |--------|------|-------|
 | GET | `/api/menus/specials/list` | Query: `week_start` |
+| GET | `/api/menus/specials/export-docx` | Query: `week` (YYYY-MM-DD). Downloads .docx of active specials with dish details. |
 | POST | `/api/menus/specials` | Body: dish_id, week_start, week_end, notes |
 | PUT | `/api/menus/specials/:id` | Same body |
 | DELETE | `/api/menus/specials/:id` | Hard delete |

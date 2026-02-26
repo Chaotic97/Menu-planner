@@ -1,6 +1,8 @@
 const express = require('express');
 const { getDb } = require('../db/database');
 const { calculateDishCost } = require('../services/costCalculator');
+const { exportSpecialsDocx } = require('../services/specialsExporter');
+const asyncHandler = require('../middleware/asyncHandler');
 
 const router = express.Router();
 
@@ -311,6 +313,21 @@ router.delete('/:id/dishes/:dishId', (req, res) => {
 // ============================
 // Weekly Specials
 // ============================
+
+// GET /api/menus/specials/export-docx - Export weekly specials as .docx
+router.get('/specials/export-docx', asyncHandler(async (req, res) => {
+  const { week } = req.query;
+  if (!week) return res.status(400).json({ error: 'week query parameter is required (YYYY-MM-DD)' });
+
+  try {
+    const buffer = await exportSpecialsDocx(week);
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+    res.setHeader('Content-Disposition', `attachment; filename="specials-${week}.docx"`);
+    res.send(Buffer.from(buffer));
+  } catch (err) {
+    res.status(422).json({ error: err.message });
+  }
+}));
 
 // GET /api/menus/specials/list - List all weekly specials
 router.get('/specials/list', (req, res) => {
