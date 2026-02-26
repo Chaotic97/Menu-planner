@@ -36,12 +36,13 @@ services/
   allergenDetector.js            — updateDishAllergens(dishId), getAllergenKeywords()
   costCalculator.js              — calculateDishCost(), calculateFoodCostPercent(), suggestPrice(), convertUnits(), normalizeUnit(), round2()
   emailService.js                — sendPasswordResetEmail(toAddress, resetUrl)
-  prepTaskGenerator.js           — generatePrepTasks(menuId), extractPrepTasks(notes, dishName), extractTiming(text)
-  recipeImporter.js              — importRecipe(url) — scrapes a URL and returns a dish-shaped object. Has SSRF protection (blocks private IPs, enforces https, timeout + size limits).
+  prepTaskGenerator.js           — generatePrepTasks(menuId), extractPrepTasks(notes, dishName), extractTiming(text). Prefers structured dish_directions; falls back to chefs_notes text parsing.
+  recipeImporter.js              — importRecipe(url) — scrapes a URL and returns a dish-shaped object (incl. directions[]). Has SSRF protection (blocks private IPs, enforces https, timeout + size limits).
+  docxImporter.js                — importDocx(buffer) — parses Meez .docx exports into a dish-shaped object (incl. directions[]).
   shoppingListGenerator.js       — generateShoppingList(menuId) — aggregates + unit-normalises menu ingredients
 routes/
   auth.js                        — Login, logout, setup, forgot/reset password, change password
-  dishes.js                      — Full CRUD + photo upload, duplicate, favorites, tags, allergens, import from URL
+  dishes.js                      — Full CRUD + photo upload, duplicate, favorites, tags, allergens, directions, import from URL/docx
   ingredients.js                 — Ingredient CRUD with unit_cost
   menus.js                       — Menu CRUD + dish ordering, weekly specials, kitchen print, scaling
   todos.js                       — Shopping list and prep task endpoints
@@ -68,7 +69,7 @@ public/
     data/
       categories.js · units.js · allergenKeywords.js · flavorPairings.js
 tests/
-  costCalculator.test.js · prepTaskGenerator.test.js
+  costCalculator.test.js · prepTaskGenerator.test.js · docxImporter.test.js
 ```
 
 ---
@@ -215,6 +216,9 @@ tests/
                               calculateDishCost, calculateFoodCostPercent, suggestPrice
   prepTaskGenerator.test.js — extractTiming (all 5 buckets), extractPrepTasks (splitting,
                               filtering, timing assignment, all sentences included)
+  docxImporter.test.js      — parseMeezText (title, ingredients with sections, directions
+                              with sections, category guessing), parseMeezIngredient
+                              (qty/unit/name/prep_note parsing)
 ```
 
 Rules for new tests:
@@ -230,16 +234,18 @@ Rules for new tests:
 | Method | Path | Notes |
 |--------|------|-------|
 | GET | `/api/dishes` | Query: `category`, `search`, `favorite=1`, `tag` |
-| GET | `/api/dishes/:id` | Full detail: ingredients (with row_type), allergens, cost, substitutions, tags |
-| POST | `/api/dishes` | Body: name\*, description, category, chefs_notes, suggested_price, ingredients[], tags[], substitutions[], manual_costs[] → 201 `{ id }` |
+| GET | `/api/dishes/:id` | Full detail: ingredients (with row_type), allergens, cost, substitutions, tags, directions |
+| POST | `/api/dishes` | Body: name\*, description, category, chefs_notes, suggested_price, ingredients[], tags[], substitutions[], manual_costs[], directions[] → 201 `{ id }` |
 | PUT | `/api/dishes/:id` | Same body as POST |
 | DELETE | `/api/dishes/:id` | Soft delete (sets deleted_at) |
 | POST | `/api/dishes/:id/restore` | Clears deleted_at. Returns 404 if dish not found. |
-| POST | `/api/dishes/:id/duplicate` | Full copy including ingredients, headers, subs, tags → 201 `{ id }` |
+| POST | `/api/dishes/:id/duplicate` | Full copy including ingredients, headers, subs, tags, directions → 201 `{ id }` |
 | POST | `/api/dishes/:id/favorite` | Toggles is_favorite |
 | POST | `/api/dishes/:id/photo` | multipart/form-data, field name: `photo` |
 | POST | `/api/dishes/:id/allergens` | Body: `{ allergen, action: 'add'|'remove', source: 'manual' }` |
 | GET | `/api/dishes/tags/all` | All tags |
+| POST | `/api/dishes/import-url` | Body: `{ url }`. Scrapes recipe → returns dish-shaped JSON (incl. directions[]) |
+| POST | `/api/dishes/import-docx` | multipart/form-data, field name: `file` (.docx). Parses Meez export → returns dish-shaped JSON (incl. directions[]) |
 | GET | `/api/dishes/allergen-keywords/all` | All keyword→allergen mappings |
 
 ### Ingredients
@@ -343,6 +349,14 @@ Every `.run()` / `.exec()` schedules a disk write 500 ms later. There is no expl
 
 ### escapeHtml is non-negotiable
 Wrap every user-supplied string in `escapeHtml()` before inserting into template literals. Dish names, notes, ingredient names, tag names — everything. Omitting it is an XSS vulnerability.
+
+### Directions vs legacy chefs_notes
+Dish method steps are stored in `dish_directions` (type `'step'` or `'section'`, with `sort_order`). The old `chefs_notes` TEXT column still exists for backward compatibility. Rules:
+- **Dish form**: Shows a drag-and-drop direction steps UI. If a dish has `chefs_notes` but no directions rows, a read-only "Legacy Chef's Notes" box is displayed above the empty steps list.
+- **Dish view**: Renders structured directions (numbered steps + section headers) when available; falls back to `chefs_notes` with `<br>` newlines.
+- **Prep task generator**: Uses one direction row = one prep task when `dish_directions` rows exist; otherwise falls back to sentence-splitting `chefs_notes`.
+- **On save**: If the user adds at least one direction step, `chefs_notes` is cleared automatically. If no steps exist, `chefs_notes` is preserved unchanged.
+- **Importers**: Both URL and docx importers return a `directions[]` array alongside the legacy `instructions` string.
 
 ### Ingredient rows contain section headers
 `GET /api/dishes/:id` returns `dish.ingredients` as a merged, sort_order-sorted array of `row_type: 'ingredient'` and `row_type: 'section'` objects. Always filter to `row_type === 'ingredient'` before passing to `calculateDishCost()`.
