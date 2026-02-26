@@ -52,13 +52,18 @@ export async function renderDishForm(container, dishId) {
   if (dish) {
     ingredients = dish.ingredients; // already has row_type from API
   } else if (importedData && importedData.ingredients) {
-    ingredients = importedData.ingredients.map(ing => ({
-      row_type: 'ingredient',
-      ingredient_name: ing.name,
-      quantity: ing.quantity,
-      unit: ing.unit,
-      prep_note: ing.prep_note || '',
-    }));
+    ingredients = importedData.ingredients.map(ing => {
+      if (ing.section_header) {
+        return { row_type: 'section', label: ing.section_header };
+      }
+      return {
+        row_type: 'ingredient',
+        ingredient_name: ing.name,
+        quantity: ing.quantity,
+        unit: ing.unit,
+        prep_note: ing.prep_note || '',
+      };
+    });
   } else {
     ingredients = [];
   }

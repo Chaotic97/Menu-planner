@@ -1,4 +1,4 @@
-import { getDishes, deleteDish, restoreDish, duplicateDish, importRecipeFromUrl, toggleFavorite, getAllTags } from '../api.js';
+import { getDishes, deleteDish, restoreDish, duplicateDish, importRecipeFromUrl, importRecipeFromDocx, toggleFavorite, getAllTags } from '../api.js';
 import { renderAllergenBadges } from '../components/allergenBadges.js';
 import { showToast } from '../components/toast.js';
 import { openModal, closeModal } from '../components/modal.js';
@@ -16,6 +16,7 @@ export async function renderDishList(container) {
       <h1>Dishes</h1>
       <div class="header-actions">
         <button id="import-url-btn" class="btn btn-secondary">Import from URL</button>
+        <button id="import-docx-btn" class="btn btn-secondary">Import .docx</button>
         <a href="#/dishes/new" class="btn btn-primary">+ New Dish</a>
       </div>
     </div>
@@ -224,6 +225,51 @@ export async function renderDishList(container) {
       if (e.key === 'Enter') {
         e.preventDefault();
         submitBtn.click();
+      }
+    });
+  });
+
+  // Import from .docx button
+  container.querySelector('#import-docx-btn').addEventListener('click', () => {
+    const modal = openModal('Import Recipe from .docx', `
+      <div class="form-group">
+        <label for="import-docx-input">Meez Recipe Export (.docx)</label>
+        <input type="file" id="import-docx-input" class="input" accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document">
+        <p class="text-muted" style="margin-top:6px;font-size:0.85rem;">
+          Upload a .docx recipe export from Meez. The file will be parsed and pre-filled into the dish form.
+        </p>
+      </div>
+      <div id="import-docx-status"></div>
+      <button id="import-docx-submit" class="btn btn-primary" style="width:100%;">Import Recipe</button>
+    `);
+
+    const fileInput = modal.querySelector('#import-docx-input');
+    const submitBtn = modal.querySelector('#import-docx-submit');
+    const statusDiv = modal.querySelector('#import-docx-status');
+
+    submitBtn.addEventListener('click', async () => {
+      const file = fileInput.files[0];
+      if (!file) {
+        showToast('Select a .docx file', 'error');
+        return;
+      }
+
+      submitBtn.disabled = true;
+      submitBtn.textContent = 'Importing...';
+      statusDiv.innerHTML = '<div class="loading" style="padding:12px;">Parsing recipe...</div>';
+
+      try {
+        const formData = new FormData();
+        formData.append('file', file);
+        const recipe = await importRecipeFromDocx(formData);
+        sessionStorage.setItem('importedRecipe', JSON.stringify(recipe));
+        closeModal(modal);
+        showToast('Recipe imported! Review and save below.');
+        window.location.hash = '#/dishes/new';
+      } catch (err) {
+        statusDiv.innerHTML = `<div class="error" style="padding:12px;">${escapeHtml(err.message)}</div>`;
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Import Recipe';
       }
     });
   });

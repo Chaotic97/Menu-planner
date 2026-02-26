@@ -6,6 +6,7 @@ const { getDb } = require('../db/database');
 const { updateDishAllergens, getAllergenKeywords, addAllergenKeyword, deleteAllergenKeyword } = require('../services/allergenDetector');
 const { calculateDishCost, calculateFoodCostPercent, suggestPrice, round2 } = require('../services/costCalculator');
 const { importRecipe } = require('../services/recipeImporter');
+const { importDocx } = require('../services/docxImporter');
 const asyncHandler = require('../middleware/asyncHandler');
 
 const router = express.Router();
@@ -272,6 +273,29 @@ router.post('/import-url', asyncHandler(async (req, res) => {
 
   try {
     const recipe = await importRecipe(url);
+    res.json(recipe);
+  } catch (err) {
+    res.status(422).json({ error: err.message });
+  }
+}));
+
+// Docx upload config — memory storage, 10MB limit, .docx only
+const docxUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    const isDocx = file.mimetype === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+      || path.extname(file.originalname).toLowerCase() === '.docx';
+    cb(null, isDocx);
+  },
+});
+
+// POST /api/dishes/import-docx - Import recipe from .docx (Meez export)
+router.post('/import-docx', docxUpload.single('file'), asyncHandler(async (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'A .docx file is required.' });
+
+  try {
+    const recipe = await importDocx(req.file.buffer);
     res.json(recipe);
   } catch (err) {
     res.status(422).json({ error: err.message });
