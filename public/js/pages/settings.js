@@ -19,52 +19,76 @@ export async function renderSettings(container) {
     <div class="st-sections">
 
       <section class="st-section">
-        <h2 class="st-section-title">Security</h2>
-        <div class="card st-password-card">
-          <h3 class="st-card-heading">Change Password</h3>
-          <form id="st-password-form" autocomplete="off">
-            <div class="st-form-group">
-              <label class="st-label" for="st-current-pw">Current password</label>
-              <input type="password" id="st-current-pw" class="input" autocomplete="current-password">
-            </div>
-            <div class="st-form-group">
-              <label class="st-label" for="st-new-pw">New password</label>
-              <input type="password" id="st-new-pw" class="input" minlength="6" autocomplete="new-password">
-            </div>
-            <div class="st-form-group">
-              <label class="st-label" for="st-confirm-pw">Confirm new password</label>
-              <input type="password" id="st-confirm-pw" class="input" minlength="6" autocomplete="new-password">
-            </div>
-            <div class="st-form-actions">
-              <button type="submit" class="btn btn-primary" id="st-pw-btn">Update password</button>
-            </div>
-          </form>
+        <button class="st-section-toggle" aria-expanded="true">
+          <span class="st-section-title">Security</span>
+          <span class="st-chevron" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16"><polyline points="6 9 12 15 18 9"/></svg>
+          </span>
+        </button>
+        <div class="st-section-body">
+          <div class="card st-password-card">
+            <h3 class="st-card-heading">Change Password</h3>
+            <form id="st-password-form" autocomplete="off">
+              <div class="st-form-group">
+                <label class="st-label" for="st-current-pw">Current password</label>
+                <input type="password" id="st-current-pw" class="input" autocomplete="current-password">
+              </div>
+              <div class="st-form-group">
+                <label class="st-label" for="st-new-pw">New password</label>
+                <input type="password" id="st-new-pw" class="input" minlength="6" autocomplete="new-password">
+              </div>
+              <div class="st-form-group">
+                <label class="st-label" for="st-confirm-pw">Confirm new password</label>
+                <input type="password" id="st-confirm-pw" class="input" minlength="6" autocomplete="new-password">
+              </div>
+              <div class="st-form-actions">
+                <button type="submit" class="btn btn-primary" id="st-pw-btn">Update password</button>
+              </div>
+            </form>
+          </div>
         </div>
       </section>
 
       <section class="st-section">
-        <h2 class="st-section-title">Allergen Detection</h2>
-        <p class="ak-intro">
-          These keywords are matched against ingredient names to auto-detect EU 14 allergens.
-          Add custom keywords or remove ones that aren't relevant to your kitchen.
-        </p>
-        <div class="ak-add-form card">
-          <h3>Add keyword</h3>
-          <div class="ak-form-row">
-            <input type="text" id="ak-keyword-input" class="input" placeholder="e.g. panko" maxlength="100">
-            <select id="ak-allergen-select" class="input">
-              ${EU_14.map(a => `<option value="${a}">${capitalize(a)}</option>`).join('')}
-            </select>
-            <button id="ak-add-btn" class="btn btn-primary">Add</button>
+        <button class="st-section-toggle" aria-expanded="true">
+          <span class="st-section-title">Allergen Detection</span>
+          <span class="st-chevron" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16"><polyline points="6 9 12 15 18 9"/></svg>
+          </span>
+        </button>
+        <div class="st-section-body">
+          <p class="ak-intro">
+            These keywords are matched against ingredient names to auto-detect EU 14 allergens.
+            Add custom keywords or remove ones that aren't relevant to your kitchen.
+          </p>
+          <div class="ak-add-form card">
+            <h3>Add keyword</h3>
+            <div class="ak-form-row">
+              <input type="text" id="ak-keyword-input" class="input" placeholder="e.g. panko" maxlength="100">
+              <select id="ak-allergen-select" class="input">
+                ${EU_14.map(a => `<option value="${a}">${capitalize(a)}</option>`).join('')}
+              </select>
+              <button id="ak-add-btn" class="btn btn-primary">Add</button>
+            </div>
           </div>
-        </div>
-        <div id="ak-keywords-list" class="ak-keywords-list">
-          <div class="loading">Loading…</div>
+          <div id="ak-keywords-list" class="ak-keywords-list">
+            <div class="loading">Loading…</div>
+          </div>
         </div>
       </section>
 
     </div>
   `;
+
+  // --- Section toggles ---
+  container.querySelectorAll('.st-section-toggle').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const section = btn.closest('.st-section');
+      const expanded = btn.getAttribute('aria-expanded') === 'true';
+      btn.setAttribute('aria-expanded', String(!expanded));
+      section.classList.toggle('st-section--collapsed', expanded);
+    });
+  });
 
   // --- Change Password ---
   const form = container.querySelector('#st-password-form');
@@ -127,13 +151,10 @@ export async function renderSettings(container) {
 
     listEl.innerHTML = sortedAllergens.map(allergen => `
       <div class="ak-group card">
-        <button class="ak-group-header ak-group-toggle" data-allergen="${escapeHtml(allergen)}" aria-expanded="true">
+        <div class="ak-group-header">
           <span class="ak-allergen-name">${escapeHtml(capitalize(allergen))}</span>
           <span class="ak-count">${grouped[allergen].length} keyword${grouped[allergen].length !== 1 ? 's' : ''}</span>
-          <span class="ak-chevron" aria-hidden="true">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16"><polyline points="6 9 12 15 18 9"/></svg>
-          </span>
-        </button>
+        </div>
         <div class="ak-chips">
           ${grouped[allergen].map(row => `
             <span class="ak-chip">
@@ -146,15 +167,6 @@ export async function renderSettings(container) {
         </div>
       </div>
     `).join('');
-
-    listEl.querySelectorAll('.ak-group-toggle').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const group = btn.closest('.ak-group');
-        const expanded = btn.getAttribute('aria-expanded') === 'true';
-        btn.setAttribute('aria-expanded', String(!expanded));
-        group.classList.toggle('ak-group--collapsed', expanded);
-      });
-    });
 
     listEl.querySelectorAll('.ak-chip-delete').forEach(btn => {
       btn.addEventListener('click', async () => {

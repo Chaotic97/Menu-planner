@@ -15,7 +15,7 @@ PlateStack is a chef-focused menu planning web app. Full workflow: create dishes
 | Auth | express-session + session-file-store | Single-user bcrypt password gate. Sessions persist across restarts. |
 | Real-time | WebSocket (ws) | Server broadcasts on every CRUD mutation. Frontend listens via `sync:TYPE` custom events. |
 | CSS | Single stylesheet | `public/css/style.css` — CSS custom properties, no preprocessor. |
-| PWA | service-worker.js | Cache-first for static, network-first for /api/. |
+| PWA | service-worker.js | Cache-first for static assets, network-only for /api/ (no API caching). |
 
 ---
 
@@ -31,13 +31,13 @@ db/
 middleware/
   auth.js                        — Blocks unauthenticated /api/* requests. PUBLIC_PATHS list is the bypass list.
   asyncHandler.js                — Wraps async route handlers so thrown errors reach the global error handler
-  rateLimit.js                   — createRateLimit({ windowMs, max, message }) — in-memory sliding-window rate limiter (no external dependency). Applied to /api/auth/login, /forgot, /reset at 10 req/15 min.
+  rateLimit.js                   — createRateLimit({ windowMs, max, message }) — in-memory IP rate limiter
 services/
-  allergenDetector.js            — updateDishAllergens(dishId), getAllergenKeywords(), addAllergenKeyword(keyword, allergen), deleteAllergenKeyword(id)
+  allergenDetector.js            — updateDishAllergens(dishId), getAllergenKeywords()
   costCalculator.js              — calculateDishCost(), calculateFoodCostPercent(), suggestPrice(), convertUnits(), normalizeUnit(), round2()
   emailService.js                — sendPasswordResetEmail(toAddress, resetUrl)
   prepTaskGenerator.js           — generatePrepTasks(menuId), extractPrepTasks(notes, dishName), extractTiming(text)
-  recipeImporter.js              — importRecipe(url) — scrapes a URL and returns a dish-shaped object
+  recipeImporter.js              — importRecipe(url) — scrapes a URL and returns a dish-shaped object. Has SSRF protection (blocks private IPs, enforces https, timeout + size limits).
   shoppingListGenerator.js       — generateShoppingList(menuId) — aggregates + unit-normalises menu ingredients
 routes/
   auth.js                        — Login, logout, setup, forgot/reset password, change password
@@ -49,21 +49,19 @@ routes/
 public/
   index.html                     — SPA shell: sidebar nav (SVG icon slots + labels), mobile bottom tab bar, offline banner, SW registration. Sidebar has three states: expanded (240px), collapsed (64px icon rail), hidden (0px reveal button shown).
   manifest.json + service-worker.js — PWA assets
-  css/style.css                  — All styles (~3460 lines). See CSS conventions.
+  css/style.css                  — All styles (~3100 lines). See CSS conventions.
   js/
     app.js                       — Hash router, auth check, theme, sidebar state (initSidebar / setSidebarState / updateSidebarToggleBtn), route table
     api.js                       — SOLE HTTP layer. Never call fetch() elsewhere.
     sync.js                      — WebSocket client. Dispatches sync:TYPE events on window.
-    utils/
-      escapeHtml.js              — escapeHtml(). Must wrap all user content in templates.
-      printSheet.js              — printSheet(html) — renders a full HTML string as a fixed full-viewport overlay, then defers window.print() by two rAFs to guarantee @media print styles are applied before the browser captures its snapshot. Cleans up via afterprint + 60s fallback.
+    utils/escapeHtml.js          — escapeHtml(). Must wrap all user content in templates.
     pages/                       — One file per page. Each exports renderXxx(container).
       dishList.js · dishForm.js · dishView.js · menuList.js · menuBuilder.js
       todoView.js · serviceNotes.js · flavorPairings.js · specials.js · login.js
-      allergenKeywords.js        — Allergen keywords management: list grouped by allergen, add custom keyword/allergen pairs, delete keywords. Route: #/allergen-keywords.
+      settings.js                — Settings page: change password (Security section) + allergen keyword manager (Allergen Detection section). Route: #/settings
     components/
-      modal.js                   — openModal(htmlContent) / closeModal()
-      toast.js                   — showToast(message, options)
+      modal.js                   — openModal(title, contentHtml, onClose) / closeModal(). Accessible: role="dialog", aria-modal, Escape to close, auto-focus, focus restore.
+      toast.js                   — showToast(message, type, duration, action). `type` is a string: `'error'`, `'success'`, `'warning'`. Do NOT pass an object.
       allergenBadges.js          — renderAllergenBadges(allergens)
       lightbox.js                — openLightbox(src, alt)
       unitConverter.js           — openUnitConverter()
@@ -138,8 +136,8 @@ Rules:
 - **`escapeHtml()` is mandatory** on every piece of user-supplied content in template literals. Dish names, ingredient names, notes, everything. Skipping it is an XSS hole. Import from `../utils/escapeHtml.js`.
 - `container.innerHTML = ...` wipes previous event listeners — no manual cleanup needed.
 - **Never call `fetch()` directly.** Use functions from `../api.js`.
-- Feedback: `showToast(message)` from `../components/toast.js`.
-- Dialogs/pickers: `openModal(html)` / `closeModal()` from `../components/modal.js`.
+- Feedback: `showToast(message, type)` from `../components/toast.js`. The `type` param is a string (`'error'`, `'success'`, `'warning'`), **not** an options object.
+- Dialogs/pickers: `openModal(title, contentHtml, onClose)` / `closeModal()` from `../components/modal.js`. Modal handles Escape key, auto-focuses first input, restores focus on close.
 - Real-time updates: `window.addEventListener('sync:event_type', e => { ... })` — payload is in `e.detail`.
 
 ---
@@ -171,7 +169,10 @@ Rules:
 
 ### Frontend: API client
 
-`public/js/api.js` is the only place `fetch()` is called. It handles: `/api` prefix, JSON headers, FormData detection, `X-Client-Id` header for sync, 401 → redirect to login, error response parsing.
+`public/js/api.js` is the only place `fetch()` is called. Two internal helpers:
+
+- **`request(path, options)`** — standard authenticated requests. Handles `/api` prefix, JSON headers, FormData detection, `X-Client-Id` header for sync, 401 → redirect to login, error response parsing.
+- **`authRequest(path, options)`** — for public auth endpoints (`/auth/status`, `/auth/login`, etc.). Does **not** redirect on 401. Used only by the exported `authStatus`, `authLogin`, `authSetup`, `authForgot`, `authReset`, `authLogout` functions.
 
 Adding a new function:
 ```js
@@ -233,22 +234,20 @@ Rules for new tests:
 | POST | `/api/dishes` | Body: name\*, description, category, chefs_notes, suggested_price, ingredients[], tags[], substitutions[], manual_costs[] → 201 `{ id }` |
 | PUT | `/api/dishes/:id` | Same body as POST |
 | DELETE | `/api/dishes/:id` | Soft delete (sets deleted_at) |
-| POST | `/api/dishes/:id/restore` | Clears deleted_at |
+| POST | `/api/dishes/:id/restore` | Clears deleted_at. Returns 404 if dish not found. |
 | POST | `/api/dishes/:id/duplicate` | Full copy including ingredients, headers, subs, tags → 201 `{ id }` |
 | POST | `/api/dishes/:id/favorite` | Toggles is_favorite |
 | POST | `/api/dishes/:id/photo` | multipart/form-data, field name: `photo` |
 | POST | `/api/dishes/:id/allergens` | Body: `{ allergen, action: 'add'|'remove', source: 'manual' }` |
 | GET | `/api/dishes/tags/all` | All tags |
 | GET | `/api/dishes/allergen-keywords/all` | All keyword→allergen mappings |
-| POST | `/api/dishes/allergen-keywords` | Body: `{ keyword, allergen }` → 201 `{ success: true }` |
-| DELETE | `/api/dishes/allergen-keywords/:id` | Remove a keyword by id |
 
 ### Ingredients
 | Method | Path | Notes |
 |--------|------|-------|
 | GET | `/api/ingredients` | Query: `search` |
-| POST | `/api/ingredients` | Body: name, unit_cost, base_unit, category |
-| PUT | `/api/ingredients/:id` | Same body |
+| POST | `/api/ingredients` | Body: name, unit_cost, base_unit, category. Validates unit_cost is non-negative number. Upserts by name (case-insensitive). |
+| PUT | `/api/ingredients/:id` | Same body. Validates unit_cost if provided. |
 
 ### Menus
 | Method | Path | Notes |
@@ -256,10 +255,10 @@ Rules for new tests:
 | GET | `/api/menus` | Includes dish_count, total_food_cost, menu_food_cost_percent per menu |
 | GET | `/api/menus/:id` | Full detail: dishes with cost breakdown |
 | POST | `/api/menus` | Body: name, description → 201 `{ id }` |
-| PUT | `/api/menus/:id` | Body: name, description, is_active, sell_price, expected_covers, guest_allergies (CSV), allergen_covers (JSON) |
+| PUT | `/api/menus/:id` | Body: name, description, is_active, sell_price, expected_covers, guest_allergies (CSV), allergen_covers (JSON). Validates sell_price (non-negative number) and expected_covers (non-negative integer). |
 | DELETE | `/api/menus/:id` | Soft delete |
-| POST | `/api/menus/:id/restore` | |
-| POST | `/api/menus/:id/dishes` | Body: dish_id, servings |
+| POST | `/api/menus/:id/restore` | Returns 404 if menu not found. |
+| POST | `/api/menus/:id/dishes` | Body: dish_id, servings. Validates servings is a positive number. |
 | PUT | `/api/menus/:id/dishes/:dishId` | Body: servings |
 | DELETE | `/api/menus/:id/dishes/:dishId` | Remove dish from menu |
 | PUT | `/api/menus/:id/dishes/reorder` | Body: `{ order: [dishId, ...] }` |
@@ -277,8 +276,8 @@ Rules for new tests:
 |--------|------|-------|
 | GET | `/api/service-notes` | Query: `date` (YYYY-MM-DD), `shift` |
 | GET | `/api/service-notes/dates` | Array of dates that have at least one note |
-| POST | `/api/service-notes` | Body: date, shift, title, content |
-| PUT | `/api/service-notes/:id` | Same body |
+| POST | `/api/service-notes` | Body: date, shift, title, content. Validates date is YYYY-MM-DD, shift is one of: all, am, lunch, pm, prep. |
+| PUT | `/api/service-notes/:id` | Same body with same validations. |
 | DELETE | `/api/service-notes/:id` | Hard delete |
 
 ### Weekly Specials
@@ -289,16 +288,16 @@ Rules for new tests:
 | PUT | `/api/menus/specials/:id` | Same body |
 | DELETE | `/api/menus/specials/:id` | Hard delete |
 
-### Auth (all public — no session required)
+### Auth (all public — no session required, except change-password)
 | Method | Path | Notes |
 |--------|------|-------|
-| GET | `/api/auth/status` | |
-| POST | `/api/auth/login` | Rate-limited: 10 req / 15 min per IP |
-| POST | `/api/auth/logout` | |
-| POST | `/api/auth/setup` | |
-| POST | `/api/auth/forgot` | Rate-limited: 10 req / 15 min per IP |
-| POST | `/api/auth/reset` | Rate-limited: 10 req / 15 min per IP |
-| POST | `/api/auth/change-password` | |
+| GET | `/api/auth/status` | Public |
+| POST | `/api/auth/login` | Rate-limited (10/15min per IP) |
+| POST | `/api/auth/logout` | Public |
+| POST | `/api/auth/setup` | Rate-limited (10/15min per IP) |
+| POST | `/api/auth/forgot` | Rate-limited (10/15min per IP) |
+| POST | `/api/auth/reset` | Rate-limited (10/15min per IP) |
+| POST | `/api/auth/change-password` | Requires session. Rate-limited. Body: `{ currentPassword, newPassword }` |
 
 ---
 
@@ -329,20 +328,6 @@ Rules for new tests:
 
 ## Key patterns and gotchas
 
-### Auth rate limiting
-`/api/auth/login`, `/forgot`, and `/reset` are protected by `middleware/rateLimit.js` at 10 requests per 15 minutes per IP. The limiter is in-memory and has no external dependency. To add rate limiting to a new route: `const { createRateLimit } = require('../middleware/rateLimit')` then pass the result as middleware before the handler. The response on 429 includes a `Retry-After` header (seconds).
-
-### Database indexes
-Five indexes are created via migrations in `db/database.js` on the most-queried filter/join columns: `dishes.deleted_at`, `menu_dishes.menu_id`, `dish_ingredients.dish_id`, `dish_allergens.dish_id`, `service_notes.date`. When adding new queries that filter or join on a non-primary-key column in a hot path, add a corresponding `CREATE INDEX IF NOT EXISTS` migration.
-
-### Print sheets (printSheet.js)
-`printSheet(html)` in `public/js/utils/printSheet.js` is the sole print utility. All three print paths use it (kitchen service sheet, prep sheet, scaled shopping list). Key behaviours:
-- The overlay is `position: fixed; inset: 0; z-index: max` on screen — it covers the viewport so the user sees what they're printing before the dialog opens.
-- `window.print()` is deferred by two `requestAnimationFrame` calls so the browser has completed its style recalculation and paint before taking the print snapshot. Calling it synchronously (without the rAF defer) causes Chrome/Safari to capture a stale render state and print the app screen instead.
-- At `@media print` the overlay resets to `position: static` so content flows normally across pages.
-- Cleanup (remove overlay + injected styles) happens via `afterprint` event + 60-second fallback.
-- Do not call `window.print()` directly from page code — always go through `printSheet()`.
-
 ### Session save before response (do not remove)
 The login route calls `req.session.save(cb)` before `res.json()`. Without this, the session file may not be on disk before the browser receives the cookie — login appears broken. Do not remove this pattern.
 
@@ -372,6 +357,13 @@ green ≤30% · yellow 30–35% · red >35%
 
 ### Responsive breakpoints
 ≥481px: sidebar nav, no bottom tab bar. ≤480px: bottom tab bar, no sidebar. Use these exact values; do not invent new breakpoints.
+
+### Input validation in routes
+All mutating endpoints validate inputs server-side before touching the DB. Common patterns:
+- Numeric fields: `typeof val !== 'number' || isNaN(val) || val < 0` → 400
+- Required strings: `!val || typeof val !== 'string' || !val.trim()` → 400
+- Enum whitelist: check against a `VALID_*` array → 400
+- Restore/delete: check `result.changes === 0` → 404 if the row didn't exist
 
 ### Sidebar state system
 The sidebar has three states stored on `<html data-sidebar="...">` and persisted in `localStorage` under the key `sidebarState`:
@@ -411,7 +403,7 @@ Sub-sections (responsive overrides, etc.):
 | `.uc-` | Unit Converter |
 | `.ing-` | Ingredient rows (dish form) |
 | `.mb-` | Menu Builder |
-| `.ak-` | Allergen Keywords |
+| `.st-` | Settings page |
 
 Global components (`.btn`, `.card`, `.modal`, `.toast`, `.input`, `.drag-handle`) are unprefixed. New features with more than ~3 classes get a prefix; add it to this table.
 

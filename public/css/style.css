@@ -3404,41 +3404,9 @@ textarea.input { resize: vertical; min-height: 80px; }
 
 .ak-group-header {
   display: flex;
-  align-items: center;
+  align-items: baseline;
   gap: 10px;
   margin-bottom: 12px;
-}
-
-.ak-group-toggle {
-  width: 100%;
-  background: none;
-  border: none;
-  padding: 0;
-  cursor: pointer;
-  text-align: left;
-  color: inherit;
-  font: inherit;
-}
-
-.ak-group-toggle:hover .ak-allergen-name {
-  color: var(--primary);
-}
-
-.ak-chevron {
-  margin-left: auto;
-  display: flex;
-  align-items: center;
-  color: var(--text-muted);
-  transition: transform 0.2s ease;
-  flex-shrink: 0;
-}
-
-.ak-group--collapsed .ak-chevron {
-  transform: rotate(-90deg);
-}
-
-.ak-group--collapsed .ak-chips {
-  display: none;
 }
 
 .ak-allergen-name {
@@ -3513,13 +3481,50 @@ textarea.input { resize: vertical; min-height: 80px; }
   max-width: 680px;
 }
 
+.st-section-toggle {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: none;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  padding: 0 0 12px 0;
+  margin-bottom: 20px;
+  cursor: pointer;
+  text-align: left;
+  color: inherit;
+  font: inherit;
+}
+
+.st-section-toggle:hover .st-section-title {
+  color: var(--primary);
+}
+
 .st-section-title {
   font-size: 0.75rem;
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--text-muted);
-  margin-bottom: 14px;
+  transition: color 0.15s;
+}
+
+.st-chevron {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  color: var(--text-muted);
+  transition: transform 0.2s ease;
+  flex-shrink: 0;
+}
+
+.st-section--collapsed .st-chevron {
+  transform: rotate(-90deg);
+}
+
+.st-section--collapsed .st-section-body {
+  display: none;
 }
 
 .st-password-card {
