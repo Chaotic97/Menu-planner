@@ -3404,9 +3404,41 @@ textarea.input { resize: vertical; min-height: 80px; }
 
 .ak-group-header {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 10px;
   margin-bottom: 12px;
+}
+
+.ak-group-toggle {
+  width: 100%;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  text-align: left;
+  color: inherit;
+  font: inherit;
+}
+
+.ak-group-toggle:hover .ak-allergen-name {
+  color: var(--primary);
+}
+
+.ak-chevron {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  color: var(--text-muted);
+  transition: transform 0.2s ease;
+  flex-shrink: 0;
+}
+
+.ak-group--collapsed .ak-chevron {
+  transform: rotate(-90deg);
+}
+
+.ak-group--collapsed .ak-chips {
+  display: none;
 }
 
 .ak-allergen-name {

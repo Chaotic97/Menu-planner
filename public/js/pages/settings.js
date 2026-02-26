@@ -127,10 +127,13 @@ export async function renderSettings(container) {
 
     listEl.innerHTML = sortedAllergens.map(allergen => `
       <div class="ak-group card">
-        <div class="ak-group-header">
+        <button class="ak-group-header ak-group-toggle" data-allergen="${escapeHtml(allergen)}" aria-expanded="true">
           <span class="ak-allergen-name">${escapeHtml(capitalize(allergen))}</span>
           <span class="ak-count">${grouped[allergen].length} keyword${grouped[allergen].length !== 1 ? 's' : ''}</span>
-        </div>
+          <span class="ak-chevron" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16"><polyline points="6 9 12 15 18 9"/></svg>
+          </span>
+        </button>
         <div class="ak-chips">
           ${grouped[allergen].map(row => `
             <span class="ak-chip">
@@ -143,6 +146,15 @@ export async function renderSettings(container) {
         </div>
       </div>
     `).join('');
+
+    listEl.querySelectorAll('.ak-group-toggle').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const group = btn.closest('.ak-group');
+        const expanded = btn.getAttribute('aria-expanded') === 'true';
+        btn.setAttribute('aria-expanded', String(!expanded));
+        group.classList.toggle('ak-group--collapsed', expanded);
+      });
+    });
 
     listEl.querySelectorAll('.ak-chip-delete').forEach(btn => {
       btn.addEventListener('click', async () => {
