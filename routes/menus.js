@@ -50,7 +50,7 @@ router.get('/', (req, res) => {
 // GET /api/menus/:id - Get menu with all dishes and cost breakdown
 router.get('/:id', (req, res) => {
   const db = getDb();
-  const menu = db.prepare('SELECT * FROM menus WHERE id = ?').get(req.params.id);
+  const menu = db.prepare('SELECT * FROM menus WHERE id = ? AND deleted_at IS NULL').get(req.params.id);
   if (!menu) return res.status(404).json({ error: 'Menu not found' });
 
   // Get dishes in this menu
@@ -171,6 +171,12 @@ router.post('/', (req, res) => {
   const db = getDb();
   const { name, description, sell_price, expected_covers, guest_allergies, allergen_covers } = req.body;
   if (!name) return res.status(400).json({ error: 'Name is required' });
+  if (sell_price !== undefined && (typeof sell_price !== 'number' || sell_price < 0)) {
+    return res.status(400).json({ error: 'sell_price must be a non-negative number' });
+  }
+  if (expected_covers !== undefined && (typeof expected_covers !== 'number' || expected_covers < 0 || !Number.isInteger(expected_covers))) {
+    return res.status(400).json({ error: 'expected_covers must be a non-negative integer' });
+  }
 
   const coversJson = allergen_covers
     ? (typeof allergen_covers === 'string' ? allergen_covers : JSON.stringify(allergen_covers))
@@ -224,7 +230,8 @@ router.delete('/:id', (req, res) => {
 // POST /api/menus/:id/restore - Restore soft-deleted menu
 router.post('/:id/restore', (req, res) => {
   const db = getDb();
-  db.prepare("UPDATE menus SET deleted_at = NULL WHERE id = ?").run(req.params.id);
+  const result = db.prepare("UPDATE menus SET deleted_at = NULL WHERE id = ?").run(req.params.id);
+  if (result.changes === 0) return res.status(404).json({ error: 'Menu not found' });
   req.broadcast('menu_created', { id: parseInt(req.params.id) }, req.headers['x-client-id']);
   res.json({ success: true });
 });
@@ -253,6 +260,9 @@ router.post('/:id/dishes', (req, res) => {
   const { dish_id, servings, sort_order } = req.body;
 
   if (!dish_id) return res.status(400).json({ error: 'dish_id is required' });
+  if (servings !== undefined && (typeof servings !== 'number' || servings < 1)) {
+    return res.status(400).json({ error: 'servings must be a positive number' });
+  }
 
   const maxOrder = db.prepare('SELECT MAX(sort_order) AS max_order FROM menu_dishes WHERE menu_id = ?').get(req.params.id);
   const order = sort_order !== undefined ? sort_order : (maxOrder.max_order || 0) + 1;

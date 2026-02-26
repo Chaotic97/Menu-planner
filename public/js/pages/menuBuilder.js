@@ -14,7 +14,7 @@ export async function renderMenuBuilder(container, menuId) {
   try {
     menu = await getMenu(menuId);
   } catch (err) {
-    container.innerHTML = `<div class="error">Failed to load menu: ${err.message}</div>`;
+    container.innerHTML = `<div class="error">Failed to load menu: ${escapeHtml(err.message)}</div>`;
     return;
   }
 
@@ -175,11 +175,7 @@ export async function renderMenuBuilder(container, menuId) {
 
     // Edit menu name / description
     container.querySelector('#edit-menu-name-btn').addEventListener('click', () => {
-      const modal = openModal(`
-        <div class="modal-header">
-          <h2>Edit Menu</h2>
-          <button class="modal-close">&times;</button>
-        </div>
+      const modal = openModal('Edit Menu', `
         <form id="edit-menu-form" class="form">
           <div class="form-group">
             <label for="edit-menu-name">Menu Name *</label>
@@ -194,8 +190,6 @@ export async function renderMenuBuilder(container, menuId) {
           </div>
         </form>
       `);
-
-      modal.querySelector('.modal-close').addEventListener('click', () => closeModal(modal));
 
       modal.querySelector('#edit-menu-form').addEventListener('submit', async (e) => {
         e.preventDefault();
@@ -324,10 +318,15 @@ export async function renderMenuBuilder(container, menuId) {
         const dishId = btn.dataset.dish;
         const dish = menu.dishes.find(d => d.id == dishId);
         if (dish) {
-          dish.servings++;
-          await updateMenuDish(menuId, dishId, { servings: dish.servings });
-          menu = await getMenu(menuId);
-          render();
+          btn.disabled = true;
+          try {
+            await updateMenuDish(menuId, dishId, { servings: dish.servings + 1 });
+            menu = await getMenu(menuId);
+            render();
+          } catch (err) {
+            btn.disabled = false;
+            showToast(err.message || 'Failed to update servings', 'error');
+          }
         }
       });
     });
@@ -337,10 +336,15 @@ export async function renderMenuBuilder(container, menuId) {
         const dishId = btn.dataset.dish;
         const dish = menu.dishes.find(d => d.id == dishId);
         if (dish && dish.servings > 1) {
-          dish.servings--;
-          await updateMenuDish(menuId, dishId, { servings: dish.servings });
-          menu = await getMenu(menuId);
-          render();
+          btn.disabled = true;
+          try {
+            await updateMenuDish(menuId, dishId, { servings: dish.servings - 1 });
+            menu = await getMenu(menuId);
+            render();
+          } catch (err) {
+            btn.disabled = false;
+            showToast(err.message || 'Failed to update servings', 'error');
+          }
         }
       });
     });
@@ -556,7 +560,7 @@ export async function renderMenuBuilder(container, menuId) {
         });
 
       } catch (err) {
-        resultDiv.innerHTML = `<div class="error" style="padding:12px;">${err.message}</div>`;
+        resultDiv.innerHTML = `<div class="error" style="padding:12px;">${escapeHtml(err.message)}</div>`;
       }
     });
   }

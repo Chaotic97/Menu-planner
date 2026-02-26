@@ -160,7 +160,7 @@ export async function renderDishList(container) {
         });
       });
     } catch (err) {
-      grid.innerHTML = `<div class="error">Failed to load dishes: ${err.message}</div>`;
+      grid.innerHTML = `<div class="error">Failed to load dishes: ${escapeHtml(err.message)}</div>`;
     }
   }
 
@@ -214,7 +214,7 @@ export async function renderDishList(container) {
         showToast('Recipe imported! Review and save below.');
         window.location.hash = '#/dishes/new';
       } catch (err) {
-        statusDiv.innerHTML = `<div class="error" style="padding:12px;">${err.message}</div>`;
+        statusDiv.innerHTML = `<div class="error" style="padding:12px;">${escapeHtml(err.message)}</div>`;
         submitBtn.disabled = false;
         submitBtn.textContent = 'Import Recipe';
       }

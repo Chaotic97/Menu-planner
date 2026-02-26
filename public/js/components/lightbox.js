@@ -1,10 +1,12 @@
+import { escapeHtml } from '../utils/escapeHtml.js';
+
 export function openLightbox(imageSrc, title) {
   const overlay = document.createElement('div');
   overlay.className = 'lightbox-overlay';
   overlay.innerHTML = `
     <button class="lightbox-close" aria-label="Close">&times;</button>
-    <img src="${imageSrc}" class="lightbox-image" alt="${title || 'Photo'}">
-    ${title ? `<div class="lightbox-title">${title}</div>` : ''}
+    <img src="${escapeHtml(imageSrc)}" class="lightbox-image" alt="${escapeHtml(title || 'Photo')}">
+    ${title ? `<div class="lightbox-title">${escapeHtml(title)}</div>` : ''}
   `;
 
   function close() {

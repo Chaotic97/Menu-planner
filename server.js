@@ -28,8 +28,11 @@ if (!fs.existsSync(sessionsDir)) {
 }
 
 // Middleware
-app.use(cors());
-app.use(express.json());
+app.use(cors({
+  origin: process.env.APP_URL || 'http://localhost:3000',
+  credentials: true,
+}));
+app.use(express.json({ limit: '1mb' }));
 
 // Session middleware — persists to disk so logins survive server restarts
 app.use(session({
@@ -43,8 +46,9 @@ app.use(session({
   resave: false,
   saveUninitialized: false,
   cookie: {
-    secure: process.env.NODE_ENV !== 'development', // HTTPS-only cookie in production
+    secure: process.env.NODE_ENV === 'production',
     httpOnly: true,
+    sameSite: 'lax',
     maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days in ms
   },
 }));

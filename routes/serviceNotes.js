@@ -3,6 +3,9 @@ const { getDb } = require('../db/database');
 
 const router = express.Router();
 
+const VALID_SHIFTS = ['all', 'am', 'lunch', 'pm', 'prep'];
+const DATE_REGEX = /^\d{4}-\d{2}-\d{2}$/;
+
 // GET /api/service-notes?date=YYYY-MM-DD&month=YYYY-MM
 router.get('/', (req, res) => {
   const db = getDb();
@@ -40,6 +43,8 @@ router.post('/', (req, res) => {
   const { date, shift, title, content } = req.body;
 
   if (!date) return res.status(400).json({ error: 'date is required' });
+  if (!DATE_REGEX.test(date)) return res.status(400).json({ error: 'date must be YYYY-MM-DD format' });
+  if (shift && !VALID_SHIFTS.includes(shift)) return res.status(400).json({ error: `shift must be one of: ${VALID_SHIFTS.join(', ')}` });
   if (!content && !title) return res.status(400).json({ error: 'title or content is required' });
 
   const result = db.prepare(
@@ -53,6 +58,9 @@ router.post('/', (req, res) => {
 router.put('/:id', (req, res) => {
   const db = getDb();
   const { date, shift, title, content } = req.body;
+
+  if (date !== undefined && !DATE_REGEX.test(date)) return res.status(400).json({ error: 'date must be YYYY-MM-DD format' });
+  if (shift !== undefined && !VALID_SHIFTS.includes(shift)) return res.status(400).json({ error: `shift must be one of: ${VALID_SHIFTS.join(', ')}` });
 
   const updates = [];
   const params = [];

@@ -22,7 +22,7 @@ function setSetting(db, key, value) {
 
 // GET /api/auth/status - check if setup is complete and if user is logged in
 router.get('/status', asyncHandler(async (req, res) => {
-  const db = await getDb();
+  const db = getDb();
   const passwordRow = getSetting(db, 'password_hash');
   const isSetup = !!passwordRow;
   const isAuthenticated = !!(req.session && req.session.authenticated);
@@ -31,8 +31,8 @@ router.get('/status', asyncHandler(async (req, res) => {
 }));
 
 // POST /api/auth/setup - initial password + email setup
-router.post('/setup', asyncHandler(async (req, res) => {
-  const db = await getDb();
+router.post('/setup', authRateLimit, asyncHandler(async (req, res) => {
+  const db = getDb();
   const existing = getSetting(db, 'password_hash');
 
   if (existing) {
@@ -62,7 +62,7 @@ router.post('/setup', asyncHandler(async (req, res) => {
 
 // POST /api/auth/login
 router.post('/login', authRateLimit, asyncHandler(async (req, res) => {
-  const db = await getDb();
+  const db = getDb();
   const passwordRow = getSetting(db, 'password_hash');
 
   if (!passwordRow) {
@@ -95,7 +95,7 @@ router.post('/logout', (req, res) => {
 
 // POST /api/auth/forgot - send reset email
 router.post('/forgot', authRateLimit, asyncHandler(async (req, res) => {
-  const db = await getDb();
+  const db = getDb();
   const emailRow = getSetting(db, 'email');
 
   if (!emailRow) {
@@ -125,7 +125,7 @@ router.post('/forgot', authRateLimit, asyncHandler(async (req, res) => {
 
 // POST /api/auth/reset - reset password using token
 router.post('/reset', authRateLimit, asyncHandler(async (req, res) => {
-  const db = await getDb();
+  const db = getDb();
   const { token, password } = req.body;
 
   if (!token || !password) {
@@ -164,12 +164,12 @@ router.post('/reset', authRateLimit, asyncHandler(async (req, res) => {
 }));
 
 // POST /api/auth/change-password - change password while logged in
-router.post('/change-password', asyncHandler(async (req, res) => {
+router.post('/change-password', authRateLimit, asyncHandler(async (req, res) => {
   if (!req.session || !req.session.authenticated) {
     return res.status(401).json({ error: 'Not authenticated.' });
   }
 
-  const db = await getDb();
+  const db = getDb();
   const { currentPassword, newPassword } = req.body;
 
   if (!currentPassword || !newPassword) {

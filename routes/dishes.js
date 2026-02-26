@@ -97,7 +97,7 @@ router.get('/', (req, res) => {
 // GET /api/dishes/:id - Get single dish with full details
 router.get('/:id', (req, res) => {
   const db = getDb();
-  const dish = db.prepare('SELECT * FROM dishes WHERE id = ?').get(req.params.id);
+  const dish = db.prepare('SELECT * FROM dishes WHERE id = ? AND deleted_at IS NULL').get(req.params.id);
   if (!dish) return res.status(404).json({ error: 'Dish not found' });
 
   // Get ingredients (ordered by sort_order)
@@ -189,7 +189,7 @@ router.post('/', (req, res) => {
 // POST /api/dishes/:id/duplicate - Duplicate a dish
 router.post('/:id/duplicate', (req, res) => {
   const db = getDb();
-  const source = db.prepare('SELECT * FROM dishes WHERE id = ?').get(req.params.id);
+  const source = db.prepare('SELECT * FROM dishes WHERE id = ? AND deleted_at IS NULL').get(req.params.id);
   if (!source) return res.status(404).json({ error: 'Dish not found' });
 
   const result = db.prepare(`
@@ -281,7 +281,7 @@ router.post('/import-url', asyncHandler(async (req, res) => {
 // POST /api/dishes/:id/favorite - Toggle favorite
 router.post('/:id/favorite', (req, res) => {
   const db = getDb();
-  const dish = db.prepare('SELECT is_favorite FROM dishes WHERE id = ?').get(req.params.id);
+  const dish = db.prepare('SELECT is_favorite FROM dishes WHERE id = ? AND deleted_at IS NULL').get(req.params.id);
   if (!dish) return res.status(404).json({ error: 'Dish not found' });
 
   const newVal = dish.is_favorite ? 0 : 1;
@@ -294,7 +294,8 @@ router.post('/:id/favorite', (req, res) => {
 // POST /api/dishes/:id/restore - Restore soft-deleted dish
 router.post('/:id/restore', (req, res) => {
   const db = getDb();
-  db.prepare("UPDATE dishes SET deleted_at = NULL WHERE id = ?").run(req.params.id);
+  const result = db.prepare("UPDATE dishes SET deleted_at = NULL WHERE id = ?").run(req.params.id);
+  if (result.changes === 0) return res.status(404).json({ error: 'Dish not found' });
   req.broadcast('dish_created', { id: parseInt(req.params.id) }, req.headers['x-client-id']);
   res.json({ success: true });
 });
@@ -302,7 +303,7 @@ router.post('/:id/restore', (req, res) => {
 // PUT /api/dishes/:id - Update dish
 router.put('/:id', (req, res) => {
   const db = getDb();
-  const dish = db.prepare('SELECT * FROM dishes WHERE id = ?').get(req.params.id);
+  const dish = db.prepare('SELECT * FROM dishes WHERE id = ? AND deleted_at IS NULL').get(req.params.id);
   if (!dish) return res.status(404).json({ error: 'Dish not found' });
 
   const { name, description, category, chefs_notes, service_notes, suggested_price, ingredients, tags, substitutions, manual_costs, components } = req.body;
@@ -395,9 +396,18 @@ router.post('/:id/allergens', (req, res) => {
   const db = getDb();
   const { allergen, action } = req.body;
 
+  const VALID_ALLERGENS = ['celery','crustaceans','eggs','fish','gluten','lupin','milk','molluscs','mustard','nuts','peanuts','sesame','soy','sulphites'];
+
+  if (!allergen || !VALID_ALLERGENS.includes(allergen)) {
+    return res.status(400).json({ error: 'Invalid allergen. Must be one of the EU 14.' });
+  }
+  if (action !== 'add' && action !== 'remove') {
+    return res.status(400).json({ error: "Action must be 'add' or 'remove'." });
+  }
+
   if (action === 'add') {
     db.prepare('INSERT OR REPLACE INTO dish_allergens (dish_id, allergen, source) VALUES (?, ?, ?)').run(req.params.id, allergen, 'manual');
-  } else if (action === 'remove') {
+  } else {
     db.prepare('DELETE FROM dish_allergens WHERE dish_id = ? AND allergen = ?').run(req.params.id, allergen);
   }
 
@@ -411,7 +421,13 @@ router.get('/allergen-keywords/all', (req, res) => {
 
 router.post('/allergen-keywords', (req, res) => {
   const { keyword, allergen } = req.body;
-  addAllergenKeyword(keyword, allergen);
+  if (!keyword || typeof keyword !== 'string' || !keyword.trim()) {
+    return res.status(400).json({ error: 'keyword is required' });
+  }
+  if (!allergen || typeof allergen !== 'string' || !allergen.trim()) {
+    return res.status(400).json({ error: 'allergen is required' });
+  }
+  addAllergenKeyword(keyword.trim(), allergen.trim());
   res.status(201).json({ success: true });
 });
 

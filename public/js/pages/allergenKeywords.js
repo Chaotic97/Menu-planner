@@ -85,7 +85,7 @@ export async function renderAllergenKeywords(container) {
           await deleteAllergenKeyword(id);
           await load();
         } catch (e) {
-          showToast(e.message || 'Failed to delete keyword', { type: 'error' });
+          showToast(e.message || 'Failed to delete keyword', 'error');
         }
       });
     });
@@ -95,7 +95,7 @@ export async function renderAllergenKeywords(container) {
     const keyword = keywordInput.value.trim();
     const allergen = allergenSelect.value;
     if (!keyword) {
-      showToast('Please enter a keyword', { type: 'error' });
+      showToast('Please enter a keyword', 'error');
       keywordInput.focus();
       return;
     }
@@ -105,7 +105,7 @@ export async function renderAllergenKeywords(container) {
       keywordInput.focus();
       await load();
     } catch (e) {
-      showToast(e.message || 'Failed to add keyword', { type: 'error' });
+      showToast(e.message || 'Failed to add keyword', 'error');
     }
   });
 

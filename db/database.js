@@ -71,7 +71,8 @@ class StmtWrapper {
       return undefined;
     } catch (e) {
       if (stmt) try { stmt.free(); } catch {}
-      return undefined;
+      console.error('SQL error in get():', this._sql, e.message);
+      throw e;
     }
   }
 
@@ -91,6 +92,8 @@ class StmtWrapper {
       stmt.free();
     } catch (e) {
       if (stmt) try { stmt.free(); } catch {}
+      console.error('SQL error in all():', this._sql, e.message);
+      throw e;
     }
     return results;
   }

@@ -150,7 +150,7 @@ export async function renderSpecials(container) {
       });
 
     } catch (err) {
-      listEl.innerHTML = `<div class="error">Failed to load specials: ${err.message}</div>`;
+      listEl.innerHTML = `<div class="error">Failed to load specials: ${escapeHtml(err.message)}</div>`;
     }
   }
 

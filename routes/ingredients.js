@@ -28,6 +28,9 @@ router.post('/', (req, res) => {
   const { name, unit_cost, base_unit, category } = req.body;
 
   if (!name) return res.status(400).json({ error: 'Name is required' });
+  if (unit_cost !== undefined && (typeof unit_cost !== 'number' || isNaN(unit_cost) || unit_cost < 0)) {
+    return res.status(400).json({ error: 'unit_cost must be a non-negative number' });
+  }
 
   const existing = db.prepare('SELECT id FROM ingredients WHERE name = ? COLLATE NOCASE').get(name);
 
@@ -56,6 +59,10 @@ router.post('/', (req, res) => {
 router.put('/:id', (req, res) => {
   const db = getDb();
   const { name, unit_cost, base_unit, category } = req.body;
+
+  if (unit_cost !== undefined && (typeof unit_cost !== 'number' || isNaN(unit_cost) || unit_cost < 0)) {
+    return res.status(400).json({ error: 'unit_cost must be a non-negative number' });
+  }
 
   const updates = [];
   const params = [];

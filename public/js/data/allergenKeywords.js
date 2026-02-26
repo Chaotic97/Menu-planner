@@ -1,13 +1,14 @@
 // Client-side allergen detection for live preview
 // This is loaded once from the API and cached
 
+import { getAllergenKeywords } from '../api.js';
+
 let keywordsCache = null;
 
 export async function loadAllergenKeywords() {
   if (keywordsCache) return keywordsCache;
   try {
-    const res = await fetch('/api/dishes/allergen-keywords/all');
-    keywordsCache = await res.json();
+    keywordsCache = await getAllergenKeywords();
   } catch {
     keywordsCache = [];
   }

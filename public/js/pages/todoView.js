@@ -11,7 +11,7 @@ export async function renderTodoView(container, menuId) {
   try {
     menus = await getMenus();
   } catch (err) {
-    container.innerHTML = `<div class="error">Failed to load menus: ${err.message}</div>`;
+    container.innerHTML = `<div class="error">Failed to load menus: ${escapeHtml(err.message)}</div>`;
     return;
   }
 
@@ -113,7 +113,7 @@ export async function renderTodoView(container, menuId) {
         getPrepTasks(mid),
       ]);
     } catch (err) {
-      contentDiv.innerHTML = `<div class="error">Failed to generate: ${err.message}</div>`;
+      contentDiv.innerHTML = `<div class="error">Failed to generate: ${escapeHtml(err.message)}</div>`;
       return;
     }
 

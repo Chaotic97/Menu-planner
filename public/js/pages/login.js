@@ -1,3 +1,5 @@
+import { authSetup, authLogin, authForgot, authReset } from '../api.js';
+
 export function renderLogin(container, mode = 'login') {
   // mode: 'setup', 'login', 'forgot', 'reset'
   const token = new URLSearchParams(window.location.hash.split('?')[1] || '').get('token');
@@ -129,57 +131,21 @@ export function renderLogin(container, mode = 'login') {
           return;
         }
 
-        const res = await fetch('/api/auth/setup', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ password, email }),
-        });
-        const data = await res.json();
-
-        if (!res.ok) {
-          showError(data.error);
-          submitBtn.disabled = false;
-          return;
-        }
-
+        await authSetup({ password, email });
         window.location.hash = '#/menus';
         window.location.reload();
 
       } else if (mode === 'login') {
         const password = document.getElementById('login-password').value;
 
-        const res = await fetch('/api/auth/login', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ password }),
-        });
-        const data = await res.json();
-
-        if (!res.ok) {
-          showError(data.error);
-          submitBtn.disabled = false;
-          return;
-        }
-
+        await authLogin({ password });
         window.location.hash = '#/menus';
         window.location.reload();
 
       } else if (mode === 'forgot') {
         const email = document.getElementById('forgot-email').value;
 
-        const res = await fetch('/api/auth/forgot', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email }),
-        });
-        const data = await res.json();
-
-        if (!res.ok) {
-          showError(data.error);
-          submitBtn.disabled = false;
-          return;
-        }
-
+        await authForgot({ email });
         showError('');
         subtitle.textContent = '';
         fields.innerHTML = `<p class="login-success">If that email matches our records, a reset link has been sent. Check your inbox.</p>`;
@@ -201,19 +167,7 @@ export function renderLogin(container, mode = 'login') {
           return;
         }
 
-        const res = await fetch('/api/auth/reset', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ token, password }),
-        });
-        const data = await res.json();
-
-        if (!res.ok) {
-          showError(data.error);
-          submitBtn.disabled = false;
-          return;
-        }
-
+        await authReset({ token, password });
         showError('');
         subtitle.textContent = '';
         fields.innerHTML = `<p class="login-success">Password reset successfully! You can now log in.</p>`;
@@ -227,7 +181,7 @@ export function renderLogin(container, mode = 'login') {
         });
       }
     } catch (err) {
-      showError('Something went wrong. Please try again.');
+      showError(err.message || 'Something went wrong. Please try again.');
       submitBtn.disabled = false;
     }
   });

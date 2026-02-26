@@ -94,7 +94,7 @@ export async function renderMenuList(container) {
         });
       });
     } catch (err) {
-      grid.innerHTML = `<div class="error">Failed to load menus: ${err.message}</div>`;
+      grid.innerHTML = `<div class="error">Failed to load menus: ${escapeHtml(err.message)}</div>`;
     }
   }
 

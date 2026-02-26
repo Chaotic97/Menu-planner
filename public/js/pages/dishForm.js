@@ -30,7 +30,7 @@ export async function renderDishForm(container, dishId) {
       dish = await getDish(dishId);
     }
   } catch (err) {
-    container.innerHTML = `<div class="error">Failed to load: ${err.message}</div>`;
+    container.innerHTML = `<div class="error">Failed to load: ${escapeHtml(err.message)}</div>`;
     return;
   }
 
@@ -530,41 +530,49 @@ export async function renderDishForm(container, dishId) {
   // Ingredient autocomplete
   function setupAutocomplete(input) {
     let dropdown = null;
+    let acDebounce = null;
 
-    input.addEventListener('input', async () => {
+    input.addEventListener('input', () => {
+      clearTimeout(acDebounce);
       const val = input.value.trim();
       if (val.length < 2) {
         removeDropdown();
         return;
       }
 
-      try {
-        const results = await getIngredients(val);
-        if (!results.length) {
-          removeDropdown();
-          return;
-        }
+      acDebounce = setTimeout(async () => {
+        // Stale check: if user has changed input since timeout was set, skip
+        const currentVal = input.value.trim();
+        if (currentVal !== val) return;
 
-        removeDropdown();
-        dropdown = document.createElement('div');
-        dropdown.className = 'autocomplete-dropdown';
-        results.slice(0, 8).forEach(ing => {
-          const item = document.createElement('div');
-          item.className = 'autocomplete-item';
-          item.textContent = ing.name;
-          item.addEventListener('click', () => {
-            input.value = ing.name;
+        try {
+          const results = await getIngredients(val);
+          if (!results.length) {
             removeDropdown();
-            updateAllergenPreview();
-          });
-          dropdown.appendChild(item);
-        });
+            return;
+          }
 
-        input.parentElement.style.position = 'relative';
-        input.parentElement.appendChild(dropdown);
-      } catch {
-        removeDropdown();
-      }
+          removeDropdown();
+          dropdown = document.createElement('div');
+          dropdown.className = 'autocomplete-dropdown';
+          results.slice(0, 8).forEach(ing => {
+            const item = document.createElement('div');
+            item.className = 'autocomplete-item';
+            item.textContent = ing.name;
+            item.addEventListener('click', () => {
+              input.value = ing.name;
+              removeDropdown();
+              updateAllergenPreview();
+            });
+            dropdown.appendChild(item);
+          });
+
+          input.parentElement.style.position = 'relative';
+          input.parentElement.appendChild(dropdown);
+        } catch {
+          removeDropdown();
+        }
+      }, 250);
     });
 
     input.addEventListener('blur', () => {
@@ -612,6 +620,10 @@ export async function renderDishForm(container, dishId) {
       showToast('Dish name is required', 'error');
       return;
     }
+
+    // Disable all submit buttons to prevent duplicate submissions
+    const submitBtns = container.querySelectorAll('button[type="submit"], #header-save-btn');
+    submitBtns.forEach(b => { b.disabled = true; b.dataset.origText = b.textContent; b.textContent = 'Saving…'; });
 
     // Collect ALL rows in DOM order (ingredients + section headers)
     const allRows = ingredientsList.querySelectorAll('.ingredient-row, .section-header-row');
@@ -697,6 +709,7 @@ export async function renderDishForm(container, dishId) {
       }
       window.location.hash = '#/dishes';
     } catch (err) {
+      submitBtns.forEach(b => { b.disabled = false; b.textContent = b.dataset.origText || (isEdit ? 'Save Changes' : 'Create Dish'); });
       showToast(err.message, 'error');
     }
   });

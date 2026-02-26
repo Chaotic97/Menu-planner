@@ -1,4 +1,75 @@
 const cheerio = require('cheerio');
+const dns = require('dns');
+const { promisify } = require('util');
+
+const dnsResolve = promisify(dns.resolve4);
+
+// Maximum response body size (5 MB)
+const MAX_RESPONSE_SIZE = 5 * 1024 * 1024;
+// Request timeout (10 seconds)
+const FETCH_TIMEOUT_MS = 10000;
+
+/**
+ * Validate a URL is safe to fetch (SSRF protection).
+ * - Must be http: or https:
+ * - Hostname must not resolve to a private/internal IP range
+ */
+async function validateUrl(url) {
+  let parsed;
+  try {
+    parsed = new URL(url);
+  } catch {
+    throw new Error('Invalid URL format.');
+  }
+
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    throw new Error('Only http and https URLs are supported.');
+  }
+
+  // Block localhost aliases
+  const hostname = parsed.hostname.toLowerCase();
+  if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1' || hostname === '0.0.0.0') {
+    throw new Error('Cannot fetch from localhost or loopback addresses.');
+  }
+
+  // Resolve hostname and check for private IP ranges
+  try {
+    const addresses = await dnsResolve(hostname);
+    for (const ip of addresses) {
+      if (isPrivateIP(ip)) {
+        throw new Error('Cannot fetch from private or internal network addresses.');
+      }
+    }
+  } catch (err) {
+    if (err.message.includes('Cannot fetch')) throw err;
+    throw new Error(`Could not resolve hostname: ${hostname}`);
+  }
+
+  return parsed;
+}
+
+/**
+ * Check if an IPv4 address is in a private/reserved range.
+ */
+function isPrivateIP(ip) {
+  const parts = ip.split('.').map(Number);
+  if (parts.length !== 4) return true; // not a valid IPv4, block it
+
+  // 10.0.0.0/8
+  if (parts[0] === 10) return true;
+  // 172.16.0.0/12
+  if (parts[0] === 172 && parts[1] >= 16 && parts[1] <= 31) return true;
+  // 192.168.0.0/16
+  if (parts[0] === 192 && parts[1] === 168) return true;
+  // 127.0.0.0/8 (loopback)
+  if (parts[0] === 127) return true;
+  // 169.254.0.0/16 (link-local / cloud metadata)
+  if (parts[0] === 169 && parts[1] === 254) return true;
+  // 0.0.0.0/8
+  if (parts[0] === 0) return true;
+
+  return false;
+}
 
 // Unicode fraction map
 const FRACTION_MAP = {
@@ -254,19 +325,45 @@ function guessCategory(name, description) {
 }
 
 async function importRecipe(url) {
+  // SSRF protection: validate URL scheme and block private IPs
+  await validateUrl(url);
+
   const response = await fetch(url, {
     headers: {
       'User-Agent': 'Mozilla/5.0 (compatible; MenuPlanner/1.0)',
       'Accept': 'text/html',
     },
     redirect: 'follow',
+    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
   });
 
   if (!response.ok) {
     throw new Error(`Failed to fetch URL: ${response.status} ${response.statusText}`);
   }
 
-  const html = await response.text();
+  // Enforce response size limit to prevent memory exhaustion
+  const contentLength = parseInt(response.headers.get('content-length') || '0', 10);
+  if (contentLength > MAX_RESPONSE_SIZE) {
+    throw new Error('Response too large. Maximum supported size is 5 MB.');
+  }
+
+  // Read body with size limit (content-length can be missing or lie)
+  const reader = response.body.getReader();
+  const chunks = [];
+  let totalSize = 0;
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    totalSize += value.length;
+    if (totalSize > MAX_RESPONSE_SIZE) {
+      reader.cancel();
+      throw new Error('Response too large. Maximum supported size is 5 MB.');
+    }
+    chunks.push(value);
+  }
+
+  const html = Buffer.concat(chunks).toString('utf-8');
 
   // Strategy 1: JSON-LD structured data
   const jsonLd = extractJsonLdRecipe(html);

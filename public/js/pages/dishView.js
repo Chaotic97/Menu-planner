@@ -12,7 +12,7 @@ export async function renderDishView(container, dishId) {
   try {
     dish = await getDish(dishId);
   } catch (err) {
-    container.innerHTML = `<div class="error">Failed to load: ${err.message}</div>`;
+    container.innerHTML = `<div class="error">Failed to load: ${escapeHtml(err.message)}</div>`;
     return;
   }
 
