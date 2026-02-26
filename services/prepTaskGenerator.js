@@ -50,9 +50,25 @@ function generatePrepTasks(menuId) {
   const allTasks = [];
 
   for (const dish of dishes) {
-    // Extract from chef's notes
-    const noteTasks = extractPrepTasks(dish.chefs_notes, dish.name);
-    allTasks.push(...noteTasks);
+    // Prefer structured directions; fall back to free-text chefs_notes
+    const directions = db.prepare(
+      "SELECT type, text, sort_order FROM dish_directions WHERE dish_id = ? AND type = 'step' ORDER BY sort_order, id"
+    ).all(dish.id);
+
+    if (directions.length) {
+      for (const d of directions) {
+        allTasks.push({
+          task: d.text,
+          dish: dish.name,
+          timing: extractTiming(d.text),
+          source: 'directions',
+        });
+      }
+    } else {
+      // Legacy: parse free-text chefs_notes
+      const noteTasks = extractPrepTasks(dish.chefs_notes, dish.name);
+      allTasks.push(...noteTasks);
+    }
 
     // Extract from ingredient prep notes
     const ingredients = db.prepare(`

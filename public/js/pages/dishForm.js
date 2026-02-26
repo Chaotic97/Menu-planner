@@ -75,6 +75,28 @@ export async function renderDishForm(container, dishId) {
   // Service Components (never populated from URL import)
   const existingComponents = dish ? (dish.components || []) : [];
 
+  // Directions (structured steps)
+  let existingDirections;
+  if (dish && dish.directions && dish.directions.length) {
+    existingDirections = dish.directions;
+  } else if (importedData && importedData.directions && importedData.directions.length) {
+    existingDirections = importedData.directions;
+  } else if (importedData && importedData.instructions) {
+    // Parse legacy free-text instructions into direction steps
+    existingDirections = importedData.instructions
+      .split(/\n+/)
+      .map(line => line.trim())
+      .filter(line => line.length > 0)
+      .map(line => {
+        if (/^[^a-z]*:$/.test(line) || (line.endsWith(':') && !/^\d/.test(line))) {
+          return { type: 'section', text: line.replace(/:$/, '').trim() };
+        }
+        return { type: 'step', text: line };
+      });
+  } else {
+    existingDirections = [];
+  }
+
   container.innerHTML = `
     <div class="page-header">
       <a href="#/dishes" class="btn btn-back">&larr; Back</a>
@@ -208,11 +230,28 @@ export async function renderDishForm(container, dishId) {
             </div>
           </div>
 
-          <!-- Chef's Notes -->
+          <!-- Directions -->
           <div class="form-group">
-            <label for="dish-notes">Chef's Notes</label>
-            <p class="text-muted" style="font-size:0.85rem;margin-bottom:8px;">Prep instructions, recipe method, timing — shown on the prep sheet.</p>
-            <textarea id="dish-notes" class="input" rows="4" placeholder="e.g., Marinate overnight. Sear skin-side down 4 minutes.">${dish ? escapeHtml(dish.chefs_notes) : (importedData ? escapeHtml(importedData.instructions) : '')}</textarea>
+            <label>Directions</label>
+            <p class="text-muted" style="font-size:0.85rem;margin-bottom:8px;">Step-by-step method — drag to reorder, add section headers to group steps.</p>
+            ${dish && dish.chefs_notes && !existingDirections.length ? `
+              <div class="dir-legacy-notes">
+                <span class="dir-legacy-label">Legacy Chef's Notes</span>
+                <p class="dir-legacy-text">${escapeHtml(dish.chefs_notes).replace(/\n/g, '<br>')}</p>
+                <p class="text-muted" style="font-size:0.8rem;margin-top:6px;">Add direction steps below to replace this text. The text above will stay until you save with steps.</p>
+              </div>
+            ` : ''}
+            <div id="directions-list">
+              ${existingDirections.map((d, i) =>
+                d.type === 'section'
+                  ? directionSectionRow(d, i)
+                  : directionStepRow(d, i)
+              ).join('')}
+            </div>
+            <div class="ing-add-buttons">
+              <button type="button" id="add-direction-step" class="btn btn-secondary">+ Add Step</button>
+              <button type="button" id="add-direction-section" class="btn btn-secondary">+ Add Section</button>
+            </div>
           </div>
 
           <!-- Service Notes -->
@@ -616,6 +655,43 @@ export async function renderDishForm(container, dishId) {
 
   setupComponentDragDrop(componentsList);
 
+  // ── Directions ─────────────────────────────────────────────────────────────
+  const directionsList = container.querySelector('#directions-list');
+  let dirStepCounter = existingDirections.length;
+
+  container.querySelector('#add-direction-step').addEventListener('click', () => {
+    dirStepCounter++;
+    const div = document.createElement('div');
+    div.innerHTML = directionStepRow(null, dirStepCounter);
+    directionsList.appendChild(div.firstElementChild);
+    // Focus the new textarea
+    const rows = directionsList.querySelectorAll('.dir-step-row');
+    const last = rows[rows.length - 1];
+    if (last) last.querySelector('.dir-text').focus();
+  });
+
+  container.querySelector('#add-direction-section').addEventListener('click', () => {
+    dirStepCounter++;
+    const div = document.createElement('div');
+    div.innerHTML = directionSectionRow(null, dirStepCounter);
+    directionsList.appendChild(div.firstElementChild);
+    const rows = directionsList.querySelectorAll('.dir-section-row');
+    const last = rows[rows.length - 1];
+    if (last) last.querySelector('.dir-section-label').focus();
+  });
+
+  directionsList.addEventListener('click', (e) => {
+    if (e.target.closest('.remove-dir-step')) {
+      e.target.closest('.dir-step-row').remove();
+      return;
+    }
+    if (e.target.closest('.remove-dir-section')) {
+      e.target.closest('.dir-section-row').remove();
+    }
+  });
+
+  setupDirectionDragDrop(directionsList);
+
   // Form submit
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -678,11 +754,26 @@ export async function renderDishForm(container, dishId) {
       sort_order: idx,
     })).filter(c => c.name);
 
+    // Collect directions
+    const dirRows = directionsList.querySelectorAll('.dir-step-row, .dir-section-row');
+    const directions = Array.from(dirRows).map((row, idx) => {
+      if (row.classList.contains('dir-section-row')) {
+        const label = row.querySelector('.dir-section-label').value.trim();
+        return label ? { type: 'section', text: label, sort_order: idx } : null;
+      } else {
+        const text = row.querySelector('.dir-text').value.trim();
+        return text ? { type: 'step', text, sort_order: idx } : null;
+      }
+    }).filter(Boolean);
+
+    // If directions were added, clear legacy chefs_notes; otherwise preserve it
+    const hasDirections = directions.some(d => d.type === 'step');
+
     const data = {
       name,
       description: container.querySelector('#dish-desc').value.trim(),
       category: container.querySelector('#dish-category').value,
-      chefs_notes: container.querySelector('#dish-notes').value.trim(),
+      chefs_notes: hasDirections ? '' : (dish ? dish.chefs_notes || '' : ''),
       service_notes: container.querySelector('#dish-service-notes').value.trim(),
       suggested_price: parseFloat(container.querySelector('#dish-price').value) || 0,
       ingredients: ingData,
@@ -690,6 +781,7 @@ export async function renderDishForm(container, dishId) {
       substitutions,
       manual_costs,
       components,
+      directions,
     };
 
     try {
@@ -1101,6 +1193,127 @@ function setupComponentDragDrop(list) {
     if (!touchRow) return;
     const touchY = e.changedTouches[0].clientY;
     const siblings = [...list.querySelectorAll('.component-row')].filter(r => r !== touchRow);
+    list.querySelectorAll('.drop-above, .drop-below').forEach(el => el.classList.remove('drop-above', 'drop-below'));
+    for (const row of siblings) {
+      const rect = row.getBoundingClientRect();
+      if (touchY >= rect.top && touchY <= rect.bottom) {
+        if (touchY < rect.top + rect.height / 2) list.insertBefore(touchRow, row);
+        else row.after(touchRow);
+        break;
+      }
+    }
+    touchRow.classList.remove('dragging');
+    touchRow = null;
+  });
+}
+
+// ── Direction step / section row templates ──────────────────────────────────
+
+function directionStepRow(d, index) {
+  const text = d ? escapeHtml(d.text || '') : '';
+  return `
+    <div class="dir-step-row" data-index="${index}" draggable="true">
+      <span class="drag-handle" title="Drag to reorder">&#11835;</span>
+      <span class="dir-step-num"></span>
+      <textarea class="input dir-text" rows="2" placeholder="Describe this step…">${text}</textarea>
+      <button type="button" class="btn btn-icon remove-dir-step" title="Remove">&times;</button>
+    </div>
+  `;
+}
+
+function directionSectionRow(d, index) {
+  const text = d ? escapeHtml(d.text || '') : '';
+  return `
+    <div class="dir-section-row" data-index="${index}" draggable="true">
+      <span class="drag-handle" title="Drag to reorder">&#11835;</span>
+      <div class="section-header-input-wrap">
+        <input type="text" class="input dir-section-label" placeholder="Section name (e.g. For the sauce)" value="${text}">
+      </div>
+      <button type="button" class="btn btn-icon remove-dir-section" title="Remove section">&times;</button>
+    </div>
+  `;
+}
+
+// ── Drag-and-drop for direction rows ────────────────────────────────────────
+
+function setupDirectionDragDrop(list) {
+  const ROW_SEL = '.dir-step-row, .dir-section-row';
+  let dragSrc = null;
+
+  list.addEventListener('dragstart', (e) => {
+    const row = e.target.closest(ROW_SEL);
+    if (!row) return;
+    dragSrc = row;
+    setTimeout(() => row.classList.add('dragging'), 0);
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', '');
+  });
+
+  list.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    const target = e.target.closest(ROW_SEL);
+    if (!target || target === dragSrc) return;
+    list.querySelectorAll('.drop-above, .drop-below').forEach(el => el.classList.remove('drop-above', 'drop-below'));
+    const rect = target.getBoundingClientRect();
+    target.classList.add(e.clientY < rect.top + rect.height / 2 ? 'drop-above' : 'drop-below');
+    e.dataTransfer.dropEffect = 'move';
+  });
+
+  list.addEventListener('dragleave', (e) => {
+    if (!list.contains(e.relatedTarget)) {
+      list.querySelectorAll('.drop-above, .drop-below').forEach(el => el.classList.remove('drop-above', 'drop-below'));
+    }
+  });
+
+  list.addEventListener('drop', (e) => {
+    e.preventDefault();
+    const target = e.target.closest(ROW_SEL);
+    list.querySelectorAll('.drop-above, .drop-below').forEach(el => el.classList.remove('drop-above', 'drop-below'));
+    if (!target || !dragSrc || target === dragSrc) return;
+    const rect = target.getBoundingClientRect();
+    if (e.clientY < rect.top + rect.height / 2) {
+      list.insertBefore(dragSrc, target);
+    } else {
+      target.after(dragSrc);
+    }
+  });
+
+  list.addEventListener('dragend', () => {
+    if (dragSrc) dragSrc.classList.remove('dragging');
+    list.querySelectorAll('.drop-above, .drop-below').forEach(el => el.classList.remove('drop-above', 'drop-below'));
+    dragSrc = null;
+  });
+
+  // Touch support
+  let touchRow = null;
+  list.addEventListener('touchstart', (e) => {
+    const handle = e.target.closest('.drag-handle');
+    if (!handle) return;
+    touchRow = handle.closest(ROW_SEL);
+    if (!touchRow) return;
+    touchRow.classList.add('dragging');
+    e.preventDefault();
+  }, { passive: false });
+
+  list.addEventListener('touchmove', (e) => {
+    if (!touchRow) return;
+    e.preventDefault();
+    const touchY = e.touches[0].clientY;
+    const siblings = [...list.querySelectorAll(ROW_SEL)].filter(r => r !== touchRow);
+    list.querySelectorAll('.drop-above, .drop-below').forEach(el => el.classList.remove('drop-above', 'drop-below'));
+    for (const row of siblings) {
+      const rect = row.getBoundingClientRect();
+      if (touchY >= rect.top && touchY <= rect.bottom) {
+        row.classList.add(touchY < rect.top + rect.height / 2 ? 'drop-above' : 'drop-below');
+        break;
+      }
+    }
+  }, { passive: false });
+
+  list.addEventListener('touchend', (e) => {
+    if (!touchRow) return;
+    const touchY = e.changedTouches[0].clientY;
+    const siblings = [...list.querySelectorAll(ROW_SEL)].filter(r => r !== touchRow);
     list.querySelectorAll('.drop-above, .drop-below').forEach(el => el.classList.remove('drop-above', 'drop-below'));
     for (const row of siblings) {
       const rect = row.getBoundingClientRect();

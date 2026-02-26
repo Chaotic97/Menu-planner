@@ -316,6 +316,7 @@ Rules for new tests:
 | `weekly_specials` | dish_id, week_start, week_end, notes, is_active |
 | `tags` | id, name UNIQUE COLLATE NOCASE |
 | `dish_tags` | dish_id, tag_id |
+| `dish_directions` | id, dish_id, type (`'step'` or `'section'`), text, sort_order — structured method steps, replacements for free-text chefs_notes |
 | `dish_substitutions` | dish_id, allergen, original_ingredient, substitute_ingredient, substitute_quantity, substitute_unit, notes |
 | `settings` | key, value — stores: password_hash, email, reset_token, reset_expires |
 | `service_notes` | id, date (YYYY-MM-DD), shift, title, content, created_at, updated_at |
@@ -403,6 +404,7 @@ Sub-sections (responsive overrides, etc.):
 | `.uc-` | Unit Converter |
 | `.ing-` | Ingredient rows (dish form) |
 | `.mb-` | Menu Builder |
+| `.dir-` | Directions (dish form) |
 | `.st-` | Settings page |
 
 Global components (`.btn`, `.card`, `.modal`, `.toast`, `.input`, `.drag-handle`) are unprefixed. New features with more than ~3 classes get a prefix; add it to this table.

@@ -213,17 +213,19 @@ function parseMeezText(text) {
 
   // --- Parse method/instructions section (lines after "Prep Method") ---
   let instructions = '';
+  const directions = [];
   if (prepMethodIdx > 0) {
     const methodLines = lines.slice(prepMethodIdx + 1);
     const parts = [];
-    let currentMethodSection = null;
 
     for (const line of methodLines) {
       if (isSectionHeader(line)) {
-        currentMethodSection = line.replace(/:$/, '').trim();
-        parts.push(`\n${currentMethodSection}:`);
+        const sectionName = line.replace(/:$/, '').trim();
+        parts.push(`\n${sectionName}:`);
+        directions.push({ type: 'section', text: sectionName });
       } else {
         parts.push(line);
+        directions.push({ type: 'step', text: line });
       }
     }
 
@@ -236,6 +238,7 @@ function parseMeezText(text) {
     category: guessCategory(name, ''),
     ingredients,
     instructions,
+    directions,
   };
 }
 
