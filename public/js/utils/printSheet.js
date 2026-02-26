@@ -10,13 +10,15 @@
  *  2. Inject a fixed full-viewport overlay <div> with the body content.
  *     The overlay covers the screen so the user can see what will be printed,
  *     and eliminates the need to hide the underlying app before print renders.
- *  3. Defer window.print() by two animation frames so the browser fully
+ *  3. Hide all other body children immediately (not just at @media print) so
+ *     iOS Safari cannot snapshot the underlying page when it re-renders for
+ *     printer selection.
+ *  4. Defer window.print() by two animation frames so the browser fully
  *     recalculates and paints the injected styles before taking its print
  *     snapshot — without the defer, Chrome/Safari may capture the page in
  *     a transitional state (showing the app screen instead of the sheet).
- *  4. At @media print the overlay resets to normal flow and the rest of the
- *     page is hidden, so only the sheet content appears in the printout.
- *  5. Clean up the overlay and injected styles via afterprint + 60s fallback.
+ *  5. At @media print the overlay resets to normal flow so it prints correctly.
+ *  6. Clean up the overlay and injected styles via afterprint + 60s fallback.
  */
 export function printSheet(html) {
   const styleMatch = html.match(/<style[^>]*>([\s\S]*?)<\/style>/i);
@@ -35,6 +37,13 @@ export function printSheet(html) {
   const layoutStyle = document.createElement('style');
   layoutStyle.dataset.ps = 'layout';
   layoutStyle.textContent = `
+    /* Hide all siblings in every media context — not just print.
+       iOS Safari re-renders the page when the user selects a printer
+       and may not apply @media print rules in that pass, so the
+       underlying app page would bleed through. Hiding siblings
+       unconditionally prevents that while the overlay covers the
+       viewport anyway. */
+    body > *:not(#ps-print-overlay) { display: none !important; }
     #ps-print-overlay {
       position: fixed;
       inset: 0;
@@ -45,7 +54,6 @@ export function printSheet(html) {
       font-family: -apple-system, sans-serif;
     }
     @media print {
-      body > *:not(#ps-print-overlay) { display: none !important; }
       #ps-print-overlay {
         position: static;
         overflow: visible;
@@ -68,8 +76,11 @@ export function printSheet(html) {
     document.querySelector('style[data-ps="content"]')?.remove();
   }
 
-  // afterprint fires on iOS Safari 13+ after the print dialog is dismissed
-  window.addEventListener('afterprint', cleanup, { once: true });
+  // afterprint fires on iOS Safari 13+ after the print dialog is dismissed.
+  // Delay cleanup slightly so iOS finishes its final render pass before we
+  // restore the hidden page content — prevents a flash of the app page if
+  // the event fires while iOS is still compositing the printed output.
+  window.addEventListener('afterprint', () => setTimeout(cleanup, 300), { once: true });
   // Safety fallback in case afterprint doesn't fire
   setTimeout(cleanup, 60000);
 
