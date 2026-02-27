@@ -3,6 +3,8 @@ import { renderAllergenBadges } from '../components/allergenBadges.js';
 import { showToast } from '../components/toast.js';
 import { openModal, closeModal } from '../components/modal.js';
 import { openLightbox } from '../components/lightbox.js';
+import { createActionMenu } from '../components/actionMenu.js';
+import { makeCollapsible, collapsibleHeader } from '../components/collapsible.js';
 import { escapeHtml } from '../utils/escapeHtml.js';
 import { ALLERGEN_LIST, CATEGORY_ORDER, capitalize } from '../data/allergens.js';
 import { printSheet } from '../utils/printSheet.js';
@@ -51,9 +53,7 @@ export async function renderMenuBuilder(container, menuId) {
         </div>
         <div class="header-actions">
           <button id="add-dish-btn" class="btn btn-primary">+ Add Dish</button>
-          <button id="kitchen-print-btn" class="btn btn-secondary">Print Kitchen Sheet</button>
-          <button id="scale-btn" class="btn btn-secondary">Scale for Event</button>
-          <a href="#/menus/${menuId}/todos" class="btn btn-secondary">Generate Todos</a>
+          <span id="mb-overflow-menu"></span>
         </div>
       </div>
 
@@ -84,29 +84,39 @@ export async function renderMenuBuilder(container, menuId) {
         `}
       </div>
 
-      <!-- Expected Covers & Guest Allergies -->
-      <div class="mb-info-bar">
-        <div class="mb-info-group">
-          <label for="menu-covers">Expected Covers</label>
-          <input type="number" id="menu-covers" class="input" style="max-width:120px;" min="0"
-                 value="${menu.expected_covers || ''}" placeholder="0">
-        </div>
-        <div class="mb-info-group" style="flex:1;">
-          <label>Guest Allergies &amp; Cover Counts</label>
-          <div class="allergen-cover-grid" id="guest-allergy-toggles">
-            ${(() => {
-              let covers = {};
-              try { covers = JSON.parse(menu.allergen_covers || '{}'); } catch {}
-              return ALLERGEN_LIST.map(a => `
-                <div class="allergen-cover-item">
-                  <button type="button" class="allergen-toggle ${guestAllergies.includes(a) ? 'active' : ''}"
-                          data-allergen="${a}">${capitalize(a)}</button>
-                  <input type="number" class="allergen-cover-count" data-allergen="${a}" placeholder="# covers"
-                         min="0" max="999" value="${covers[a] || ''}"
-                         style="display:${guestAllergies.includes(a) ? 'block' : 'none'};">
-                </div>
-              `).join('');
-            })()}
+      <!-- Expected Covers & Guest Allergies (collapsible) -->
+      <div class="collapsible-section" id="mb-allergy-section">
+        ${collapsibleHeader('Guest Allergies & Covers', (() => {
+          const parts = [];
+          if (guestAllergies.length) parts.push(guestAllergies.length + ' allerg' + (guestAllergies.length > 1 ? 'ies' : 'y'));
+          if (menu.expected_covers) parts.push(menu.expected_covers + ' covers');
+          return parts.join(', ');
+        })())}
+        <div class="collapsible-section__body">
+          <div class="mb-info-bar">
+            <div class="mb-info-group">
+              <label for="menu-covers">Expected Covers</label>
+              <input type="number" id="menu-covers" class="input" style="max-width:120px;" min="0"
+                     value="${menu.expected_covers || ''}" placeholder="0">
+            </div>
+            <div class="mb-info-group" style="flex:1;">
+              <label>Guest Allergies &amp; Cover Counts</label>
+              <div class="allergen-cover-grid" id="guest-allergy-toggles">
+                ${(() => {
+                  let covers = {};
+                  try { covers = JSON.parse(menu.allergen_covers || '{}'); } catch {}
+                  return ALLERGEN_LIST.map(a => `
+                    <div class="allergen-cover-item">
+                      <button type="button" class="allergen-toggle ${guestAllergies.includes(a) ? 'active' : ''}"
+                              data-allergen="${a}">${capitalize(a)}</button>
+                      <input type="number" class="allergen-cover-count" data-allergen="${a}" placeholder="# covers"
+                             min="0" max="999" value="${covers[a] || ''}"
+                             style="display:${guestAllergies.includes(a) ? 'block' : 'none'};">
+                    </div>
+                  `).join('');
+                })()}
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -166,9 +176,7 @@ export async function renderMenuBuilder(container, menuId) {
                     <span class="mb-servings-label">${(dish.batch_yield || 1) > 1 ? 'batches' : 'servings'}</span>
                     ${(dish.batch_yield || 1) > 1 ? `<span class="mb-portions-label">(${dish.total_portions} portions)</span>` : ''}
                   </div>
-                  <div class="mb-row-actions">
-                    <button class="btn btn-sm btn-danger remove-from-menu" data-dish="${dish.id}">Remove</button>
-                  </div>
+                  <div class="mb-row-actions" data-dish-id="${dish.id}"></div>
                 </div>
               `}).join('')}
             </div>
@@ -309,8 +317,20 @@ export async function renderMenuBuilder(container, menuId) {
     // Wire up events
     container.querySelector('#add-dish-btn')?.addEventListener('click', showDishPicker);
     container.querySelector('#add-dish-empty')?.addEventListener('click', showDishPicker);
-    container.querySelector('#scale-btn')?.addEventListener('click', showScaleModal);
-    container.querySelector('#kitchen-print-btn')?.addEventListener('click', showKitchenPrint);
+
+    // Header overflow menu
+    const mbOverflowSlot = container.querySelector('#mb-overflow-menu');
+    if (mbOverflowSlot) {
+      const menuBtn = createActionMenu([
+        { label: 'Print Kitchen Sheet', icon: '🖨', onClick: showKitchenPrint },
+        { label: 'Scale for Event', icon: '⚖', onClick: showScaleModal },
+        { label: 'Generate Todos', icon: '✓', onClick: () => { window.location.hash = `#/menus/${menuId}/todos`; } },
+      ]);
+      mbOverflowSlot.appendChild(menuBtn);
+    }
+
+    // Collapsible allergy section
+    makeCollapsible(container.querySelector('#mb-allergy-section'), { open: false, storageKey: 'mb_allergy_section' });
 
     // Photo lightbox
     container.querySelectorAll('.mb-dish-thumb img').forEach(img => {
@@ -358,19 +378,24 @@ export async function renderMenuBuilder(container, menuId) {
       });
     });
 
-    // Remove dish
-    container.querySelectorAll('.remove-from-menu').forEach(btn => {
-      btn.addEventListener('click', async () => {
-        const dishId = btn.dataset.dish;
-        try {
-          await removeDishFromMenu(menuId, dishId);
-          menu = await getMenu(menuId);
-          showToast('Dish removed');
-          render();
-        } catch (err) {
-          showToast(err.message, 'error');
-        }
-      });
+    // Dish row action menus (View, Remove)
+    container.querySelectorAll('.mb-row-actions[data-dish-id]').forEach(slot => {
+      const dishId = slot.dataset.dishId;
+      const menuTrigger = createActionMenu([
+        { label: 'View Dish', icon: '👁', onClick: () => { window.location.hash = `#/dishes/${dishId}`; } },
+        { label: 'Edit Dish', icon: '✏️', onClick: () => { window.location.hash = `#/dishes/${dishId}/edit`; } },
+        { label: 'Remove', icon: '✕', danger: true, onClick: async () => {
+          try {
+            await removeDishFromMenu(menuId, dishId);
+            menu = await getMenu(menuId);
+            showToast('Dish removed');
+            render();
+          } catch (err) {
+            showToast(err.message, 'error');
+          }
+        }},
+      ]);
+      slot.appendChild(menuTrigger);
     });
 
     // Drag and drop reorder

@@ -2,6 +2,8 @@ import { getDish, createDish, updateDish, uploadDishPhoto, deleteDishPhoto, getI
 import { renderAllergenBadges } from '../components/allergenBadges.js';
 import { showToast } from '../components/toast.js';
 import { openLightbox } from '../components/lightbox.js';
+import { createActionMenu } from '../components/actionMenu.js';
+import { makeCollapsible, collapsibleHeader } from '../components/collapsible.js';
 import { CATEGORIES } from '../data/categories.js';
 import { UNITS } from '../data/units.js';
 import { loadAllergenKeywords, detectAllergensClient } from '../data/allergenKeywords.js';
@@ -102,8 +104,8 @@ export async function renderDishForm(container, dishId) {
       <a href="#/dishes" class="btn btn-back">&larr; Back</a>
       <h1>${isEdit ? 'Edit Dish' : 'New Dish'}</h1>
       <div class="header-actions">
-        ${isEdit ? '<button id="duplicate-dish-btn" class="btn btn-secondary">Duplicate</button>' : ''}
         ${isEdit ? '<button type="button" id="header-save-btn" class="btn btn-primary">Save Changes</button>' : ''}
+        ${isEdit ? '<span id="dish-overflow-menu"></span>' : ''}
       </div>
     </div>
     ${importedData ? `
@@ -179,44 +181,50 @@ export async function renderDishForm(container, dishId) {
             </div>
           </div>
 
-          <!-- Allergens -->
-          <div class="form-group">
-            <label>Allergens</label>
-            <div style="margin-bottom:8px;">
-              <span class="text-muted" style="font-size:0.83rem;">Auto-detected from ingredients:</span>
-              <div id="allergen-preview" style="margin-top:4px;min-height:24px;">
-                ${dish ? renderAllergenBadges(dish.allergens.filter(a => a.source === 'auto')) : '<span class="text-muted">Add ingredients to detect allergens</span>'}
+          <!-- Allergens (collapsible) -->
+          <div class="collapsible-section" id="section-allergens">
+            ${collapsibleHeader('Allergens', dish && dish.allergens && dish.allergens.length ? `${dish.allergens.length} detected` : '')}
+            <div class="collapsible-section__body">
+              <div style="margin-bottom:8px;">
+                <span class="text-muted" style="font-size:0.83rem;">Auto-detected from ingredients:</span>
+                <div id="allergen-preview" style="margin-top:4px;min-height:24px;">
+                  ${dish ? renderAllergenBadges(dish.allergens.filter(a => a.source === 'auto')) : '<span class="text-muted">Add ingredients to detect allergens</span>'}
+                </div>
               </div>
-            </div>
-            <div>
-              <span class="text-muted" style="font-size:0.83rem;">Manual tags — click to toggle:</span>
-              <div class="allergen-toggle-grid" id="allergen-manual-toggles" style="margin-top:6px;">
-                ${ALLERGEN_LIST.map(a => {
-                  const isManual = dish && dish.allergens.some(al => al.allergen === a && al.source === 'manual');
-                  return `<button type="button" class="allergen-toggle ${isManual ? 'active' : ''}" data-allergen="${a}">${capitalize(a)}</button>`;
-                }).join('')}
+              <div>
+                <span class="text-muted" style="font-size:0.83rem;">Manual tags — click to toggle:</span>
+                <div class="allergen-toggle-grid" id="allergen-manual-toggles" style="margin-top:6px;">
+                  ${ALLERGEN_LIST.map(a => {
+                    const isManual = dish && dish.allergens.some(al => al.allergen === a && al.source === 'manual');
+                    return `<button type="button" class="allergen-toggle ${isManual ? 'active' : ''}" data-allergen="${a}">${capitalize(a)}</button>`;
+                  }).join('')}
+                </div>
               </div>
             </div>
           </div>
 
-          <!-- Allergen Substitutions -->
-          <div class="form-group">
-            <label>Allergen Substitutions</label>
-            <p class="text-muted" style="font-size:0.85rem;margin-bottom:8px;">Add ingredient swaps for allergen-free versions (e.g., wheat flour &rarr; rice flour for gluten-free)</p>
-            <div id="substitutions-list">
-              ${existingSubs.map((sub, i) => substitutionRow(sub, i)).join('')}
+          <!-- Allergen Substitutions (collapsible) -->
+          <div class="collapsible-section" id="section-substitutions">
+            ${collapsibleHeader('Allergen Substitutions', existingSubs.length ? `${existingSubs.length} swap${existingSubs.length > 1 ? 's' : ''}` : '')}
+            <div class="collapsible-section__body">
+              <p class="text-muted" style="font-size:0.85rem;margin-bottom:8px;">Add ingredient swaps for allergen-free versions (e.g., wheat flour &rarr; rice flour for gluten-free)</p>
+              <div id="substitutions-list">
+                ${existingSubs.map((sub, i) => substitutionRow(sub, i)).join('')}
+              </div>
+              <button type="button" id="add-substitution" class="btn btn-secondary">+ Add Substitution</button>
             </div>
-            <button type="button" id="add-substitution" class="btn btn-secondary">+ Add Substitution</button>
           </div>
 
-          <!-- Service Components -->
-          <div class="form-group">
-            <label>Service Components</label>
-            <p class="text-muted" style="font-size:0.85rem;margin-bottom:8px;">Pre-prepped items on the plate at service (e.g. duck liver parfait, brioche croutons, truffle gel). These appear on the service sheet instead of raw ingredients.</p>
-            <div id="components-list">
-              ${existingComponents.map((comp, i) => componentRow(comp, i)).join('')}
+          <!-- Service Components (collapsible) -->
+          <div class="collapsible-section" id="section-components">
+            ${collapsibleHeader('Service Components', existingComponents.length ? `${existingComponents.length} item${existingComponents.length > 1 ? 's' : ''}` : '')}
+            <div class="collapsible-section__body">
+              <p class="text-muted" style="font-size:0.85rem;margin-bottom:8px;">Pre-prepped items on the plate at service (e.g. duck liver parfait, brioche croutons, truffle gel). These appear on the service sheet instead of raw ingredients.</p>
+              <div id="components-list">
+                ${existingComponents.map((comp, i) => componentRow(comp, i)).join('')}
+              </div>
+              <button type="button" id="add-component" class="btn btn-secondary">+ Add Component</button>
             </div>
-            <button type="button" id="add-component" class="btn btn-secondary">+ Add Component</button>
           </div>
 
           <!-- Cost Breakdown -->
@@ -225,13 +233,15 @@ export async function renderDishForm(container, dishId) {
             <div id="cost-breakdown">
               ${dish && dish.cost ? renderCostBreakdown(dish) : '<span class="text-muted">Add ingredients with costs to see breakdown</span>'}
             </div>
-            <div style="margin-top:14px;">
-              <label style="font-size:0.9rem;font-weight:600;margin-bottom:4px;display:block;">Additional Cost Items</label>
-              <p class="text-muted" style="font-size:0.83rem;margin-bottom:8px;">Add labor, packaging, or overhead costs not tied to ingredients.</p>
-              <div id="manual-costs-list">
-                ${(dish && dish.manual_costs || []).map((item, i) => manualCostRow(item, i)).join('')}
+            <div class="collapsible-section" id="section-manual-costs" style="margin-top:14px;">
+              ${collapsibleHeader('Additional Cost Items', (dish && dish.manual_costs && dish.manual_costs.length) ? `${dish.manual_costs.length} item${dish.manual_costs.length > 1 ? 's' : ''}` : '')}
+              <div class="collapsible-section__body">
+                <p class="text-muted" style="font-size:0.83rem;margin-bottom:8px;">Add labor, packaging, or overhead costs not tied to ingredients.</p>
+                <div id="manual-costs-list">
+                  ${(dish && dish.manual_costs || []).map((item, i) => manualCostRow(item, i)).join('')}
+                </div>
+                <button type="button" id="add-manual-cost" class="btn btn-secondary">+ Add Cost Item</button>
               </div>
-              <button type="button" id="add-manual-cost" class="btn btn-secondary">+ Add Cost Item</button>
             </div>
           </div>
 
@@ -259,11 +269,13 @@ export async function renderDishForm(container, dishId) {
             </div>
           </div>
 
-          <!-- Service Notes -->
-          <div class="form-group">
-            <label for="dish-service-notes">Service Notes</label>
-            <p class="text-muted" style="font-size:0.85rem;margin-bottom:8px;">Front-of-house guidance, plating reminders, allergy alerts — shown on the service sheet.</p>
-            <textarea id="dish-service-notes" class="input" rows="3" placeholder="e.g., Serve immediately. Warn staff re: nut allergy. Garnish plate-side.">${dish ? escapeHtml(dish.service_notes || '') : ''}</textarea>
+          <!-- Service Notes (collapsible) -->
+          <div class="collapsible-section" id="section-service-notes">
+            ${collapsibleHeader('Service Notes', dish && dish.service_notes ? 'Has notes' : '')}
+            <div class="collapsible-section__body">
+              <p class="text-muted" style="font-size:0.85rem;margin-bottom:8px;">Front-of-house guidance, plating reminders, allergy alerts — shown on the service sheet.</p>
+              <textarea id="dish-service-notes" class="input" rows="3" placeholder="e.g., Serve immediately. Warn staff re: nut allergy. Garnish plate-side.">${dish ? escapeHtml(dish.service_notes || '') : ''}</textarea>
+            </div>
           </div>
         </div>
       </div>
@@ -292,19 +304,29 @@ export async function renderDishForm(container, dishId) {
   let manualCostCounter = (dish && dish.manual_costs ? dish.manual_costs.length : 0);
   const manualAllergens = new Set(); // tracks manually toggled allergens in create mode
 
-  // Duplicate button (edit mode only)
-  const dupBtn = container.querySelector('#duplicate-dish-btn');
-  if (dupBtn) {
-    dupBtn.addEventListener('click', async () => {
-      try {
-        const result = await duplicateDish(dishId);
-        showToast('Dish duplicated');
-        window.location.hash = `#/dishes/${result.id}/edit`;
-      } catch (err) {
-        showToast(err.message, 'error');
-      }
-    });
+  // Overflow menu (edit mode only)
+  const overflowSlot = container.querySelector('#dish-overflow-menu');
+  if (overflowSlot) {
+    const menuBtn = createActionMenu([
+      { label: 'Duplicate', icon: '⧉', onClick: async () => {
+        try {
+          const result = await duplicateDish(dishId);
+          showToast('Dish duplicated');
+          window.location.hash = `#/dishes/${result.id}/edit`;
+        } catch (err) {
+          showToast(err.message, 'error');
+        }
+      }},
+    ]);
+    overflowSlot.appendChild(menuBtn);
   }
+
+  // Collapsible sections — collapsed by default for secondary sections
+  makeCollapsible(container.querySelector('#section-allergens'), { open: false, storageKey: 'dish_sec_allergens' });
+  makeCollapsible(container.querySelector('#section-substitutions'), { open: false, storageKey: 'dish_sec_subs' });
+  makeCollapsible(container.querySelector('#section-components'), { open: false, storageKey: 'dish_sec_components' });
+  makeCollapsible(container.querySelector('#section-manual-costs'), { open: false, storageKey: 'dish_sec_manualcosts' });
+  makeCollapsible(container.querySelector('#section-service-notes'), { open: false, storageKey: 'dish_sec_servicenotes' });
 
   // Header save button (edit mode only)
   const headerSaveBtn = container.querySelector('#header-save-btn');

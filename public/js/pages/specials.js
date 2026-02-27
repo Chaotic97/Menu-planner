@@ -2,6 +2,7 @@ import { getSpecials, createSpecial, updateSpecial, deleteSpecial, getDishes } f
 import { renderAllergenBadges } from '../components/allergenBadges.js';
 import { showToast } from '../components/toast.js';
 import { openModal, closeModal } from '../components/modal.js';
+import { createActionMenu } from '../components/actionMenu.js';
 import { escapeHtml } from '../utils/escapeHtml.js';
 
 // Helper: get Monday of current week
@@ -46,8 +47,8 @@ export async function renderSpecials(container) {
     <div class="page-header">
       <h1>Weekly Specials</h1>
       <div class="header-actions">
-        <button id="export-specials-btn" class="btn btn-secondary">Export .docx</button>
         <button id="add-special-btn" class="btn btn-primary">+ Add Special</button>
+        <span id="specials-overflow"></span>
       </div>
     </div>
 
@@ -178,26 +179,33 @@ export async function renderSpecials(container) {
   });
 
   // Export specials as .docx
-  container.querySelector('#export-specials-btn').addEventListener('click', async () => {
-    try {
-      const resp = await fetch(`/api/menus/specials/export-docx?week=${viewMonday}`, { credentials: 'same-origin' });
-      if (!resp.ok) {
-        const err = await resp.json().catch(() => ({ error: 'Export failed' }));
-        showToast(err.error || 'Export failed', 'error');
-        return;
-      }
-      const blob = await resp.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `specials-${viewMonday}.docx`;
-      a.click();
-      URL.revokeObjectURL(url);
-      showToast('Specials exported');
-    } catch (err) {
-      showToast('Export failed', 'error');
-    }
-  });
+  // Specials overflow menu (Export .docx)
+  const specialsOverflow = container.querySelector('#specials-overflow');
+  if (specialsOverflow) {
+    const overflowMenu = createActionMenu([
+      { label: 'Export .docx', icon: '📄', onClick: async () => {
+        try {
+          const resp = await fetch(`/api/menus/specials/export-docx?week=${viewMonday}`, { credentials: 'same-origin' });
+          if (!resp.ok) {
+            const err = await resp.json().catch(() => ({ error: 'Export failed' }));
+            showToast(err.error || 'Export failed', 'error');
+            return;
+          }
+          const blob = await resp.blob();
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = `specials-${viewMonday}.docx`;
+          a.click();
+          URL.revokeObjectURL(url);
+          showToast('Specials exported');
+        } catch {
+          showToast('Export failed', 'error');
+        }
+      }},
+    ]);
+    specialsOverflow.appendChild(overflowMenu);
+  }
 
   // Add special
   container.querySelector('#add-special-btn').addEventListener('click', showAddSpecial);

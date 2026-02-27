@@ -3,6 +3,7 @@ import { renderAllergenBadges } from '../components/allergenBadges.js';
 import { showToast } from '../components/toast.js';
 import { openModal, closeModal } from '../components/modal.js';
 import { openLightbox } from '../components/lightbox.js';
+import { createActionMenu } from '../components/actionMenu.js';
 import { CATEGORIES } from '../data/categories.js';
 import { escapeHtml } from '../utils/escapeHtml.js';
 
@@ -15,9 +16,8 @@ export async function renderDishList(container) {
     <div class="page-header">
       <h1>Dishes</h1>
       <div class="header-actions">
-        <button id="import-url-btn" class="btn btn-secondary">Import from URL</button>
-        <button id="import-docx-btn" class="btn btn-secondary">Import .docx</button>
         <a href="#/dishes/new" class="btn btn-primary">+ New Dish</a>
+        <span id="dish-list-overflow"></span>
       </div>
     </div>
     <div class="filter-bar">
@@ -84,9 +84,7 @@ export async function renderDishList(container) {
             ${dish.suggested_price ? `<div class="card-price">$${Number(dish.suggested_price).toFixed(2)}</div>` : ''}
           </div>
           <div class="card-actions">
-            <a href="#/dishes/${dish.id}" class="btn btn-sm">View</a>
-            <button class="btn btn-sm btn-secondary duplicate-dish" data-id="${dish.id}">Duplicate</button>
-            <button class="btn btn-sm btn-danger delete-dish" data-id="${dish.id}">Delete</button>
+            <span class="card-overflow" data-id="${dish.id}"></span>
           </div>
         </div>
       `).join('');
@@ -121,44 +119,42 @@ export async function renderDishList(container) {
         });
       });
 
-      // Duplicate buttons
-      grid.querySelectorAll('.duplicate-dish').forEach(btn => {
-        btn.addEventListener('click', async (e) => {
-          e.stopPropagation();
-          try {
-            const result = await duplicateDish(btn.dataset.id);
-            showToast('Dish duplicated');
-            window.location.hash = `#/dishes/${result.id}`;
-          } catch (err) {
-            showToast(err.message, 'error');
-          }
-        });
-      });
-
-      // Delete buttons (undo delete)
-      grid.querySelectorAll('.delete-dish').forEach(btn => {
-        btn.addEventListener('click', async (e) => {
-          e.stopPropagation();
-          const dishId = btn.dataset.id;
-          try {
-            await deleteDish(dishId);
-            loadDishes();
-            showToast('Dish deleted', 'info', 8000, {
-              label: 'Undo',
-              onClick: async () => {
-                try {
-                  await restoreDish(dishId);
-                  showToast('Dish restored');
-                  loadDishes();
-                } catch (err) {
-                  showToast('Failed to restore', 'error');
+      // Card overflow action menus (Duplicate, Delete)
+      grid.querySelectorAll('.card-overflow').forEach(slot => {
+        const dishId = slot.dataset.id;
+        const menuTrigger = createActionMenu([
+          { label: 'Edit', icon: '✏️', onClick: () => { window.location.hash = `#/dishes/${dishId}/edit`; } },
+          { label: 'Duplicate', icon: '⧉', onClick: async () => {
+            try {
+              const result = await duplicateDish(dishId);
+              showToast('Dish duplicated');
+              window.location.hash = `#/dishes/${result.id}`;
+            } catch (err) {
+              showToast(err.message, 'error');
+            }
+          }},
+          { label: 'Delete', icon: '✕', danger: true, onClick: async () => {
+            try {
+              await deleteDish(dishId);
+              loadDishes();
+              showToast('Dish deleted', 'info', 8000, {
+                label: 'Undo',
+                onClick: async () => {
+                  try {
+                    await restoreDish(dishId);
+                    showToast('Dish restored');
+                    loadDishes();
+                  } catch (err) {
+                    showToast('Failed to restore', 'error');
+                  }
                 }
-              }
-            });
-          } catch (err) {
-            showToast(err.message, 'error');
-          }
-        });
+              });
+            } catch (err) {
+              showToast(err.message, 'error');
+            }
+          }},
+        ]);
+        slot.appendChild(menuTrigger);
       });
     } catch (err) {
       grid.innerHTML = `<div class="error">Failed to load dishes: ${escapeHtml(err.message)}</div>`;
@@ -179,8 +175,17 @@ export async function renderDishList(container) {
     loadDishes();
   });
 
-  // Import from URL button
-  container.querySelector('#import-url-btn').addEventListener('click', () => {
+  // Import overflow menu
+  const importSlot = container.querySelector('#dish-list-overflow');
+  if (importSlot) {
+    const importMenu = createActionMenu([
+      { label: 'Import from URL', icon: '🔗', onClick: showImportUrlModal },
+      { label: 'Import .docx', icon: '📄', onClick: showImportDocxModal },
+    ]);
+    importSlot.appendChild(importMenu);
+  }
+
+  function showImportUrlModal() {
     const modal = openModal('Import Recipe from URL', `
       <div class="form-group">
         <label for="import-url-input">Recipe URL</label>
@@ -227,10 +232,9 @@ export async function renderDishList(container) {
         submitBtn.click();
       }
     });
-  });
+  }
 
-  // Import from .docx button
-  container.querySelector('#import-docx-btn').addEventListener('click', () => {
+  function showImportDocxModal() {
     const modal = openModal('Import Recipe from .docx', `
       <div class="form-group">
         <label for="import-docx-input">Meez Recipe Export (.docx)</label>
@@ -272,7 +276,7 @@ export async function renderDishList(container) {
         submitBtn.textContent = 'Import Recipe';
       }
     });
-  });
+  }
 
   // Real-time sync listeners
   const onDishChange = () => loadDishes();

@@ -2,6 +2,7 @@ import { getMenus, getShoppingList, getScaledShoppingList, updateIngredientStock
 import { escapeHtml } from '../utils/escapeHtml.js';
 import { showToast } from '../components/toast.js';
 import { openModal, closeModal } from '../components/modal.js';
+import { createActionMenu } from '../components/actionMenu.js';
 import { printSheet } from '../utils/printSheet.js';
 
 export async function renderShoppingList(container, menuId) {
@@ -270,7 +271,7 @@ export async function renderShoppingList(container, menuId) {
       <div class="page-header">
         <h1>Shopping List</h1>
         <div class="header-actions">
-          ${shoppingData ? `<button id="sl-po-btn" class="btn btn-secondary">Purchase Order</button>` : ''}
+          ${shoppingData ? '<span id="sl-overflow-menu"></span>' : ''}
         </div>
       </div>
 
@@ -293,7 +294,6 @@ export async function renderShoppingList(container, menuId) {
           ` : ''}
         </div>
         <div class="sl-controls-right">
-          ${inStock > 0 ? `<button id="sl-clear-stock" class="btn btn-secondary btn-sm">Clear all in-stock (${inStock})</button>` : ''}
           <label class="sl-toggle-instock">
             <input type="checkbox" id="sl-show-instock" ${showInStock ? 'checked' : ''}>
             <span>Show in-stock items</span>
@@ -342,20 +342,30 @@ export async function renderShoppingList(container, menuId) {
       renderContent();
     });
 
-    // Clear all in-stock
-    container.querySelector('#sl-clear-stock')?.addEventListener('click', async () => {
-      try {
-        const result = await clearAllStock();
-        showToast(`Cleared ${result.cleared} in-stock flags`, 'success');
-        await loadShoppingList();
-        await renderPage();
-      } catch (err) {
-        showToast('Failed to clear: ' + err.message, 'error');
+    // Overflow menu (Purchase Order + Clear in-stock)
+    const slOverflowSlot = container.querySelector('#sl-overflow-menu');
+    if (slOverflowSlot) {
+      const overflowItems = [
+        { label: 'Purchase Order', icon: '📋', onClick: () => openPurchaseOrder() },
+      ];
+      if (inStock > 0) {
+        overflowItems.push({
+          label: `Clear in-stock (${inStock})`, icon: '✕', danger: true, onClick: async () => {
+            if (!confirm('Clear all in-stock flags? This resets for a new order cycle.')) return;
+            try {
+              const result = await clearAllStock();
+              showToast(`Cleared ${result.cleared} in-stock flags`, 'success');
+              await loadShoppingList();
+              await renderPage();
+            } catch (err) {
+              showToast('Failed to clear: ' + err.message, 'error');
+            }
+          }
+        });
       }
-    });
-
-    // PO button
-    container.querySelector('#sl-po-btn')?.addEventListener('click', () => openPurchaseOrder());
+      const menuTrigger = createActionMenu(overflowItems);
+      slOverflowSlot.appendChild(menuTrigger);
+    }
   }
 
   await renderPage();

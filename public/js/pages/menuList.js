@@ -1,8 +1,9 @@
 import { getMenus, createMenu, deleteMenu, restoreMenu } from '../api.js';
 import { showToast } from '../components/toast.js';
 import { openModal, closeModal } from '../components/modal.js';
+import { createActionMenu } from '../components/actionMenu.js';
 import { escapeHtml } from '../utils/escapeHtml.js';
-import { ALLERGEN_LIST, capitalize } from '../data/allergens.js';
+import { capitalize } from '../data/allergens.js';
 
 export async function renderMenuList(container) {
   container.innerHTML = `
@@ -54,8 +55,7 @@ export async function renderMenuList(container) {
               })() : ''}
             </div>
             <div class="card-actions">
-              <a href="#/menus/${menu.id}" class="btn btn-sm btn-primary">Open</a>
-              <button class="btn btn-sm btn-danger delete-menu" data-id="${menu.id}">Delete</button>
+              <span class="menu-card-overflow" data-id="${menu.id}"></span>
             </div>
           </div>
         `;
@@ -68,29 +68,33 @@ export async function renderMenuList(container) {
         });
       });
 
-      grid.querySelectorAll('.delete-menu').forEach(btn => {
-        btn.addEventListener('click', async (e) => {
-          e.stopPropagation();
-          const menuId = btn.dataset.id;
-          try {
-            await deleteMenu(menuId);
-            loadMenus();
-            showToast('Menu deleted', 'info', 8000, {
-              label: 'Undo',
-              onClick: async () => {
-                try {
-                  await restoreMenu(menuId);
-                  showToast('Menu restored');
-                  loadMenus();
-                } catch (err) {
-                  showToast('Failed to restore', 'error');
+      // Card overflow action menus
+      grid.querySelectorAll('.menu-card-overflow').forEach(slot => {
+        const menuId = slot.dataset.id;
+        const menuTrigger = createActionMenu([
+          { label: 'Open', icon: '📋', onClick: () => { window.location.hash = `#/menus/${menuId}`; } },
+          { label: 'Delete', icon: '✕', danger: true, onClick: async () => {
+            try {
+              await deleteMenu(menuId);
+              loadMenus();
+              showToast('Menu deleted', 'info', 8000, {
+                label: 'Undo',
+                onClick: async () => {
+                  try {
+                    await restoreMenu(menuId);
+                    showToast('Menu restored');
+                    loadMenus();
+                  } catch (err) {
+                    showToast('Failed to restore', 'error');
+                  }
                 }
-              }
-            });
-          } catch (err) {
-            showToast(err.message, 'error');
-          }
-        });
+              });
+            } catch (err) {
+              showToast(err.message, 'error');
+            }
+          }},
+        ]);
+        slot.appendChild(menuTrigger);
       });
     } catch (err) {
       grid.innerHTML = `<div class="error">Failed to load menus: ${escapeHtml(err.message)}</div>`;
@@ -119,52 +123,17 @@ export async function renderMenuList(container) {
             <input type="number" id="menu-covers" class="input" min="0" placeholder="e.g., 50">
           </div>
         </div>
-        <div class="form-group">
-          <label>Guest Allergies &amp; Cover Counts</label>
-          <p class="text-muted" style="font-size:0.8rem;margin-bottom:8px;">Toggle an allergen to activate it, then enter how many covers need that option.</p>
-          <div class="allergen-cover-grid" id="new-menu-allergies">
-            ${ALLERGEN_LIST.map(a => `
-              <div class="allergen-cover-item">
-                <button type="button" class="allergen-toggle" data-allergen="${a}">${capitalize(a)}</button>
-                <input type="number" class="allergen-cover-count" data-allergen="${a}" placeholder="# covers" min="0" max="999" style="display:none;">
-              </div>
-            `).join('')}
-          </div>
-        </div>
+        <p class="text-muted" style="font-size:0.83rem;">Guest allergies can be configured in the menu builder after creation.</p>
         <div class="form-actions">
           <button type="submit" class="btn btn-primary">Create Menu</button>
         </div>
       </form>
     `);
 
-    // Wire up allergen toggles in modal
-    modal.querySelectorAll('.allergen-toggle').forEach(btn => {
-      btn.addEventListener('click', (e) => {
-        e.preventDefault();
-        btn.classList.toggle('active');
-        const countInput = btn.closest('.allergen-cover-item').querySelector('.allergen-cover-count');
-        if (countInput) {
-          countInput.style.display = btn.classList.contains('active') ? 'block' : 'none';
-          if (!btn.classList.contains('active')) countInput.value = '';
-        }
-      });
-    });
-
     modal.querySelector('#new-menu-form').addEventListener('submit', async (e) => {
       e.preventDefault();
       const name = modal.querySelector('#menu-name').value.trim();
       if (!name) return;
-
-      const activeAllergens = [];
-      const allergenCovers = {};
-      modal.querySelectorAll('.allergen-toggle.active').forEach(b => {
-        const allergen = b.dataset.allergen;
-        activeAllergens.push(allergen);
-        const countInput = b.closest('.allergen-cover-item').querySelector('.allergen-cover-count');
-        if (countInput && countInput.value) {
-          allergenCovers[allergen] = parseInt(countInput.value) || 0;
-        }
-      });
 
       try {
         const result = await createMenu({
@@ -172,8 +141,6 @@ export async function renderMenuList(container) {
           description: modal.querySelector('#menu-desc').value.trim(),
           sell_price: parseFloat(modal.querySelector('#menu-sell-price').value) || 0,
           expected_covers: parseInt(modal.querySelector('#menu-covers').value) || 0,
-          guest_allergies: activeAllergens.join(','),
-          allergen_covers: JSON.stringify(allergenCovers),
         });
         closeModal(modal);
         showToast('Menu created');
