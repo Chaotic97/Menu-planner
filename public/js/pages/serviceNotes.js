@@ -26,6 +26,34 @@ function formatDisplayDate(dateStr) {
   });
 }
 
+function buildNoteText(note) {
+  const date = formatDisplayDate(note.date);
+  const shift = shiftLabel(note.shift);
+  let text = `Service Note — ${date} (${shift})`;
+  if (note.title) text += `\n${note.title}`;
+  if (note.content) text += `\n\n${note.content}`;
+  return text;
+}
+
+async function shareNote(note) {
+  const text = buildNoteText(note);
+  const title = note.title || `Service Note — ${shiftLabel(note.shift)}`;
+
+  if (navigator.share) {
+    try {
+      await navigator.share({ title, text });
+    } catch (err) {
+      if (err.name !== 'AbortError') {
+        showToast('Share failed', 'error');
+      }
+    }
+  } else {
+    const subject = encodeURIComponent(title);
+    const body = encodeURIComponent(text);
+    window.open(`mailto:?subject=${subject}&body=${body}`, '_self');
+  }
+}
+
 export async function renderServiceNotes(container) {
   let selectedDate = todayStr();
   let notes = [];
@@ -145,6 +173,14 @@ export async function renderServiceNotes(container) {
                 ${note.title ? `<span class="sn-note-title">${escapeHtml(note.title)}</span>` : ''}
               </div>
               <div class="sn-note-actions">
+                <button class="btn btn-sm share-note-btn" data-id="${note.id}" title="Share note">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:2px;">
+                    <path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/>
+                    <polyline points="16 6 12 2 8 6"/>
+                    <line x1="12" y1="2" x2="12" y2="15"/>
+                  </svg>
+                  Share
+                </button>
                 <button class="btn btn-sm edit-note-btn" data-id="${note.id}">Edit</button>
                 <button class="btn btn-sm btn-danger delete-note-btn" data-id="${note.id}">Delete</button>
               </div>
@@ -178,6 +214,13 @@ export async function renderServiceNotes(container) {
         } catch {
           showToast('Failed to delete', 'error');
         }
+      });
+    });
+
+    panel.querySelectorAll('.share-note-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const note = notes.find(n => n.id === parseInt(btn.dataset.id));
+        if (note) shareNote(note);
       });
     });
   }
