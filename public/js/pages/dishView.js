@@ -114,7 +114,23 @@ export async function renderDishView(container, dishId) {
           </div>
         ` : ''}
 
-        ${dish.chefs_notes ? `
+        ${dish.directions && dish.directions.length ? `
+          <div class="dv-card">
+            <h3 class="dv-card-title">Directions</h3>
+            <div class="dv-directions">
+              ${(() => {
+                let stepNum = 0;
+                return dish.directions.map(d => {
+                  if (d.type === 'section') {
+                    return `<div class="dv-dir-section">${escapeHtml(d.text)}</div>`;
+                  }
+                  stepNum++;
+                  return `<div class="dv-dir-step"><span class="dv-dir-num">${stepNum}</span><span class="dv-dir-text">${escapeHtml(d.text)}</span></div>`;
+                }).join('');
+              })()}
+            </div>
+          </div>
+        ` : dish.chefs_notes ? `
           <div class="dv-card">
             <h3 class="dv-card-title">Chef's Notes</h3>
             <p class="dv-notes">${escapeHtml(dish.chefs_notes).replace(/\n/g, '<br>')}</p>

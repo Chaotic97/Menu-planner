@@ -45,7 +45,10 @@ export async function renderSpecials(container) {
   container.innerHTML = `
     <div class="page-header">
       <h1>Weekly Specials</h1>
-      <button id="add-special-btn" class="btn btn-primary">+ Add Special</button>
+      <div class="header-actions">
+        <button id="export-specials-btn" class="btn btn-secondary">Export .docx</button>
+        <button id="add-special-btn" class="btn btn-primary">+ Add Special</button>
+      </div>
     </div>
 
     <div class="specials-week-nav">
@@ -172,6 +175,28 @@ export async function renderSpecials(container) {
   container.querySelector('#today-btn').addEventListener('click', () => {
     viewMonday = currentMonday;
     loadSpecials();
+  });
+
+  // Export specials as .docx
+  container.querySelector('#export-specials-btn').addEventListener('click', async () => {
+    try {
+      const resp = await fetch(`/api/menus/specials/export-docx?week=${viewMonday}`, { credentials: 'same-origin' });
+      if (!resp.ok) {
+        const err = await resp.json().catch(() => ({ error: 'Export failed' }));
+        showToast(err.error || 'Export failed', 'error');
+        return;
+      }
+      const blob = await resp.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `specials-${viewMonday}.docx`;
+      a.click();
+      URL.revokeObjectURL(url);
+      showToast('Specials exported');
+    } catch (err) {
+      showToast('Export failed', 'error');
+    }
   });
 
   // Add special

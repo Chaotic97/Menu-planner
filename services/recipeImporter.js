@@ -377,12 +377,30 @@ async function importRecipe(url) {
     const ingredients = rawIngredients.map(text => parseIngredientString(String(text)));
 
     let instructions = '';
+    const directions = [];
     if (typeof jsonLd.recipeInstructions === 'string') {
       instructions = jsonLd.recipeInstructions;
+      jsonLd.recipeInstructions.split(/\n+/).map(s => s.trim()).filter(s => s.length > 0)
+        .forEach(s => directions.push({ type: 'step', text: s }));
     } else if (Array.isArray(jsonLd.recipeInstructions)) {
-      instructions = jsonLd.recipeInstructions
-        .map(step => typeof step === 'string' ? step : (step.text || ''))
-        .filter(Boolean)
+      for (const step of jsonLd.recipeInstructions) {
+        if (typeof step === 'string') {
+          if (step.trim()) directions.push({ type: 'step', text: step.trim() });
+        } else if (step && step['@type'] === 'HowToSection') {
+          if (step.name) directions.push({ type: 'section', text: step.name });
+          if (Array.isArray(step.itemListElement)) {
+            for (const sub of step.itemListElement) {
+              const text = typeof sub === 'string' ? sub : (sub.text || '');
+              if (text.trim()) directions.push({ type: 'step', text: text.trim() });
+            }
+          }
+        } else if (step && step.text) {
+          directions.push({ type: 'step', text: step.text.trim() });
+        }
+      }
+      instructions = directions
+        .filter(d => d.type === 'step')
+        .map(d => d.text)
         .join('\n');
     }
 
@@ -392,6 +410,7 @@ async function importRecipe(url) {
       category: guessCategory(name, description),
       ingredients,
       instructions,
+      directions,
       source_url: url,
     };
   }

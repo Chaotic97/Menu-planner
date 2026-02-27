@@ -197,6 +197,14 @@ async function initialize() {
     `CREATE INDEX IF NOT EXISTS idx_dish_ingredients_dish_id ON dish_ingredients(dish_id)`,
     `CREATE INDEX IF NOT EXISTS idx_dish_allergens_dish_id ON dish_allergens(dish_id)`,
     `CREATE INDEX IF NOT EXISTS idx_service_notes_date ON service_notes(date)`,
+    `CREATE TABLE IF NOT EXISTS dish_directions (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      dish_id    INTEGER NOT NULL REFERENCES dishes(id) ON DELETE CASCADE,
+      type       TEXT NOT NULL DEFAULT 'step',
+      text       TEXT NOT NULL DEFAULT '',
+      sort_order INTEGER DEFAULT 0
+    )`,
+    `CREATE INDEX IF NOT EXISTS idx_dish_directions_dish_id ON dish_directions(dish_id)`,
   ];
 
   for (const sql of MIGRATIONS) {
