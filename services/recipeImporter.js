@@ -166,8 +166,8 @@ function parseIngredientString(text) {
   text = text.replace(/[()]/g, ''); // remove any unmatched stray parens
 
   // Same treatment for square brackets
-  do { prev = text; text = text.replace(/\[[^\[\]]*\]/g, ''); } while (text !== prev);
-  text = text.replace(/[\[\]]/g, '');
+  do { prev = text; text = text.replace(/\[[^[\]]*\]/g, ''); } while (text !== prev);
+  text = text.replace(/[[\]]/g, '');
 
   text = text
     // Strip leading bullet / dash / arrow markers
@@ -178,7 +178,7 @@ function parseIngredientString(text) {
     .trim();
 
   // Try to extract leading quantity
-  const qtyPattern = /^([\d\u00BC-\u00BE\u2150-\u215E\/\s.]+)/;
+  const qtyPattern = /^([\d\u00BC-\u00BE\u2150-\u215E/\s.]+)/;
   const qtyMatch = text.match(qtyPattern);
 
   let quantity = 0;
@@ -266,7 +266,7 @@ function extractFromHtml(html) {
     '.recipe__list--ingredients li',
   ];
 
-  let ingredientTexts = [];
+  const ingredientTexts = [];
   for (const sel of ingredientSelectors) {
     const found = $(sel);
     if (found.length > 0) {

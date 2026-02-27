@@ -1,4 +1,4 @@
-import { getDish, deleteDish, duplicateDish } from '../api.js';
+import { getDish } from '../api.js';
 import { renderAllergenBadges } from '../components/allergenBadges.js';
 import { showToast } from '../components/toast.js';
 import { openLightbox } from '../components/lightbox.js';

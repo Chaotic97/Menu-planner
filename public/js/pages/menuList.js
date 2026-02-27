@@ -1,7 +1,6 @@
 import { getMenus, createMenu, deleteMenu, restoreMenu } from '../api.js';
 import { showToast } from '../components/toast.js';
 import { openModal, closeModal } from '../components/modal.js';
-import { renderAllergenBadges } from '../components/allergenBadges.js';
 import { escapeHtml } from '../utils/escapeHtml.js';
 import { ALLERGEN_LIST, capitalize } from '../data/allergens.js';
 

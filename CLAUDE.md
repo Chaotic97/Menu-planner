@@ -69,8 +69,21 @@ public/
       unitConverter.js           — openUnitConverter()
     data/
       categories.js · units.js · allergenKeywords.js · flavorPairings.js
+eslint.config.js                 — ESLint flat config: separate rules for backend (CommonJS), frontend (ES modules), tests (Jest)
+.github/
+  workflows/ci.yml               — GitHub Actions: lint + test on push/PR to main (Node 18/20/22)
 tests/
   costCalculator.test.js · prepTaskGenerator.test.js · docxImporter.test.js
+  helpers/
+    setupTestApp.js              — Test app factory: in-memory DB, Express app, broadcast spy, getDb patch
+    auth.js                      — loginAgent(app) — sets up password + returns authenticated supertest agent
+  integration/
+    auth.test.js                 — Setup, login, logout, change-password, auth middleware
+    dishes.test.js               — Full CRUD, ingredients, tags, directions, allergens, duplicate, favorite
+    menus.test.js                — CRUD, dish management, cost rollup, allergy conflicts, kitchen print
+    ingredients.test.js          — Create, upsert, update, search, allergen detection
+    serviceNotes.test.js         — CRUD with date/shift validation
+    todos.test.js                — Shopping list aggregation, scaling, prep task generation
 ```
 
 ---
@@ -209,23 +222,71 @@ Broadcast on creates, updates, deletes. Never on reads.
 
 ## Testing
 
-Unit tests use **Jest**. Run with `npm test`.
+All tests use **Jest**. Run with `npm test`.
+
+### Unit tests (`tests/*.test.js`)
+Pure-function tests with no DB or network dependencies:
 
 ```
-tests/
-  costCalculator.test.js    — all 6 exports: normalizeUnit, convertUnits, round2,
-                              calculateDishCost, calculateFoodCostPercent, suggestPrice
-  prepTaskGenerator.test.js — extractTiming (all 5 buckets), extractPrepTasks (splitting,
-                              filtering, timing assignment, all sentences included)
-  docxImporter.test.js      — parseMeezText (title, ingredients with sections, directions
-                              with sections, category guessing), parseMeezIngredient
-                              (qty/unit/name/prep_note parsing)
+costCalculator.test.js    — normalizeUnit, convertUnits, round2,
+                            calculateDishCost, calculateFoodCostPercent, suggestPrice
+prepTaskGenerator.test.js — extractTiming (all 5 buckets), extractPrepTasks (splitting,
+                            filtering, timing assignment, all sentences included)
+docxImporter.test.js      — parseMeezText (title, ingredients with sections, directions
+                            with sections, category guessing), parseMeezIngredient
+                            (qty/unit/name/prep_note parsing)
 ```
 
-Rules for new tests:
-- Test pure functions only. Functions that call `getDb()` are candidates for integration tests (not yet written).
+### Integration tests (`tests/integration/*.test.js`)
+Full request → response cycle tests using **supertest** against a real Express app backed by an in-memory SQLite database:
+
+```
+auth.test.js          — Setup, login, logout, change-password, auth middleware
+dishes.test.js        — Full CRUD, ingredients, tags, directions, allergens, duplicate, favorite
+menus.test.js         — CRUD, dish management, cost rollup, allergy conflicts, kitchen print
+ingredients.test.js   — Create, upsert, update, search, allergen detection
+serviceNotes.test.js  — CRUD with date/shift validation
+todos.test.js         — Shopping list aggregation, scaling, prep task generation
+```
+
+**How integration tests work:**
+- `tests/helpers/setupTestApp.js` creates an isolated Express app per test suite: fresh in-memory SQLite (schema + migrations + seed), patched `getDb()`, broadcast spy, no disk I/O.
+- `tests/helpers/auth.js` provides `loginAgent(app)` — sets up the password via `/api/auth/setup` and returns a supertest agent with a valid session cookie.
+- Rate limiting is disabled in tests via `jest.mock('../../middleware/rateLimit', ...)` at the top of each integration test file.
+
+### Rules for new tests
+- **Unit tests**: test pure functions only. Place in `tests/`.
+- **Integration tests**: test route handlers and DB interactions. Place in `tests/integration/`. Use `createTestApp()` for setup.
 - `extractTiming` and `extractPrepTasks` are exported from `prepTaskGenerator.js` specifically for testing — keep them exported.
 - Do not test IEEE 754 half-way rounding in `round2` (e.g. `1.005`) — use `toBeCloseTo` or avoid that exact value.
+- Every integration test file must mock rate limiting: `jest.mock('../../middleware/rateLimit', () => ({ createRateLimit: () => (_req, _res, next) => next() }))`.
+
+---
+
+## Linting
+
+ESLint 9 with **flat config** (`eslint.config.js`). Three config blocks:
+
+| Block | Files | sourceType | Globals |
+|-------|-------|-----------|---------|
+| Backend | `server.js`, `db/`, `middleware/`, `routes/`, `services/` | `commonjs` | Node.js |
+| Frontend | `public/js/**/*.js` | `module` | Browser |
+| Tests | `tests/**/*.js` | `commonjs` | Node.js + Jest |
+
+Key rules: `no-var` (error), `prefer-const` (warn), `eqeqeq` (warn), `no-throw-literal` (error), `no-empty` with `allowEmptyCatch: true`, `no-unused-vars` with `caughtErrors: 'none'` and `argsIgnorePattern: '^_'`.
+
+Run with `npm run lint`. The CI pipeline runs this on every push/PR.
+
+---
+
+## CI / GitHub Actions
+
+`.github/workflows/ci.yml` — runs on every push and PR to `main`:
+
+1. Matrix: Node.js 18, 20, 22
+2. Steps: `npm ci` → `npm run lint` → `npm test`
+
+The pipeline catches lint errors and test failures before code reaches `main`.
 
 ---
 
@@ -463,6 +524,7 @@ NODE_ENV=production
 ### npm scripts
 ```
 npm start              Run the server
-npm test               Run Jest unit tests (tests/ directory)
+npm test               Run all tests (unit + integration)
+npm run lint           Run ESLint across the entire codebase
 npm run seed-sample    Insert 5 sample dishes (safe to re-run)
 ```

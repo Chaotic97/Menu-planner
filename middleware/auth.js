@@ -1,5 +1,3 @@
-const { getDb } = require('../db/database');
-
 const PUBLIC_PATHS = [
   '/api/auth/status',
   '/api/auth/login',

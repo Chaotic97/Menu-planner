@@ -7,7 +7,8 @@
     "start": "node server.js",
     "init-db": "node db/init.js",
     "seed-sample": "node db/seed-sample.js",
-    "test": "jest --testPathPatterns=tests/"
+    "test": "jest --testPathPatterns=tests/",
+    "lint": "eslint ."
   },
   "dependencies": {
     "bcrypt": "^6.0.0",
@@ -25,6 +26,10 @@
     "ws": "^8.19.0"
   },
   "devDependencies": {
-    "jest": "^30.2.0"
+    "@eslint/js": "^9.39.3",
+    "eslint": "^9.39.3",
+    "globals": "^17.3.0",
+    "jest": "^30.2.0",
+    "supertest": "^7.2.2"
   }
 }
