@@ -1,5 +1,6 @@
 import { getServiceNotes, getServiceNoteDates, createServiceNote, updateServiceNote, deleteServiceNote } from '../api.js';
 import { showToast } from '../components/toast.js';
+import { createActionMenu } from '../components/actionMenu.js';
 import { escapeHtml } from '../utils/escapeHtml.js';
 
 const SHIFTS = [
@@ -172,16 +173,7 @@ export async function renderServiceNotes(container) {
                 ${note.title ? `<span class="sn-note-title">${escapeHtml(note.title)}</span>` : ''}
               </div>
               <div class="sn-note-actions">
-                <button class="btn btn-sm share-note-btn" data-id="${note.id}" title="Share note">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:2px;">
-                    <path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/>
-                    <polyline points="16 6 12 2 8 6"/>
-                    <line x1="12" y1="2" x2="12" y2="15"/>
-                  </svg>
-                  Share
-                </button>
-                <button class="btn btn-sm edit-note-btn" data-id="${note.id}">Edit</button>
-                <button class="btn btn-sm btn-danger delete-note-btn" data-id="${note.id}">Delete</button>
+                <span class="sn-note-overflow" data-id="${note.id}"></span>
               </div>
             </div>
             ${note.content ? `<div class="sn-note-content">${escapeHtml(note.content).replace(/\n/g, '<br>')}</div>` : ''}
@@ -192,33 +184,28 @@ export async function renderServiceNotes(container) {
 
     panel.innerHTML = html;
 
-    panel.querySelectorAll('.edit-note-btn').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const note = notes.find(n => n.id === parseInt(btn.dataset.id));
-        if (note) openNoteModal(note);
-      });
-    });
-
-    panel.querySelectorAll('.delete-note-btn').forEach(btn => {
-      btn.addEventListener('click', async () => {
-        if (!confirm('Delete this note?')) return;
-        try {
-          await deleteServiceNote(btn.dataset.id);
-          showToast('Note deleted', 'info');
-          await loadNotes();
-          await loadDatesWithNotes();
-          renderCalendar();
-        } catch {
-          showToast('Failed to delete', 'error');
-        }
-      });
-    });
-
-    panel.querySelectorAll('.share-note-btn').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const note = notes.find(n => n.id === parseInt(btn.dataset.id));
-        if (note) shareNote(note);
-      });
+    // Action menus for each note card
+    panel.querySelectorAll('.sn-note-overflow').forEach(slot => {
+      const noteId = parseInt(slot.dataset.id);
+      const note = notes.find(n => n.id === noteId);
+      if (!note) return;
+      const menuTrigger = createActionMenu([
+        { label: 'Edit', icon: '✏️', onClick: () => openNoteModal(note) },
+        { label: 'Share', icon: '↗', onClick: () => shareNote(note) },
+        { label: 'Delete', icon: '✕', danger: true, onClick: async () => {
+          if (!confirm('Delete this note?')) return;
+          try {
+            await deleteServiceNote(noteId);
+            showToast('Note deleted', 'info');
+            await loadNotes();
+            await loadDatesWithNotes();
+            renderCalendar();
+          } catch {
+            showToast('Failed to delete', 'error');
+          }
+        }},
+      ]);
+      slot.appendChild(menuTrigger);
     });
   }
 

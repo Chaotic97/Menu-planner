@@ -63,6 +63,8 @@ public/
       todoView.js · shoppingList.js · serviceNotes.js · flavorPairings.js · specials.js · login.js
       settings.js                — Settings page: change password (Security section) + allergen keyword manager (Allergen Detection section). Route: #/settings
     components/
+      actionMenu.js              — createActionMenu(items[], opts). Three-dot overflow dropdown. Click trigger toggles; click-outside/Escape closes. Items: { label, icon?, danger?, onClick }.
+      collapsible.js             — makeCollapsible(sectionEl, opts) / collapsibleHeader(title, subtitle?). Toggle sections open/closed with optional localStorage persistence via `storageKey`.
       modal.js                   — openModal(title, contentHtml, onClose) / closeModal(). Accessible: role="dialog", aria-modal, Escape to close, auto-focus, focus restore.
       toast.js                   — showToast(message, type, duration, action). `type` is a string: `'error'`, `'success'`, `'warning'`. Do NOT pass an object.
       allergenBadges.js          — renderAllergenBadges(allergens)
@@ -154,6 +156,8 @@ Rules:
 - **Never call `fetch()` directly.** Use functions from `../api.js`. Exception: binary blob downloads (e.g. `.docx` export in `specials.js`) use `fetch()` directly since `api.js` assumes JSON responses.
 - Feedback: `showToast(message, type)` from `../components/toast.js`. The `type` param is a string (`'error'`, `'success'`, `'warning'`), **not** an options object.
 - Dialogs/pickers: `openModal(title, contentHtml, onClose)` / `closeModal()` from `../components/modal.js`. Modal handles Escape key, auto-focuses first input, restores focus on close.
+- Action menus: `createActionMenu(items)` from `../components/actionMenu.js`. Returns a trigger button element — append it to the DOM. Items: `[{ label, icon?, danger?, onClick }]`. Handles positioning, click-outside close, Escape key.
+- Collapsible sections: `makeCollapsible(el, { open, storageKey })` / `collapsibleHeader(title, subtitle?)` from `../components/collapsible.js`. Wrap content in `.collapsible-section` with `__header` and `__body` children. Pass `storageKey` to persist open/closed state in localStorage.
 - Real-time updates: `window.addEventListener('sync:event_type', e => { ... })` — payload is in `e.detail`.
 
 ---
@@ -415,6 +419,18 @@ The pipeline catches lint errors and test failures before code reaches `main`.
 
 ## Key patterns and gotchas
 
+### Action menus (three-dot overflow)
+Secondary page actions (Duplicate, Delete, Export, Print, etc.) are hidden behind three-dot overflow menus using `createActionMenu()`. Keep only the primary CTA as a visible button (e.g. "+ New Dish", "+ Add Task", "Save Changes"). All other actions go into the overflow.
+
+### Collapsible form sections
+The dish form uses collapsible sections for secondary fields (Allergens, Substitutions, Service Components, Additional Costs, Service Notes). These default to collapsed and persist their open/closed state via localStorage keys prefixed with `dish_sec_`. The menu builder similarly collapses the "Guest Allergies & Covers" section with key `mb_allergy_section`.
+
+### Elevation hierarchy
+- **Content cards** (dishes, menus, specials, notes): `box-shadow: var(--shadow)` — true floating cards
+- **Inline panels** (summary bars, pricing bars, filter bars, info bars): `border: 1px solid var(--border)` only — no shadow
+- **Modals/overlays**: `box-shadow: var(--shadow-lg)`
+- **Action menus**: `box-shadow: var(--shadow-lg)` (positioned fixed)
+
 ### Session save before response (do not remove)
 The login route calls `req.session.save(cb)` before `res.json()`. Without this, the session file may not be on disk before the browser receives the cookie — login appears broken. Do not remove this pattern.
 
@@ -472,6 +488,9 @@ The stored `photo_path` is the relative URL `/uploads/dish-TIMESTAMP.ext` — no
 ### Food cost colour thresholds (Menu Builder UI)
 green ≤30% · yellow 30–35% · red >35%
 
+### Print styles
+All print rules live in a single consolidated `@media print` block at the end of `style.css`. Use the `.no-print` class on any element that should be hidden when printing. Navigation, action menus, filter bars, and interactive controls are hidden automatically.
+
 ### Responsive breakpoints
 ≥481px: sidebar nav, no bottom tab bar. ≤480px: bottom tab bar, no sidebar. Use these exact values; do not invent new breakpoints.
 
@@ -525,12 +544,12 @@ Sub-sections (responsive overrides, etc.):
 | `.sl-` | Shopping List page |
 | `.st-` | Settings page |
 
-Global components (`.btn`, `.card`, `.modal`, `.toast`, `.input`, `.drag-handle`) are unprefixed. New features with more than ~3 classes get a prefix; add it to this table.
+Global components (`.btn`, `.btn-ghost`, `.card`, `.modal`, `.toast`, `.input`, `.drag-handle`, `.action-menu-*`, `.collapsible-section*`, `.no-print`) are unprefixed. New features with more than ~3 classes get a prefix; add it to this table.
 
 ### CSS variables
-All design tokens in `:root` at top of `style.css`. Groups: Brand colours (`--primary-*`, `--primary-rgb`) · Semantic (`--danger`, `--warning`, `--success`) · Surface & text (`--bg`, `--surface`, `--text`, `--border`) · Elevation (`--shadow`, `--shadow-lg`) · Geometry (`--radius`, `--radius-sm`) · Layout (`--nav-height`, `--sidebar-width`, `--sidebar-collapsed-width`) · Typography (`--font`).
+All design tokens in `:root` at top of `style.css`. Groups: Brand colours (`--primary-*`, `--primary-rgb`) · Semantic (`--danger`, `--warning`, `--success`) · Semantic RGB variants (`--danger-rgb`, `--warning-rgb`, `--success-rgb`) · Surface & text (`--bg`, `--surface`, `--text`, `--border`) · Elevation (`--shadow`, `--shadow-lg`) · Geometry (`--radius`, `--radius-sm`) · Layout (`--nav-height`, `--sidebar-width`, `--sidebar-collapsed-width`) · Typography (`--font`, `--text-xs`, `--text-sm`, `--text-base`, `--text-md`, `--text-lg`) · Spacing (`--space-xs`, `--space-sm`, `--space-md`, `--space-lg`, `--space-xl`).
 
-`--primary-rgb` holds the raw RGB components of `--primary` (e.g. `45, 106, 79`) so you can use `rgba(var(--primary-rgb), 0.1)` for tinted backgrounds. Both `:root` and `[data-theme="dark"]` define it.
+`--primary-rgb` holds the raw RGB components of `--primary` (e.g. `45, 106, 79`) so you can use `rgba(var(--primary-rgb), 0.1)` for tinted backgrounds. Both `:root` and `[data-theme="dark"]` define it. Similarly `--danger-rgb`, `--warning-rgb`, `--success-rgb` hold the RGB components of their respective semantic colours.
 
 Dark mode: `[data-theme="dark"]` block immediately below `:root`. Component-specific dark overrides go at the end of that block under `/* --- Component-specific dark overrides --- */`. Do not scatter dark mode rules through the file.
 
