@@ -1,33 +1,7 @@
 'use strict';
 
 const { getDb } = require('../db/database');
-const { generateShoppingList } = require('./shoppingListGenerator');
 const { generatePrepTasks } = require('./prepTaskGenerator');
-
-/**
- * Transform shopping list result into task row objects (pure function).
- */
-function buildShoppingTaskRows(shoppingResult, menuId) {
-  const rows = [];
-  for (const group of shoppingResult.groups) {
-    for (const item of group.items) {
-      rows.push({
-        menu_id: menuId,
-        source_dish_id: null,
-        type: 'shopping',
-        title: item.ingredient,
-        description: item.used_in.join(', '),
-        category: group.category,
-        quantity: item.total_quantity,
-        unit: item.unit,
-        timing_bucket: '',
-        priority: 'medium',
-        source: 'auto',
-      });
-    }
-  }
-  return rows;
-}
 
 /**
  * Transform prep tasks result into task row objects (pure function).
@@ -64,32 +38,32 @@ function buildPrepTaskRows(prepResult, menuId) {
 }
 
 /**
- * Generate and persist tasks from a menu's shopping list and prep tasks.
+ * Generate and persist prep tasks from a menu.
  * Deletes existing auto-generated tasks for this menu, then re-inserts.
  * Manually edited tasks (source='manual') are preserved.
+ *
+ * NOTE: Shopping/purchasing is handled separately via the shopping list page,
+ * not as tasks. Only prep and custom tasks live in the tasks table.
  */
 function generateAndPersistTasks(menuId) {
-  const shoppingResult = generateShoppingList(menuId);
-  if (!shoppingResult) return null;
+  const db = getDb();
+  const menu = db.prepare('SELECT id FROM menus WHERE id = ? AND deleted_at IS NULL').get(menuId);
+  if (!menu) return null;
 
   const prepResult = generatePrepTasks(menuId);
-
-  const db = getDb();
 
   // Delete existing auto-generated tasks for this menu
   db.prepare('DELETE FROM tasks WHERE menu_id = ? AND source = ?').run(menuId, 'auto');
 
-  const shoppingRows = buildShoppingTaskRows(shoppingResult, menuId);
   const prepRows = prepResult ? buildPrepTaskRows(prepResult, menuId) : [];
-  const allRows = [...shoppingRows, ...prepRows];
 
   const insertStmt = db.prepare(`
     INSERT INTO tasks (menu_id, source_dish_id, type, title, description, category, quantity, unit, timing_bucket, priority, source, sort_order)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
-  for (let i = 0; i < allRows.length; i++) {
-    const r = allRows[i];
+  for (let i = 0; i < prepRows.length; i++) {
+    const r = prepRows[i];
     insertStmt.run(
       r.menu_id, r.source_dish_id, r.type, r.title, r.description,
       r.category, r.quantity, r.unit, r.timing_bucket, r.priority,
@@ -99,9 +73,8 @@ function generateAndPersistTasks(menuId) {
 
   return {
     menu_id: menuId,
-    shopping_count: shoppingRows.length,
     prep_count: prepRows.length,
-    total: allRows.length,
+    total: prepRows.length,
   };
 }
 
@@ -178,6 +151,5 @@ function getTasks(filters = {}) {
 module.exports = {
   generateAndPersistTasks,
   getTasks,
-  buildShoppingTaskRows,
   buildPrepTaskRows,
 };

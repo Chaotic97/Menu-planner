@@ -126,13 +126,12 @@ describe('GET /api/todos/menu/:id/prep-tasks', () => {
 // ─── GENERATE TASKS ──────────────────────────────────────────────────────────
 
 describe('POST /api/todos/generate/:menuId', () => {
-  test('generates and persists tasks from a menu', async () => {
+  test('generates and persists prep tasks from a menu', async () => {
     const res = await agent.post(`/api/todos/generate/${menuId}`).expect(201);
 
     expect(res.body.menu_id).toBe(menuId);
-    expect(res.body.shopping_count).toBeGreaterThan(0);
     expect(res.body.prep_count).toBeGreaterThan(0);
-    expect(res.body.total).toBe(res.body.shopping_count + res.body.prep_count);
+    expect(res.body.total).toBe(res.body.prep_count);
   });
 
   test('returns 404 for non-existent menu', async () => {
@@ -162,9 +161,10 @@ describe('GET /api/todos', () => {
   });
 
   test('filters by type', async () => {
-    const res = await agent.get('/api/todos?type=shopping').expect(200);
+    const res = await agent.get('/api/todos?type=prep').expect(200);
+    expect(res.body.length).toBeGreaterThan(0);
     for (const task of res.body) {
-      expect(task.type).toBe('shopping');
+      expect(task.type).toBe('prep');
     }
   });
 
@@ -224,6 +224,10 @@ describe('POST /api/todos', () => {
 
   test('rejects invalid type', async () => {
     await agent.post('/api/todos').send({ title: 'Test', type: 'invalid' }).expect(400);
+  });
+
+  test('rejects shopping type (no longer valid)', async () => {
+    await agent.post('/api/todos').send({ title: 'Test', type: 'shopping' }).expect(400);
   });
 
   test('rejects invalid priority', async () => {
@@ -304,9 +308,9 @@ describe('PUT /api/todos/:id', () => {
   });
 
   test('promotes auto task to manual on content edit', async () => {
-    // Generate tasks to get auto tasks
+    // Generate tasks to get auto prep tasks
     await agent.post(`/api/todos/generate/${menuId}`).expect(201);
-    const tasks = await agent.get(`/api/todos?menu_id=${menuId}&type=shopping`).expect(200);
+    const tasks = await agent.get(`/api/todos?menu_id=${menuId}&type=prep`).expect(200);
     const autoTask = tasks.body.find(t => t.source === 'auto');
     expect(autoTask).toBeDefined();
 

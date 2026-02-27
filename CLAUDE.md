@@ -40,12 +40,12 @@ services/
   recipeImporter.js              — importRecipe(url) — scrapes a URL and returns a dish-shaped object (incl. directions[]). Has SSRF protection (blocks private IPs, enforces https, timeout + size limits).
   docxImporter.js                — importDocx(buffer) — parses Meez .docx exports into a dish-shaped object (incl. directions[]).
   specialsExporter.js            — exportSpecialsDocx(weekStart) — generates .docx file of active weekly specials with dish details.
-  shoppingListGenerator.js       — generateShoppingList(menuId) — aggregates + unit-normalises menu ingredients
-  taskGenerator.js               — generateAndPersistTasks(menuId), getTasks(filters), buildShoppingTaskRows(), buildPrepTaskRows(). Bridges shopping/prep generators into persistent `tasks` table.
+  shoppingListGenerator.js       — generateShoppingList(menuId) — aggregates + unit-normalises menu ingredients. Includes in_stock flag and ingredient_id per item.
+  taskGenerator.js               — generateAndPersistTasks(menuId), getTasks(filters), buildPrepTaskRows(). Generates only prep tasks into persistent `tasks` table. Shopping is handled separately by the shopping list page.
 routes/
   auth.js                        — Login, logout, setup, forgot/reset password, change password
   dishes.js                      — Full CRUD + photo upload, duplicate, favorites, tags, allergens, directions, import from URL/docx
-  ingredients.js                 — Ingredient CRUD with unit_cost
+  ingredients.js                 — Ingredient CRUD with unit_cost + in-stock management (toggle, clear all)
   menus.js                       — Menu CRUD + dish ordering, weekly specials (CRUD + .docx export), kitchen print, scaling
   todos.js                       — Legacy shopping list/prep task endpoints + persistent task CRUD (generate, list, create, update, delete, batch-complete)
   serviceNotes.js                — Daily kitchen notes CRUD
@@ -60,7 +60,7 @@ public/
     utils/escapeHtml.js          — escapeHtml(). Must wrap all user content in templates.
     pages/                       — One file per page. Each exports renderXxx(container).
       dishList.js · dishForm.js · dishView.js · menuList.js · menuBuilder.js
-      todoView.js · serviceNotes.js · flavorPairings.js · specials.js · login.js
+      todoView.js · shoppingList.js · serviceNotes.js · flavorPairings.js · specials.js · login.js
       settings.js                — Settings page: change password (Security section) + allergen keyword manager (Allergen Detection section). Route: #/settings
     components/
       modal.js                   — openModal(title, contentHtml, onClose) / closeModal(). Accessible: role="dialog", aria-modal, Escape to close, auto-focus, focus restore.
@@ -215,7 +215,7 @@ window.addEventListener('sync:dish_updated', (e) => {
 });
 ```
 
-Existing event types: `dish_created` · `dish_updated` · `dish_deleted` · `menu_created` · `menu_updated` · `menu_deleted` · `task_created` · `task_updated` · `task_deleted` · `tasks_generated` · `tasks_batch_updated`
+Existing event types: `dish_created` · `dish_updated` · `dish_deleted` · `menu_created` · `menu_updated` · `menu_deleted` · `task_created` · `task_updated` · `task_deleted` · `tasks_generated` · `tasks_batch_updated` · `ingredient_updated` · `ingredients_stock_cleared`
 
 Broadcast on creates, updates, deletes. Never on reads.
 
@@ -236,9 +236,7 @@ prepTaskGenerator.test.js — extractTiming (all 5 buckets), extractPrepTasks (s
 docxImporter.test.js      — parseMeezText (title, ingredients with sections, directions
                             with sections, category guessing), parseMeezIngredient
                             (qty/unit/name/prep_note parsing)
-taskGenerator.test.js     — buildShoppingTaskRows (transforms shopping result to task rows,
-                            preserves quantity/unit/category, joins used_in),
-                            buildPrepTaskRows (transforms prep result to task rows,
+taskGenerator.test.js     — buildPrepTaskRows (transforms prep result to task rows,
                             preserves timing_bucket, looks up dish IDs)
 ```
 
@@ -249,10 +247,10 @@ Full request → response cycle tests using **supertest** against a real Express
 auth.test.js          — Setup, login, logout, change-password, auth middleware
 dishes.test.js        — Full CRUD, ingredients, tags, directions, allergens, duplicate, favorite
 menus.test.js         — CRUD, dish management, cost rollup, allergy conflicts, kitchen print
-ingredients.test.js   — Create, upsert, update, search, allergen detection
+ingredients.test.js   — Create, upsert, update, search, in-stock toggle/clear, allergen detection
 serviceNotes.test.js  — CRUD with date/shift validation
-todos.test.js         — Legacy shopping list/scaling/prep tasks + persistent task CRUD, generate,
-                        batch-complete, auto→manual promotion, filter by type/priority/completed
+todos.test.js         — Legacy shopping list/scaling/prep tasks + persistent task CRUD (prep+custom only),
+                        generate, batch-complete, auto→manual promotion, filter by type/priority/completed
 ```
 
 **How integration tests work:**
@@ -319,9 +317,11 @@ The pipeline catches lint errors and test failures before code reaches `main`.
 ### Ingredients
 | Method | Path | Notes |
 |--------|------|-------|
-| GET | `/api/ingredients` | Query: `search` |
+| GET | `/api/ingredients` | Query: `search`. Returns all fields including `in_stock`. |
 | POST | `/api/ingredients` | Body: name, unit_cost, base_unit, category. Validates unit_cost is non-negative number. Upserts by name (case-insensitive). |
 | PUT | `/api/ingredients/:id` | Same body. Validates unit_cost if provided. |
+| PUT | `/api/ingredients/:id/stock` | Body: `{ in_stock: bool }`. Toggles the in-stock flag. Broadcasts `ingredient_updated`. |
+| POST | `/api/ingredients/clear-stock` | Clears all in-stock flags (sets `in_stock=0`). Broadcasts `ingredients_stock_cleared`. Returns `{ success, cleared }`. |
 
 ### Menus
 | Method | Path | Notes |
@@ -345,14 +345,14 @@ The pipeline catches lint errors and test failures before code reaches `main`.
 | GET | `/api/todos/menu/:id/scaled-shopping-list` | Query: `covers=N` |
 | GET | `/api/todos/menu/:id/prep-tasks` | Tasks grouped by timing bucket |
 
-### Tasks (persistent)
+### Tasks (persistent — prep + custom only)
 | Method | Path | Notes |
 |--------|------|-------|
 | GET | `/api/todos` | Query: `menu_id`, `type`, `completed`, `priority`, `due_date_from`, `due_date_to`, `overdue`, `search`. Returns tasks with `menu_name` join. |
-| POST | `/api/todos` | Create custom task. Body: title\*, description, type (shopping/prep/custom), priority (high/medium/low), due_date, due_time, menu_id. Source set to `manual`. |
+| POST | `/api/todos` | Create custom task. Body: title\*, description, type (prep/custom), priority (high/medium/low), due_date, due_time, menu_id. Source set to `manual`. |
 | PUT | `/api/todos/:id` | Update task. Body: title, description, priority, due_date, due_time, completed, sort_order. Auto tasks promoted to `manual` source on content edits. |
 | DELETE | `/api/todos/:id` | Hard delete a task |
-| POST | `/api/todos/generate/:menuId` | Generate persistent tasks from menu's shopping list + prep tasks. Replaces existing `source='auto'` tasks; preserves `source='manual'`. → 201 `{ menu_id, shopping_count, prep_count, total }` |
+| POST | `/api/todos/generate/:menuId` | Generate persistent prep tasks from menu. Replaces existing `source='auto'` tasks; preserves `source='manual'`. → 201 `{ menu_id, prep_count, total }` |
 | POST | `/api/todos/batch-complete` | Body: `{ task_ids: [int], completed: bool }`. Batch complete/uncomplete. |
 
 ### Service Notes
@@ -391,7 +391,7 @@ The pipeline catches lint errors and test failures before code reaches `main`.
 | Table | Key columns |
 |-------|-------------|
 | `dishes` | id, name, description, category, photo_path, chefs_notes, suggested_price, is_favorite, deleted_at, manual_costs (JSON `[]`), service_notes, created_at, updated_at |
-| `ingredients` | id, name, unit_cost, base_unit, category |
+| `ingredients` | id, name, unit_cost, base_unit, category, in_stock (0/1, default 0) |
 | `dish_ingredients` | dish_id, ingredient_id, quantity, unit, prep_note, sort_order — **UNIQUE(dish_id, ingredient_id)** |
 | `dish_section_headers` | id, dish_id, label, sort_order — visual dividers in the ingredient list |
 | `allergen_keywords` | keyword, allergen — EU 14 allergen detection source (see below) |
@@ -405,7 +405,7 @@ The pipeline catches lint errors and test failures before code reaches `main`.
 | `dish_substitutions` | dish_id, allergen, original_ingredient, substitute_ingredient, substitute_quantity, substitute_unit, notes |
 | `settings` | key, value — stores: password_hash, email, reset_token, reset_expires |
 | `service_notes` | id, date (YYYY-MM-DD), shift, title, content, created_at, updated_at |
-| `tasks` | id, menu_id (nullable FK→menus ON DELETE SET NULL), source_dish_id (nullable FK→dishes ON DELETE SET NULL), type (shopping/prep/custom), title, description, category, quantity, unit, timing_bucket, priority (high/medium/low), due_date, due_time, completed, completed_at, source (auto/manual), sort_order, created_at, updated_at |
+| `tasks` | id, menu_id (nullable FK→menus ON DELETE SET NULL), source_dish_id (nullable FK→dishes ON DELETE SET NULL), type (prep/custom), title, description, category, quantity, unit, timing_bucket, priority (high/medium/low), due_date, due_time, completed, completed_at, source (auto/manual), sort_order, created_at, updated_at |
 
 **Shift values:** `all` · `am` · `lunch` · `pm` · `prep`
 
@@ -430,14 +430,27 @@ Every `.run()` / `.exec()` schedules a disk write 500 ms later. There is no expl
 ### escapeHtml is non-negotiable
 Wrap every user-supplied string in `escapeHtml()` before inserting into template literals. Dish names, notes, ingredient names, tag names — everything. Omitting it is an XSS vulnerability.
 
-### Persistent task system (todo redesign)
-Tasks are now stored in the `tasks` table, not just computed on-the-fly. Key patterns:
-- **Auto-generated vs manual**: `source='auto'` tasks are created by `POST /api/todos/generate/:menuId`. `source='manual'` tasks are user-created or user-edited. Regeneration only deletes `source='auto'` rows, preserving user edits.
+### Tasks vs Shopping List (split architecture)
+Tasks (prep actions + custom tasks) and Shopping (ingredient procurement) are separate concerns with separate pages:
+
+**Tasks page (`#/todos`, `todoView.js`):**
+- Only prep and custom task types. Shopping is NOT a task type.
+- `source='auto'` tasks are created by `POST /api/todos/generate/:menuId` (prep tasks only). `source='manual'` tasks are user-created or user-edited.
 - **Promotion on edit**: When any content field (title, description, priority, due_date, due_time) of an auto task is edited, its `source` is promoted to `'manual'` so future regenerations won't overwrite it. Toggling `completed` does NOT promote.
 - **Standalone tasks**: Tasks with `menu_id = NULL` are standalone (e.g. "Call fish supplier"). They survive independent of any menu.
 - **Completion flow**: Completing a task sets `completed=1` and `completed_at=datetime('now')`. The frontend shows an "Undo" button on the toast notification (8-second window). Completed tasks are hidden by default; a "Show completed" toggle reveals them.
-- **Frontend tabs**: "All Tasks" (grouped by due date bucket), "Shopping" (grouped by category), "Prep" (grouped by timing bucket), "By Menu" (menu selector + regenerate button + PO toggle).
-- **Legacy endpoints preserved**: `GET /api/todos/menu/:id/shopping-list`, `scaled-shopping-list`, and `prep-tasks` remain unchanged for backward compatibility (used by menu builder scale modal and purchase order).
+- **Frontend tabs**: "All Tasks" (grouped by due date bucket), "Prep" (grouped by timing bucket), "By Menu" (menu selector + regenerate button).
+
+**Shopping List page (`#/shopping`, `shoppingList.js`):**
+- Driven by the legacy `generateShoppingList()` — computed on-the-fly from menu ingredients. NOT stored in the `tasks` table.
+- **In-stock tracking**: `ingredients.in_stock` (persistent flag). In-stock items appear greyed out at the bottom of each category group, not hidden.
+- **Summary bar**: Shows "X to buy / Y in stock / Z total" and estimated cost (excludes in-stock items).
+- **Clear all in-stock**: Resets all `in_stock=0` for a new order cycle. Confirmation dialog required.
+- **Scale covers**: Adjusts quantities via the scaled-shopping-list endpoint.
+- **Purchase Order modal**: Printable PO excluding in-stock items.
+- Routes: `#/shopping` (all menus prompt) and `#/menus/:id/shopping` (specific menu).
+
+**Legacy endpoints preserved**: `GET /api/todos/menu/:id/shopping-list`, `scaled-shopping-list`, and `prep-tasks` remain unchanged for backward compatibility (used by menu builder scale modal and the shopping list page).
 
 ### Directions vs legacy chefs_notes
 Dish method steps are stored in `dish_directions` (type `'step'` or `'section'`, with `sort_order`). The old `chefs_notes` TEXT column still exists for backward compatibility. Rules:
@@ -509,6 +522,7 @@ Sub-sections (responsive overrides, etc.):
 | `.mb-` | Menu Builder |
 | `.dir-` | Directions (dish form) |
 | `.td-` | Todo/Task system redesign |
+| `.sl-` | Shopping List page |
 | `.st-` | Settings page |
 
 Global components (`.btn`, `.card`, `.modal`, `.toast`, `.input`, `.drag-handle`) are unprefixed. New features with more than ~3 classes get a prefix; add it to this table.

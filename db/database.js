@@ -231,6 +231,7 @@ async function initialize() {
     `CREATE INDEX IF NOT EXISTS idx_tasks_due_date ON tasks(due_date)`,
     `CREATE INDEX IF NOT EXISTS idx_tasks_completed ON tasks(completed)`,
     `CREATE INDEX IF NOT EXISTS idx_tasks_priority ON tasks(priority)`,
+    `ALTER TABLE ingredients ADD COLUMN in_stock INTEGER DEFAULT 0`,
   ];
 
   for (const sql of MIGRATIONS) {

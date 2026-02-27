@@ -119,6 +119,75 @@ describe('PUT /api/ingredients/:id', () => {
   });
 });
 
+// ─── IN-STOCK MANAGEMENT ────────────────────────────────────────────────────
+
+describe('PUT /api/ingredients/:id/stock', () => {
+  let ingredientId;
+
+  beforeAll(async () => {
+    const res = await agent
+      .post('/api/ingredients')
+      .send({ name: 'Stock Test Item', unit_cost: 1.0 })
+      .expect(201);
+    ingredientId = res.body.id;
+  });
+
+  test('marks ingredient as in stock', async () => {
+    await agent
+      .put(`/api/ingredients/${ingredientId}/stock`)
+      .send({ in_stock: true })
+      .expect(200);
+
+    const list = await agent.get('/api/ingredients?search=Stock Test Item').expect(200);
+    const item = list.body.find(i => i.id === ingredientId);
+    expect(item.in_stock).toBe(1);
+  });
+
+  test('marks ingredient as out of stock', async () => {
+    await agent
+      .put(`/api/ingredients/${ingredientId}/stock`)
+      .send({ in_stock: false })
+      .expect(200);
+
+    const list = await agent.get('/api/ingredients?search=Stock Test Item').expect(200);
+    const item = list.body.find(i => i.id === ingredientId);
+    expect(item.in_stock).toBe(0);
+  });
+
+  test('rejects missing in_stock field', async () => {
+    await agent
+      .put(`/api/ingredients/${ingredientId}/stock`)
+      .send({})
+      .expect(400);
+  });
+
+  test('returns 404 for non-existent ingredient', async () => {
+    await agent
+      .put('/api/ingredients/99999/stock')
+      .send({ in_stock: true })
+      .expect(404);
+  });
+});
+
+describe('POST /api/ingredients/clear-stock', () => {
+  test('clears all in-stock flags', async () => {
+    // Mark two ingredients as in stock
+    const a = await agent.post('/api/ingredients').send({ name: 'ClearTest A' }).expect(201);
+    const b = await agent.post('/api/ingredients').send({ name: 'ClearTest B' }).expect(201);
+    await agent.put(`/api/ingredients/${a.body.id}/stock`).send({ in_stock: true }).expect(200);
+    await agent.put(`/api/ingredients/${b.body.id}/stock`).send({ in_stock: true }).expect(200);
+
+    const res = await agent.post('/api/ingredients/clear-stock').expect(200);
+    expect(res.body.success).toBe(true);
+    expect(res.body.cleared).toBeGreaterThanOrEqual(2);
+
+    // Verify they're cleared
+    const list = await agent.get('/api/ingredients').expect(200);
+    const inStockItems = list.body.filter(i => i.in_stock === 1);
+    expect(inStockItems.length).toBe(0);
+  });
+});
+
 // ─── ALLERGEN DETECTION ───────────────────────────────────────────────────────
 
 describe('GET /api/ingredients/:id/allergens', () => {
