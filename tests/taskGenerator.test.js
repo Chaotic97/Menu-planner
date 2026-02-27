@@ -1,6 +1,6 @@
 'use strict';
 
-const { buildShoppingTaskRows, buildPrepTaskRows } = require('../services/taskGenerator');
+const { buildPrepTaskRows } = require('../services/taskGenerator');
 
 // Mock getDb for buildPrepTaskRows (it looks up dish IDs)
 jest.mock('../db/database', () => ({
@@ -10,72 +10,6 @@ jest.mock('../db/database', () => ({
     }),
   }),
 }));
-
-describe('buildShoppingTaskRows', () => {
-  const shoppingResult = {
-    groups: [
-      {
-        category: 'produce',
-        items: [
-          { ingredient: 'Romaine', total_quantity: 600, unit: 'g', estimated_cost: 3.0, used_in: ['Caesar Salad (600g)'] },
-          { ingredient: 'Tomatoes', total_quantity: 400, unit: 'g', estimated_cost: 2.0, used_in: ['Pasta (200g)', 'Salad (200g)'] },
-        ],
-      },
-      {
-        category: 'dairy',
-        items: [
-          { ingredient: 'Pecorino', total_quantity: 150, unit: 'g', estimated_cost: 6.0, used_in: ['Carbonara (100g)', 'Caesar (50g)'] },
-        ],
-      },
-    ],
-  };
-
-  test('transforms shopping list groups into task rows', () => {
-    const rows = buildShoppingTaskRows(shoppingResult, 1);
-    expect(rows).toHaveLength(3);
-  });
-
-  test('sets type to shopping and source to auto', () => {
-    const rows = buildShoppingTaskRows(shoppingResult, 1);
-    for (const row of rows) {
-      expect(row.type).toBe('shopping');
-      expect(row.source).toBe('auto');
-    }
-  });
-
-  test('preserves quantity, unit, and category', () => {
-    const rows = buildShoppingTaskRows(shoppingResult, 1);
-    const romaine = rows.find(r => r.title === 'Romaine');
-    expect(romaine.quantity).toBe(600);
-    expect(romaine.unit).toBe('g');
-    expect(romaine.category).toBe('produce');
-  });
-
-  test('joins used_in array into description', () => {
-    const rows = buildShoppingTaskRows(shoppingResult, 1);
-    const tomatoes = rows.find(r => r.title === 'Tomatoes');
-    expect(tomatoes.description).toBe('Pasta (200g), Salad (200g)');
-  });
-
-  test('sets menu_id on all rows', () => {
-    const rows = buildShoppingTaskRows(shoppingResult, 5);
-    for (const row of rows) {
-      expect(row.menu_id).toBe(5);
-    }
-  });
-
-  test('sets priority to medium by default', () => {
-    const rows = buildShoppingTaskRows(shoppingResult, 1);
-    for (const row of rows) {
-      expect(row.priority).toBe('medium');
-    }
-  });
-
-  test('handles empty groups', () => {
-    const rows = buildShoppingTaskRows({ groups: [] }, 1);
-    expect(rows).toHaveLength(0);
-  });
-});
 
 describe('buildPrepTaskRows', () => {
   const prepResult = {

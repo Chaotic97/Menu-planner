@@ -4,6 +4,7 @@ import { renderDishView } from './pages/dishView.js';
 import { renderMenuList } from './pages/menuList.js';
 import { renderMenuBuilder } from './pages/menuBuilder.js';
 import { renderTodoView } from './pages/todoView.js';
+import { renderShoppingList } from './pages/shoppingList.js';
 import { renderSpecials } from './pages/specials.js';
 import { renderServiceNotes } from './pages/serviceNotes.js';
 import { renderFlavorPairings } from './pages/flavorPairings.js';
@@ -27,6 +28,8 @@ const routes = [
   { pattern: /^#\/flavor-pairings$/, handler: () => renderFlavorPairings(appContent) },
   { pattern: /^#\/settings$/, handler: () => renderSettings(appContent) },
   { pattern: /^#\/todos$/, handler: () => renderTodoView(appContent, null) },
+  { pattern: /^#\/shopping$/, handler: () => renderShoppingList(appContent, null) },
+  { pattern: /^#\/menus\/(\d+)\/shopping$/, handler: (m) => renderShoppingList(appContent, m[1]) },
   { pattern: /^#\/menus\/(\d+)\/todos$/, handler: (m) => renderTodoView(appContent, m[1]) },
   { pattern: /^#\/menus\/(\d+)$/, handler: (m) => renderMenuBuilder(appContent, m[1]) },
   { pattern: /^#\/menus$/, handler: () => renderMenuList(appContent) },

@@ -78,6 +78,27 @@ router.put('/:id', (req, res) => {
   res.json({ success: true });
 });
 
+// PUT /api/ingredients/:id/stock - Toggle in_stock flag
+router.put('/:id/stock', (req, res) => {
+  const db = getDb();
+  const { in_stock } = req.body;
+  if (in_stock === undefined) return res.status(400).json({ error: 'in_stock is required' });
+
+  const result = db.prepare('UPDATE ingredients SET in_stock = ? WHERE id = ?').run(in_stock ? 1 : 0, req.params.id);
+  if (result.changes === 0) return res.status(404).json({ error: 'Ingredient not found' });
+
+  req.broadcast('ingredient_updated', { id: parseInt(req.params.id) }, req.headers['x-client-id']);
+  res.json({ success: true });
+});
+
+// POST /api/ingredients/clear-stock - Clear all in_stock flags
+router.post('/clear-stock', (req, res) => {
+  const db = getDb();
+  const result = db.prepare('UPDATE ingredients SET in_stock = 0 WHERE in_stock = 1').run();
+  req.broadcast('ingredients_stock_cleared', { cleared: result.changes }, req.headers['x-client-id']);
+  res.json({ success: true, cleared: result.changes });
+});
+
 // GET /api/ingredients/:id/allergens - Detect allergens for single ingredient
 router.get('/:id/allergens', (req, res) => {
   const db = getDb();

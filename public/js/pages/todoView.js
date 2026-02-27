@@ -1,11 +1,11 @@
-import { getMenus, getShoppingList, getMenuKitchenPrint, getTasks, generateTasks, createTask, updateTask, deleteTask } from '../api.js';
+import { getMenus, getMenuKitchenPrint, getTasks, generateTasks, createTask, updateTask, deleteTask } from '../api.js';
 import { escapeHtml } from '../utils/escapeHtml.js';
 import { showToast } from '../components/toast.js';
 import { openModal, closeModal } from '../components/modal.js';
 import { printSheet } from '../utils/printSheet.js';
 
 const PRIORITY_LABELS = { high: 'High', medium: 'Medium', low: 'Low' };
-const TYPE_LABELS = { shopping: 'Shopping', prep: 'Prep', custom: 'Custom' };
+const TYPE_LABELS = { prep: 'Prep', custom: 'Custom' };
 const TIMING_LABELS = {
   day_before: 'Day Before Service',
   morning_of: 'Morning of Service',
@@ -80,8 +80,6 @@ export async function renderTodoView(container, menuId) {
 
     if (activeTab === 'menu' && activeMenuId) {
       params.menu_id = activeMenuId;
-    } else if (activeTab === 'shopping') {
-      params.type = 'shopping';
     } else if (activeTab === 'prep') {
       params.type = 'prep';
     }
@@ -107,9 +105,7 @@ export async function renderTodoView(container, menuId) {
       ? `<span class="td-badge td-badge-menu">${escapeHtml(task.menu_name)}</span>`
       : '';
     const typeBadge = `<span class="td-badge td-badge-type">${escapeHtml(TYPE_LABELS[task.type] || task.type)}</span>`;
-    const quantityInfo = task.quantity !== null && task.quantity !== undefined && task.type === 'shopping'
-      ? `<span class="td-task-qty">${task.quantity} ${escapeHtml(task.unit || '')}</span>`
-      : '';
+    const quantityInfo = '';
     const descriptionLine = task.description
       ? `<div class="td-task-desc">${escapeHtml(task.description)}</div>`
       : '';
@@ -165,26 +161,6 @@ export async function renderTodoView(container, menuId) {
       `).join('');
   }
 
-  function renderGroupedByCategory(taskList) {
-    const groups = {};
-    for (const task of taskList) {
-      const cat = task.category || 'other';
-      if (!groups[cat]) groups[cat] = [];
-      groups[cat].push(task);
-    }
-    if (Object.keys(groups).length === 0) {
-      return '<div class="td-empty-state"><p>No shopping tasks. Generate tasks from a menu first.</p></div>';
-    }
-    return Object.entries(groups)
-      .sort(([a], [b]) => a.localeCompare(b))
-      .map(([cat, items]) => `
-        <div class="td-date-group">
-          <h3 class="td-group-title">${escapeHtml(cat.charAt(0).toUpperCase() + cat.slice(1))} <span class="td-group-count">(${items.length})</span></h3>
-          ${items.map(t => renderTaskCard(t)).join('')}
-        </div>
-      `).join('');
-  }
-
   function renderGroupedByTiming(taskList) {
     const groups = {};
     for (const task of taskList) {
@@ -207,7 +183,6 @@ export async function renderTodoView(container, menuId) {
   }
 
   function renderTaskList() {
-    if (activeTab === 'shopping') return renderGroupedByCategory(tasks);
     if (activeTab === 'prep') return renderGroupedByTiming(tasks);
     return renderGroupedByDate(tasks);
   }
@@ -228,7 +203,6 @@ export async function renderTodoView(container, menuId) {
             <label for="task-type">Type</label>
             <select id="task-type" class="input">
               <option value="custom">Custom</option>
-              <option value="shopping">Shopping</option>
               <option value="prep">Prep</option>
             </select>
           </div>
@@ -445,7 +419,6 @@ export async function renderTodoView(container, menuId) {
 
       <div class="td-tabs">
         <button class="td-tab-btn ${activeTab === 'all' ? 'active' : ''}" data-tab="all">All Tasks</button>
-        <button class="td-tab-btn ${activeTab === 'shopping' ? 'active' : ''}" data-tab="shopping">Shopping</button>
         <button class="td-tab-btn ${activeTab === 'prep' ? 'active' : ''}" data-tab="prep">Prep</button>
         <button class="td-tab-btn ${activeTab === 'menu' ? 'active' : ''}" data-tab="menu">By Menu</button>
       </div>
@@ -485,9 +458,8 @@ export async function renderTodoView(container, menuId) {
       </div>
 
       ${activeTab === 'menu' && activeMenuId ? `
-        <div class="td-po-section">
-          <button id="td-toggle-po" class="btn btn-secondary" style="margin-top: 1rem;">Show Purchase Order</button>
-          <div id="td-po-content" class="td-po-hidden"></div>
+        <div style="margin-top: 1rem;">
+          <a href="#/menus/${activeMenuId}/shopping" class="btn btn-secondary">View Shopping List</a>
         </div>
       ` : ''}
     `;
@@ -516,7 +488,7 @@ export async function renderTodoView(container, menuId) {
       renderContent();
     });
 
-    // Filter: menu (on All/Shopping/Prep tabs)
+    // Filter: menu (on All/Prep tabs)
     container.querySelector('#td-filter-menu')?.addEventListener('change', async (e) => {
       filterMenuId = e.target.value;
       await loadTasks();
@@ -597,77 +569,6 @@ export async function renderTodoView(container, menuId) {
       }
     });
 
-    // Purchase order toggle
-    container.querySelector('#td-toggle-po')?.addEventListener('click', async () => {
-      const poContent = container.querySelector('#td-po-content');
-      const toggleBtn = container.querySelector('#td-toggle-po');
-      if (!poContent || !toggleBtn) return;
-
-      if (poContent.classList.contains('td-po-hidden')) {
-        try {
-          const shoppingList = await getShoppingList(activeMenuId);
-          const poDate = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
-          poContent.innerHTML = `
-            <div class="po-header">
-              <div class="po-header-row">
-                <span class="po-label">PURCHASE ORDER</span>
-                <span class="po-date">${poDate}</span>
-              </div>
-              <div class="po-header-row">
-                <span><strong>Menu:</strong> ${escapeHtml(shoppingList.menu_name)}</span>
-                ${shoppingList.expected_covers ? `<span><strong>Covers:</strong> ${shoppingList.expected_covers}</span>` : ''}
-              </div>
-            </div>
-            ${shoppingList.groups.length ? `
-              <table class="po-table">
-                <thead>
-                  <tr>
-                    <th>Ingredient</th>
-                    <th>Qty</th>
-                    <th>Unit</th>
-                    <th>Est. Cost</th>
-                    <th>Used In</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  ${shoppingList.groups.map(group => `
-                    <tr class="po-category-row"><td colspan="5">${group.category.charAt(0).toUpperCase() + group.category.slice(1)}</td></tr>
-                    ${group.items.map(item => `
-                      <tr>
-                        <td>${escapeHtml(item.ingredient)}</td>
-                        <td>${item.total_quantity}</td>
-                        <td>${item.unit}</td>
-                        <td>${item.estimated_cost !== null ? '$' + item.estimated_cost.toFixed(2) : '—'}</td>
-                        <td class="po-used-in">${escapeHtml(item.used_in.join(', '))}</td>
-                      </tr>
-                    `).join('')}
-                  `).join('')}
-                </tbody>
-                <tfoot>
-                  <tr class="po-total-row">
-                    <td colspan="3"><strong>Estimated Total</strong></td>
-                    <td><strong>$${shoppingList.total_estimated_cost.toFixed(2)}</strong></td>
-                    <td></td>
-                  </tr>
-                </tfoot>
-              </table>
-              <div class="po-footer">
-                <div class="po-footer-line">Ordered by: ___________________________</div>
-                <div class="po-footer-line">Approved by: ___________________________</div>
-                <div class="po-footer-line">Delivery date: ___________________________</div>
-              </div>
-            ` : '<div class="td-empty-state"><p>No ingredients to order.</p></div>'}
-          `;
-        } catch (err) {
-          poContent.innerHTML = `<div class="error">Failed to load: ${escapeHtml(err.message)}</div>`;
-        }
-        poContent.classList.remove('td-po-hidden');
-        toggleBtn.textContent = 'Hide Purchase Order';
-      } else {
-        poContent.classList.add('td-po-hidden');
-        toggleBtn.textContent = 'Show Purchase Order';
-      }
-    });
   }
 
   // Sync event listeners
