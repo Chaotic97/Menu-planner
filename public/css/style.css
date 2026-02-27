@@ -4981,15 +4981,15 @@ textarea.input { resize: vertical; min-height: 80px; }
   }
 }
 
-/* Mobile: push above bottom nav */
+/* Mobile: push above bottom nav (56px nav + safe area for iPhone home indicator) */
 @media (max-width: 480px) {
   .qc-bar {
-    bottom: 64px;
+    bottom: calc(56px + env(safe-area-inset-bottom, 0px));
     padding-bottom: var(--space-sm);
   }
   /* Add bottom padding to main content so it's not hidden behind QC bar */
   .qc-bar-visible ~ #app-content {
-    padding-bottom: 120px;
+    padding-bottom: calc(120px + env(safe-area-inset-bottom, 0px));
   }
 }
 
