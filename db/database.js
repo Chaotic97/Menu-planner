@@ -233,6 +233,10 @@ async function initialize() {
     `CREATE INDEX IF NOT EXISTS idx_tasks_priority ON tasks(priority)`,
     `ALTER TABLE ingredients ADD COLUMN in_stock INTEGER DEFAULT 0`,
     `ALTER TABLE dishes ADD COLUMN batch_yield INTEGER DEFAULT 1`,
+    `ALTER TABLE tasks ADD COLUMN day_phase TEXT DEFAULT NULL`,
+    `ALTER TABLE tasks ADD COLUMN is_next INTEGER DEFAULT 0`,
+    `CREATE INDEX IF NOT EXISTS idx_tasks_day_phase ON tasks(day_phase)`,
+    `CREATE INDEX IF NOT EXISTS idx_tasks_is_next ON tasks(is_next)`,
   ];
 
   for (const sql of MIGRATIONS) {

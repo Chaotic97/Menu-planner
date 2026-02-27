@@ -1,4 +1,4 @@
-import { getAllergenKeywords, addAllergenKeyword, deleteAllergenKeyword, changePassword } from '../api.js';
+import { getAllergenKeywords, addAllergenKeyword, deleteAllergenKeyword, changePassword, getDayPhases, updateDayPhases } from '../api.js';
 import { showToast } from '../components/toast.js';
 import { escapeHtml } from '../utils/escapeHtml.js';
 
@@ -45,6 +45,32 @@ export async function renderSettings(container) {
                 <button type="submit" class="btn btn-primary" id="st-pw-btn">Update password</button>
               </div>
             </form>
+          </div>
+        </div>
+      </section>
+
+      <section class="st-section">
+        <button class="st-section-toggle" aria-expanded="true">
+          <span class="st-section-title">Day Phases</span>
+          <span class="st-chevron" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16"><polyline points="6 9 12 15 18 9"/></svg>
+          </span>
+        </button>
+        <div class="st-section-body">
+          <p class="ak-intro">
+            Customize the phases of your work day. These are used on the Today page to organize tasks.
+          </p>
+          <div id="dp-editor" class="card" style="padding: var(--space-md);">
+            <div id="dp-phases-list" class="dp-phases-list">
+              <div class="loading">Loading…</div>
+            </div>
+            <div class="dp-add-row">
+              <button id="dp-add-btn" class="btn btn-secondary btn-sm">+ Add Phase</button>
+            </div>
+            <div class="dp-save-row">
+              <button id="dp-save-btn" class="btn btn-primary">Save Phases</button>
+              <button id="dp-reset-btn" class="btn btn-secondary">Reset to Defaults</button>
+            </div>
           </div>
         </div>
       </section>
@@ -202,4 +228,110 @@ export async function renderSettings(container) {
   });
 
   await loadKeywords();
+
+  // --- Day Phases Editor ---
+  const dpList = container.querySelector('#dp-phases-list');
+  const dpAddBtn = container.querySelector('#dp-add-btn');
+  const dpSaveBtn = container.querySelector('#dp-save-btn');
+  const dpResetBtn = container.querySelector('#dp-reset-btn');
+
+  const DEFAULT_PHASES = [
+    { id: 'admin', name: 'Admin & Planning', start: '12:00', end: '14:30' },
+    { id: 'prep', name: 'Prep', start: '14:30', end: '17:00' },
+    { id: 'service', name: 'Service', start: '17:00', end: '21:00' },
+    { id: 'wrapup', name: 'Wrap-up', start: '21:00', end: '22:30' },
+  ];
+
+  let currentPhases = [];
+
+  function renderPhaseRows() {
+    if (!currentPhases.length) {
+      dpList.innerHTML = '<p class="ak-empty">No phases configured.</p>';
+      return;
+    }
+    dpList.innerHTML = currentPhases.map((p, i) => `
+      <div class="dp-phase-row" data-index="${i}">
+        <div class="dp-phase-name">
+          <input type="text" class="input dp-name-input" value="${escapeHtml(p.name)}" placeholder="Phase name">
+        </div>
+        <div class="dp-phase-time">
+          <input type="time" class="input dp-start-input" value="${escapeHtml(p.start)}">
+          <span class="dp-phase-time-sep">–</span>
+          <input type="time" class="input dp-end-input" value="${escapeHtml(p.end)}">
+        </div>
+        <button class="dp-phase-remove" title="Remove phase" data-index="${i}">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+    `).join('');
+
+    // Remove buttons
+    dpList.querySelectorAll('.dp-phase-remove').forEach(btn => {
+      btn.addEventListener('click', () => {
+        currentPhases.splice(parseInt(btn.dataset.index), 1);
+        renderPhaseRows();
+      });
+    });
+  }
+
+  function readPhasesFromDOM() {
+    const rows = dpList.querySelectorAll('.dp-phase-row');
+    return Array.from(rows).map((row, i) => ({
+      id: currentPhases[i]?.id || row.querySelector('.dp-name-input').value.toLowerCase().replace(/[^a-z0-9]+/g, '_'),
+      name: row.querySelector('.dp-name-input').value.trim(),
+      start: row.querySelector('.dp-start-input').value,
+      end: row.querySelector('.dp-end-input').value,
+    }));
+  }
+
+  async function loadPhases() {
+    try {
+      currentPhases = await getDayPhases();
+    } catch {
+      currentPhases = DEFAULT_PHASES;
+    }
+    renderPhaseRows();
+  }
+
+  dpAddBtn.addEventListener('click', () => {
+    currentPhases = readPhasesFromDOM();
+    currentPhases.push({ id: 'phase_' + Date.now(), name: '', start: '09:00', end: '17:00' });
+    renderPhaseRows();
+  });
+
+  dpSaveBtn.addEventListener('click', async () => {
+    const phasesFromDom = readPhasesFromDOM();
+    const valid = phasesFromDom.every(p => p.name && p.start && p.end);
+    if (!valid) {
+      showToast('All phases need a name and times', 'error');
+      return;
+    }
+    dpSaveBtn.disabled = true;
+    dpSaveBtn.textContent = 'Saving…';
+    try {
+      currentPhases = await updateDayPhases(phasesFromDom);
+      showToast('Day phases saved');
+      renderPhaseRows();
+    } catch (err) {
+      showToast(err.message || 'Failed to save', 'error');
+    } finally {
+      dpSaveBtn.disabled = false;
+      dpSaveBtn.textContent = 'Save Phases';
+    }
+  });
+
+  dpResetBtn.addEventListener('click', async () => {
+    dpResetBtn.disabled = true;
+    try {
+      currentPhases = await updateDayPhases(DEFAULT_PHASES);
+      showToast('Reset to defaults');
+      renderPhaseRows();
+    } catch (err) {
+      showToast(err.message || 'Failed to reset', 'error');
+    } finally {
+      dpResetBtn.disabled = false;
+    }
+  });
+
+  await loadPhases();
 }

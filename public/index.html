@@ -53,6 +53,15 @@
     </div>
 
     <div class="nav-links">
+      <a href="#/today" class="nav-link" title="Today">
+        <span class="nav-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="10"/>
+            <polyline points="12 6 12 12 16 14"/>
+          </svg>
+        </span>
+        <span class="nav-label">Today</span>
+      </a>
       <a href="#/dishes" class="nav-link" title="Dishes">
         <span class="nav-icon" aria-hidden="true">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
@@ -175,6 +184,15 @@
 
   <!-- Bottom tab bar (mobile only) -->
   <nav class="bottom-nav" id="bottom-nav">
+    <a href="#/today" class="bottom-nav-link" data-route="/today" title="Today">
+      <span class="bottom-nav-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="10"/>
+          <polyline points="12 6 12 12 16 14"/>
+        </svg>
+      </span>
+      <span class="bottom-nav-label">Today</span>
+    </a>
     <a href="#/dishes" class="bottom-nav-link" data-route="/dishes" title="Dishes">
       <span class="bottom-nav-icon" aria-hidden="true">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
@@ -195,15 +213,6 @@
         </svg>
       </span>
       <span class="bottom-nav-label">Menus</span>
-    </a>
-    <a href="#/todos" class="bottom-nav-link" data-route="/todos" title="Todos">
-      <span class="bottom-nav-icon" aria-hidden="true">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
-          <polyline points="9 11 12 14 22 4"/>
-          <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>
-        </svg>
-      </span>
-      <span class="bottom-nav-label">Todos</span>
     </a>
     <a href="#/shopping" class="bottom-nav-link" data-route="/shopping" title="Shopping">
       <span class="bottom-nav-icon" aria-hidden="true">
@@ -228,6 +237,13 @@
   <div class="bottom-more-overlay" id="bottom-more-overlay">
     <div class="bottom-more-sheet" id="bottom-more-sheet">
       <div class="bottom-more-handle"></div>
+      <a href="#/todos" class="bottom-more-item" data-route="/todos">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="9 11 12 14 22 4"/>
+          <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>
+        </svg>
+        <span>All Tasks</span>
+      </a>
       <a href="#/specials" class="bottom-more-item" data-route="/specials">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
           <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>

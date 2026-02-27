@@ -109,7 +109,7 @@ router.get('/', (req, res) => {
 
 // POST /api/todos — create a custom task
 router.post('/', (req, res) => {
-  const { title, description, type, priority, menu_id, due_date, due_time } = req.body;
+  const { title, description, type, priority, menu_id, due_date, due_time, day_phase } = req.body;
 
   if (!title || typeof title !== 'string' || !title.trim()) {
     return res.status(400).json({ error: 'Title is required' });
@@ -133,8 +133,8 @@ router.post('/', (req, res) => {
 
   const db = getDb();
   const result = db.prepare(`
-    INSERT INTO tasks (title, description, type, priority, menu_id, due_date, due_time, source)
-    VALUES (?, ?, ?, ?, ?, ?, ?, 'manual')
+    INSERT INTO tasks (title, description, type, priority, menu_id, due_date, due_time, day_phase, source)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'manual')
   `).run(
     title.trim(),
     (description || '').trim(),
@@ -142,7 +142,8 @@ router.post('/', (req, res) => {
     priority || 'medium',
     menu_id || null,
     due_date || null,
-    due_time || null
+    due_time || null,
+    day_phase || null
   );
 
   req.broadcast('task_created', { id: result.lastInsertRowid, menu_id: menu_id || null, type: type || 'custom' }, req.headers['x-client-id']);
@@ -155,7 +156,7 @@ router.put('/:id', (req, res) => {
   const task = db.prepare('SELECT * FROM tasks WHERE id = ?').get(req.params.id);
   if (!task) return res.status(404).json({ error: 'Task not found' });
 
-  const { title, description, priority, due_date, due_time, completed, sort_order } = req.body;
+  const { title, description, priority, due_date, due_time, completed, sort_order, day_phase } = req.body;
 
   if (title !== undefined && (typeof title !== 'string' || !title.trim())) {
     return res.status(400).json({ error: 'Title cannot be empty' });
@@ -200,6 +201,10 @@ router.put('/:id', (req, res) => {
     updates.push('sort_order = ?');
     params.push(sort_order);
   }
+  if (day_phase !== undefined) {
+    updates.push('day_phase = ?');
+    params.push(day_phase || null);
+  }
 
   if (completed !== undefined) {
     updates.push('completed = ?');
@@ -213,7 +218,8 @@ router.put('/:id', (req, res) => {
 
   // If editing a non-completion field on an auto task, promote to manual
   const editingContent = title !== undefined || description !== undefined ||
-    priority !== undefined || due_date !== undefined || due_time !== undefined;
+    priority !== undefined || due_date !== undefined || due_time !== undefined ||
+    day_phase !== undefined;
   if (editingContent && task.source === 'auto') {
     updates.push("source = 'manual'");
   }
@@ -228,6 +234,31 @@ router.put('/:id', (req, res) => {
   db.prepare(`UPDATE tasks SET ${updates.join(', ')} WHERE id = ?`).run(...params);
 
   req.broadcast('task_updated', { id: parseInt(req.params.id), menu_id: task.menu_id }, req.headers['x-client-id']);
+  res.json({ success: true });
+});
+
+// PUT /api/todos/:id/next — set a task as "do this next"
+router.put('/:id/next', (req, res) => {
+  const db = getDb();
+  const task = db.prepare('SELECT id FROM tasks WHERE id = ?').get(req.params.id);
+  if (!task) return res.status(404).json({ error: 'Task not found' });
+
+  // Clear any existing next flag
+  db.prepare('UPDATE tasks SET is_next = 0 WHERE is_next = 1').run();
+  // Set this task as next
+  db.prepare('UPDATE tasks SET is_next = 1 WHERE id = ?').run(req.params.id);
+
+  req.broadcast('task_updated', { id: parseInt(req.params.id), is_next: true }, req.headers['x-client-id']);
+  res.json({ success: true });
+});
+
+// DELETE /api/todos/next — clear the "do this next" flag
+// NOTE: must be defined before DELETE /:id to avoid `:id` matching "next"
+router.delete('/next', (req, res) => {
+  const db = getDb();
+  db.prepare('UPDATE tasks SET is_next = 0 WHERE is_next = 1').run();
+
+  req.broadcast('task_updated', { cleared_next: true }, req.headers['x-client-id']);
   res.json({ success: true });
 });
 

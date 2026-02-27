@@ -219,6 +219,11 @@ async function createTestApp() {
     `CREATE INDEX IF NOT EXISTS idx_tasks_completed ON tasks(completed)`,
     `CREATE INDEX IF NOT EXISTS idx_tasks_priority ON tasks(priority)`,
     `ALTER TABLE ingredients ADD COLUMN in_stock INTEGER DEFAULT 0`,
+    `ALTER TABLE dishes ADD COLUMN batch_yield INTEGER DEFAULT 1`,
+    `ALTER TABLE tasks ADD COLUMN day_phase TEXT DEFAULT NULL`,
+    `ALTER TABLE tasks ADD COLUMN is_next INTEGER DEFAULT 0`,
+    `CREATE INDEX IF NOT EXISTS idx_tasks_day_phase ON tasks(day_phase)`,
+    `CREATE INDEX IF NOT EXISTS idx_tasks_is_next ON tasks(is_next)`,
   ];
 
   for (const sql of MIGRATIONS) {
@@ -231,7 +236,8 @@ async function createTestApp() {
   //    Also clear require cache for route/service modules so they get the patched getDb
   const modulesToClear = [
     '../../routes/auth', '../../routes/dishes', '../../routes/ingredients',
-    '../../routes/menus', '../../routes/todos', '../../routes/serviceNotes',
+    '../../routes/menus', '../../routes/todos', '../../routes/today',
+    '../../routes/serviceNotes',
     '../../services/allergenDetector', '../../services/shoppingListGenerator',
     '../../services/prepTaskGenerator', '../../services/taskGenerator',
     '../../services/specialsExporter',
@@ -278,6 +284,7 @@ async function createTestApp() {
   app.use('/api/ingredients', require('../../routes/ingredients'));
   app.use('/api/menus', require('../../routes/menus'));
   app.use('/api/todos', require('../../routes/todos'));
+  app.use('/api/today', require('../../routes/today'));
   app.use('/api/service-notes', require('../../routes/serviceNotes'));
 
   // Global error handler
