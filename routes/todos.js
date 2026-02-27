@@ -31,12 +31,25 @@ router.get('/menu/:id/scaled-shopping-list', (req, res) => {
   const result = generateShoppingList(req.params.id);
   if (!result) return res.status(404).json({ error: 'Menu not found' });
 
-  // Calculate base covers (sum of all servings in the menu)
+  // Calculate base covers — prefer menu's expected_covers, fall back to computed portions
   const db = getDb();
-  const servingsRow = db.prepare(
-    'SELECT COALESCE(SUM(servings), 0) AS total_servings FROM menu_dishes WHERE menu_id = ?'
-  ).get(req.params.id);
-  const baseCovers = servingsRow.total_servings || 1;
+  const menu = db.prepare('SELECT expected_covers FROM menus WHERE id = ? AND deleted_at IS NULL').get(req.params.id);
+
+  let baseCovers;
+  let baseCoversSource;
+  if (menu && menu.expected_covers && menu.expected_covers > 0) {
+    baseCovers = menu.expected_covers;
+    baseCoversSource = 'expected';
+  } else {
+    const portionsRow = db.prepare(`
+      SELECT COALESCE(SUM(md.servings * COALESCE(d.batch_yield, 1)), 0) AS total_portions
+      FROM menu_dishes md
+      JOIN dishes d ON d.id = md.dish_id
+      WHERE md.menu_id = ?
+    `).get(req.params.id);
+    baseCovers = portionsRow.total_portions || 1;
+    baseCoversSource = 'computed';
+  }
   const scaleFactor = covers / baseCovers;
 
   // Scale all quantities and costs
@@ -59,6 +72,7 @@ router.get('/menu/:id/scaled-shopping-list', (req, res) => {
   result.total_estimated_cost = Math.round(result.total_estimated_cost * scaleFactor * 100) / 100;
   result.covers = covers;
   result.base_covers = baseCovers;
+  result.base_covers_source = baseCoversSource;
   result.scale_factor = Math.round(scaleFactor * 100) / 100;
 
   res.json(result);

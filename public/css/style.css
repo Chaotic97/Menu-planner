@@ -4156,6 +4156,16 @@ textarea.input { resize: vertical; min-height: 80px; }
   width: 80px;
 }
 
+.sl-scale-label {
+  font-weight: 500;
+}
+
+.sl-scale-hint {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
 .sl-toggle-instock {
   display: flex;
   align-items: center;

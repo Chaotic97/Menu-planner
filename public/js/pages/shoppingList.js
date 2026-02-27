@@ -148,7 +148,11 @@ export async function renderShoppingList(container, menuId) {
           </div>
           <div class="po-header-row">
             <span><strong>Menu:</strong> ${escapeHtml(shoppingData.menu_name)}</span>
-            ${shoppingData.expected_covers ? `<span><strong>Covers:</strong> ${shoppingData.expected_covers}</span>` : ''}
+            ${shoppingData.covers
+              ? `<span><strong>Scaled to:</strong> ${shoppingData.covers} covers (${shoppingData.scale_factor}x)</span>`
+              : shoppingData.expected_covers
+                ? `<span><strong>Covers:</strong> ${shoppingData.expected_covers}</span>`
+                : ''}
           </div>
         </div>
         ${needItems.length ? `
@@ -251,6 +255,11 @@ export async function renderShoppingList(container, menuId) {
   async function renderPage() {
     await loadShoppingList();
 
+    // Pre-fill scale covers on first load if menu has expected_covers set
+    if (shoppingData && shoppingData.expected_covers > 0 && !scaleCovers) {
+      scaleCovers = String(shoppingData.expected_covers);
+    }
+
     const menuOptions = menus.map(m =>
       `<option value="${m.id}" ${m.id === activeMenuId ? 'selected' : ''}>${escapeHtml(m.name)}</option>`
     ).join('');
@@ -275,7 +284,11 @@ export async function renderShoppingList(container, menuId) {
             <div class="sl-scale-group">
               <label for="sl-scale-covers">Scale to</label>
               <input type="number" id="sl-scale-covers" class="input sl-scale-input" placeholder="covers" min="1" value="${escapeHtml(scaleCovers)}">
+              <span class="sl-scale-label">covers</span>
               <button id="sl-scale-btn" class="btn btn-secondary btn-sm">Scale</button>
+              ${shoppingData && shoppingData.computed_covers > 0
+                ? `<span class="sl-scale-hint">Menu makes ${shoppingData.computed_covers} portions${shoppingData.expected_covers ? ` · ${shoppingData.expected_covers} expected` : ''}</span>`
+                : ''}
             </div>
           ` : ''}
         </div>

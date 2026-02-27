@@ -108,6 +108,58 @@ describe('GET /api/todos/menu/:id/scaled-shopping-list', () => {
   });
 });
 
+describe('Scaling with batch_yield and expected_covers', () => {
+  test('uses expected_covers as base when set on menu', async () => {
+    const dish = await agent.post('/api/dishes').send({
+      name: 'Scale Test Dish',
+      category: 'main',
+      batch_yield: 4,
+      ingredients: [{ name: 'ScaleTestIng', quantity: 100, unit: 'g', unit_cost: 0.01 }],
+    }).expect(201);
+
+    const menu = await agent.post('/api/menus').send({
+      name: 'Expected Covers Menu',
+      expected_covers: 20,
+    }).expect(201);
+
+    await agent.post(`/api/menus/${menu.body.id}/dishes`).send({ dish_id: dish.body.id, servings: 2 });
+
+    // base should be expected_covers=20, so factor for 40 covers = 2
+    const scaled = await agent.get(`/api/todos/menu/${menu.body.id}/scaled-shopping-list?covers=40`).expect(200);
+
+    expect(scaled.body.base_covers).toBe(20);
+    expect(scaled.body.scale_factor).toBe(2);
+    expect(scaled.body.base_covers_source).toBe('expected');
+  });
+
+  test('computes base covers from servings * batch_yield when expected_covers not set', async () => {
+    const dish = await agent.post('/api/dishes').send({
+      name: 'Yield Scale Dish',
+      category: 'main',
+      batch_yield: 5,
+      ingredients: [{ name: 'YieldScaleIng', quantity: 200, unit: 'g', unit_cost: 0.01 }],
+    }).expect(201);
+
+    const menu = await agent.post('/api/menus').send({ name: 'No Covers Menu' }).expect(201);
+
+    // 3 servings * 5 batch_yield = 15 computed portions
+    await agent.post(`/api/menus/${menu.body.id}/dishes`).send({ dish_id: dish.body.id, servings: 3 });
+
+    // base should be computed 15, so factor for 30 covers = 2
+    const scaled = await agent.get(`/api/todos/menu/${menu.body.id}/scaled-shopping-list?covers=30`).expect(200);
+
+    expect(scaled.body.base_covers).toBe(15);
+    expect(scaled.body.scale_factor).toBe(2);
+    expect(scaled.body.base_covers_source).toBe('computed');
+  });
+
+  test('shopping list returns computed_covers', async () => {
+    const res = await agent.get(`/api/todos/menu/${menuId}/shopping-list`).expect(200);
+    expect(res.body).toHaveProperty('computed_covers');
+    expect(typeof res.body.computed_covers).toBe('number');
+  });
+});
+
 describe('GET /api/todos/menu/:id/prep-tasks', () => {
   test('returns prep tasks grouped by timing', async () => {
     const res = await agent.get(`/api/todos/menu/${menuId}/prep-tasks`).expect(200);

@@ -118,10 +118,19 @@ function generateShoppingList(menuId) {
       items: items.sort((a, b) => a.ingredient.localeCompare(b.ingredient)),
     }));
 
+  // Compute total portions the menu produces at current servings
+  const portionsRow = db.prepare(`
+    SELECT COALESCE(SUM(md.servings * COALESCE(d.batch_yield, 1)), 0) AS total_portions
+    FROM menu_dishes md
+    JOIN dishes d ON d.id = md.dish_id
+    WHERE md.menu_id = ?
+  `).get(menuId);
+
   return {
     menu_id: menuId,
     menu_name: menu.name,
     expected_covers: menu.expected_covers || 0,
+    computed_covers: portionsRow.total_portions || 0,
     generated_at: new Date().toISOString(),
     groups: sortedGroups,
     total_estimated_cost: round2(totalCost),

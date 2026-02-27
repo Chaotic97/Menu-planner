@@ -481,15 +481,15 @@ export async function renderMenuBuilder(container, menuId) {
 
   // ---- Scale Modal ----
   async function showScaleModal() {
-    const defaultCovers = menu.expected_covers || menu.dishes.reduce((s, d) => s + d.servings, 0);
-    const totalServings = menu.dishes.reduce((s, d) => s + d.servings, 0);
+    const totalPortions = menu.dishes.reduce((s, d) => s + (d.total_portions || d.servings), 0);
+    const defaultCovers = menu.expected_covers || totalPortions;
 
     const modal = openModal('Scale for Event', `
       <div class="form-group">
         <label for="scale-covers">Number of Covers</label>
         <input type="number" id="scale-covers" class="input" min="1" value="${defaultCovers}" placeholder="e.g., 50">
         <p class="text-muted" style="margin-top:6px;font-size:0.85rem;">
-          Current menu base: ${totalServings} servings. Enter total covers needed.
+          Current menu produces ${totalPortions} portions${menu.expected_covers ? ` (${menu.expected_covers} expected covers)` : ''}. Enter total covers needed.
         </p>
       </div>
       <button id="scale-calculate-btn" class="btn btn-primary" style="width:100%;margin-bottom:16px;">Calculate Scaled List</button>
@@ -515,7 +515,7 @@ export async function renderMenuBuilder(container, menuId) {
         let html = `
           <div class="shopping-summary" style="margin-bottom:16px;">
             <strong>Scaled for ${data.covers} covers</strong>
-            (${data.scale_factor}x from ${data.base_covers} base servings)<br>
+            (${data.scale_factor}x from ${data.base_covers} ${data.base_covers_source === 'expected' ? 'expected' : 'base'} covers)<br>
             <strong>Estimated Total: $${data.total_estimated_cost.toFixed(2)}</strong>
           </div>
         `;
