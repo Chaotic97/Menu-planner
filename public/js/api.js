@@ -78,10 +78,22 @@ export const removeDishFromMenu = (menuId, dishId) => request(`/menus/${menuId}/
 export const reorderMenuDishes = (menuId, order) => request(`/menus/${menuId}/dishes/reorder`, { method: 'PUT', body: { order } });
 export const getMenuKitchenPrint = (menuId) => request(`/menus/${menuId}/kitchen-print`);
 
-// Todos
+// Todos (legacy menu-based endpoints)
 export const getShoppingList = (menuId) => request(`/todos/menu/${menuId}/shopping-list`);
 export const getScaledShoppingList = (menuId, covers) => request(`/todos/menu/${menuId}/scaled-shopping-list?covers=${covers}`);
 export const getPrepTasks = (menuId) => request(`/todos/menu/${menuId}/prep-tasks`);
+
+// Tasks (persistent task system)
+export const generateTasks = (menuId) => request(`/todos/generate/${menuId}`, { method: 'POST' });
+export const getTasks = (params = {}) => {
+  const filtered = Object.fromEntries(Object.entries(params).filter(([, v]) => v !== undefined && v !== ''));
+  const qs = new URLSearchParams(filtered).toString();
+  return request(`/todos${qs ? '?' + qs : ''}`);
+};
+export const createTask = (data) => request('/todos', { method: 'POST', body: data });
+export const updateTask = (id, data) => request(`/todos/${id}`, { method: 'PUT', body: data });
+export const deleteTask = (id) => request(`/todos/${id}`, { method: 'DELETE' });
+export const batchCompleteTasks = (taskIds, completed) => request('/todos/batch-complete', { method: 'POST', body: { task_ids: taskIds, completed } });
 
 // Allergen keywords
 export const getAllergenKeywords = () => request('/dishes/allergen-keywords/all');

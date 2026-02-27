@@ -205,6 +205,32 @@ async function initialize() {
       sort_order INTEGER DEFAULT 0
     )`,
     `CREATE INDEX IF NOT EXISTS idx_dish_directions_dish_id ON dish_directions(dish_id)`,
+    `CREATE TABLE IF NOT EXISTS tasks (
+      id              INTEGER PRIMARY KEY AUTOINCREMENT,
+      menu_id         INTEGER DEFAULT NULL REFERENCES menus(id) ON DELETE SET NULL,
+      source_dish_id  INTEGER DEFAULT NULL REFERENCES dishes(id) ON DELETE SET NULL,
+      type            TEXT NOT NULL DEFAULT 'custom',
+      title           TEXT NOT NULL,
+      description     TEXT DEFAULT '',
+      category        TEXT DEFAULT '',
+      quantity        REAL DEFAULT NULL,
+      unit            TEXT DEFAULT '',
+      timing_bucket   TEXT DEFAULT '',
+      priority        TEXT NOT NULL DEFAULT 'medium',
+      due_date        TEXT DEFAULT NULL,
+      due_time        TEXT DEFAULT NULL,
+      completed       INTEGER DEFAULT 0,
+      completed_at    TEXT DEFAULT NULL,
+      source          TEXT NOT NULL DEFAULT 'manual',
+      sort_order      INTEGER DEFAULT 0,
+      created_at      TEXT DEFAULT (datetime('now')),
+      updated_at      TEXT DEFAULT (datetime('now'))
+    )`,
+    `CREATE INDEX IF NOT EXISTS idx_tasks_menu_id ON tasks(menu_id)`,
+    `CREATE INDEX IF NOT EXISTS idx_tasks_type ON tasks(type)`,
+    `CREATE INDEX IF NOT EXISTS idx_tasks_due_date ON tasks(due_date)`,
+    `CREATE INDEX IF NOT EXISTS idx_tasks_completed ON tasks(completed)`,
+    `CREATE INDEX IF NOT EXISTS idx_tasks_priority ON tasks(priority)`,
   ];
 
   for (const sql of MIGRATIONS) {
