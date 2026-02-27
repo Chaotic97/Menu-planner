@@ -113,6 +113,7 @@ async function start() {
   app.use('/api/ingredients', require('./routes/ingredients'));
   app.use('/api/menus', require('./routes/menus'));
   app.use('/api/todos', require('./routes/todos'));
+  app.use('/api/today', require('./routes/today'));
   app.use('/api/service-notes', require('./routes/serviceNotes'));
 
   // Global error handler — catches unhandled errors from async routes

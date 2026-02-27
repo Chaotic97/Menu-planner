@@ -9,7 +9,9 @@ import { renderSpecials } from './pages/specials.js';
 import { renderServiceNotes } from './pages/serviceNotes.js';
 import { renderFlavorPairings } from './pages/flavorPairings.js';
 import { renderSettings } from './pages/settings.js';
+import { renderToday } from './pages/today.js';
 import { openUnitConverter } from './components/unitConverter.js';
+import { initQuickCapture } from './components/quickCapture.js';
 import { renderLogin } from './pages/login.js';
 import { authStatus, authLogout } from './api.js';
 import { connectSync } from './sync.js';
@@ -19,6 +21,7 @@ const appContent = document.getElementById('app-content');
 let isAuthenticated = false;
 
 const routes = [
+  { pattern: /^#\/today$/, handler: () => renderToday(appContent) },
   { pattern: /^#\/dishes\/new$/, handler: () => renderDishForm(appContent, null) },
   { pattern: /^#\/dishes\/(\d+)\/edit$/, handler: (m) => renderDishForm(appContent, m[1]) },
   { pattern: /^#\/dishes\/(\d+)$/, handler: (m) => renderDishView(appContent, m[1]) },
@@ -33,7 +36,7 @@ const routes = [
   { pattern: /^#\/menus\/(\d+)\/todos$/, handler: (m) => renderTodoView(appContent, m[1]) },
   { pattern: /^#\/menus\/(\d+)$/, handler: (m) => renderMenuBuilder(appContent, m[1]) },
   { pattern: /^#\/menus$/, handler: () => renderMenuList(appContent) },
-  { pattern: /^#?\/?$/, handler: () => renderMenuList(appContent) },
+  { pattern: /^#?\/?$/, handler: () => renderToday(appContent) },
 ];
 
 async function checkAuth() {
@@ -107,7 +110,7 @@ function updateActiveNav(hash) {
   });
 
   // More menu — highlight "More" button when on a sub-page
-  const moreRoutes = ['/specials', '/service-notes', '/flavor-pairings', '/settings'];
+  const moreRoutes = ['/todos', '/specials', '/service-notes', '/flavor-pairings', '/settings'];
   const moreBtn = document.getElementById('bottom-more-btn');
   if (moreBtn) {
     const onMorePage = moreRoutes.some(r => hash === `#${r}` || hash.startsWith(`#${r}/`));
@@ -126,7 +129,7 @@ function updateActiveNav(hash) {
 }
 
 async function router() {
-  const hash = window.location.hash || '#/menus';
+  const hash = window.location.hash || '#/today';
 
   // Handle reset-password route (no auth needed)
   if (hash.startsWith('#/reset-password')) {
@@ -256,6 +259,7 @@ window.addEventListener('DOMContentLoaded', async () => {
   const authed = await checkAuth();
   if (authed) {
     connectSync();
+    initQuickCapture();
     router();
   }
 });

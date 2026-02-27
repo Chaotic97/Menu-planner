@@ -4455,6 +4455,635 @@ textarea.input { resize: vertical; min-height: 80px; }
 }
 
 /* ============================
+   Today Page (.ty-)
+   ============================ */
+.ty-page {
+  max-width: 800px;
+  margin: 0 auto;
+}
+
+.ty-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: var(--space-lg);
+}
+
+.ty-title {
+  font-size: var(--text-lg);
+  font-weight: 700;
+  margin: 0;
+}
+
+.ty-date {
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+.ty-header-right {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+/* --- Today: Progress Bar --- */
+.ty-progress {
+  margin-bottom: var(--space-lg);
+}
+
+.ty-progress-bar {
+  height: 6px;
+  background: var(--border);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.ty-progress-fill {
+  height: 100%;
+  background: var(--primary);
+  border-radius: 3px;
+  transition: width 0.4s ease;
+  min-width: 0;
+}
+
+.ty-progress-text {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  margin-top: 4px;
+  text-align: right;
+}
+
+/* --- Today: Spotlight ("Do This Next") --- */
+.ty-spotlight {
+  margin-bottom: var(--space-lg);
+}
+
+.ty-spotlight-label {
+  font-size: var(--text-xs);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--primary);
+  margin-bottom: var(--space-xs);
+}
+
+.ty-spotlight-card {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-md);
+  padding: var(--space-md);
+  background: rgba(var(--primary-rgb), 0.06);
+  border: 2px solid var(--primary);
+  border-radius: var(--radius);
+  position: relative;
+}
+
+.ty-spotlight-left {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding-top: 2px;
+}
+
+.ty-spotlight-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.ty-spotlight-title {
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.ty-spotlight-desc {
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+  margin-top: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ty-spotlight-clear {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+.ty-spotlight-clear:hover {
+  background: rgba(var(--danger-rgb), 0.1);
+  color: var(--danger);
+}
+
+/* --- Today: Overdue Section --- */
+.ty-overdue-section {
+  margin-bottom: var(--space-lg);
+  border: 1px solid var(--danger);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.ty-section-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: var(--space-sm) var(--space-md);
+  font-weight: 600;
+  font-size: var(--text-sm);
+}
+
+.ty-overdue-header {
+  background: rgba(var(--danger-rgb), 0.08);
+  color: var(--danger);
+}
+
+.ty-section-count {
+  margin-left: auto;
+  font-size: var(--text-xs);
+  background: rgba(var(--danger-rgb), 0.15);
+  color: var(--danger);
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-weight: 600;
+}
+
+.ty-section-tasks {
+  padding: var(--space-xs);
+}
+
+.ty-overdue-task {
+  border-left: 3px solid var(--danger);
+}
+
+.ty-reschedule-btn {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+}
+.ty-reschedule-btn:hover {
+  background: rgba(var(--primary-rgb), 0.1);
+  color: var(--primary);
+}
+
+/* --- Today: Phase Sections --- */
+.ty-phases {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+}
+
+.ty-phase {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.ty-phase-current {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 1px var(--primary);
+}
+
+.ty-phase-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: var(--space-sm) var(--space-md);
+  cursor: pointer;
+  user-select: none;
+  background: var(--surface);
+  transition: background 0.15s;
+}
+.ty-phase-header:hover {
+  background: rgba(var(--primary-rgb), 0.04);
+}
+
+.ty-phase-icon {
+  width: 24px;
+  height: 24px;
+  color: var(--primary);
+  flex-shrink: 0;
+}
+.ty-phase-icon svg {
+  width: 100%;
+  height: 100%;
+}
+
+.ty-phase-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.ty-phase-name {
+  font-weight: 600;
+  font-size: var(--text-sm);
+}
+
+.ty-phase-time {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+.ty-phase-now {
+  font-size: var(--text-xs);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--primary);
+  background: rgba(var(--primary-rgb), 0.1);
+  padding: 2px 8px;
+  border-radius: 10px;
+}
+
+.ty-phase-count {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.ty-phase-chevron {
+  color: var(--text-muted);
+  transition: transform 0.2s;
+  display: flex;
+}
+
+.ty-phase-header-collapsed .ty-phase-chevron {
+  transform: rotate(-90deg);
+}
+
+.ty-phase-body {
+  display: none;
+  padding: var(--space-xs);
+}
+
+.ty-phase-body-open {
+  display: block;
+}
+
+.ty-phase-empty-msg {
+  text-align: center;
+  padding: var(--space-md);
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+}
+
+.ty-phase-completed-group {
+  border-top: 1px dashed var(--border);
+  margin-top: var(--space-xs);
+  padding-top: var(--space-xs);
+}
+
+.ty-completed-label {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  padding: 2px var(--space-sm);
+  margin-bottom: 2px;
+}
+
+/* --- Today: Task card overrides --- */
+.ty-task-actions {
+  display: flex;
+  gap: 2px;
+}
+
+.ty-next-btn,
+.ty-phase-btn {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+}
+.ty-next-btn:hover {
+  background: rgba(var(--primary-rgb), 0.1);
+  color: var(--primary);
+}
+.ty-phase-btn:hover {
+  background: rgba(var(--primary-rgb), 0.1);
+  color: var(--primary);
+}
+
+.ty-task-is-next {
+  background: rgba(var(--primary-rgb), 0.04);
+  border-left: 3px solid var(--primary);
+}
+
+/* --- Today: Phase Picker Modal --- */
+.ty-phase-picker {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+.ty-phase-pick-btn {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: var(--space-sm) var(--space-md);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  text-align: left;
+  font-size: var(--text-sm);
+  transition: border-color 0.15s, background 0.15s;
+}
+.ty-phase-pick-btn:hover {
+  border-color: var(--primary);
+  background: rgba(var(--primary-rgb), 0.04);
+}
+
+.ty-phase-pick-icon {
+  width: 20px;
+  height: 20px;
+  color: var(--primary);
+}
+.ty-phase-pick-icon svg {
+  width: 100%;
+  height: 100%;
+}
+
+.ty-phase-pick-time {
+  margin-left: auto;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+/* --- Today: Summary Modal --- */
+.ty-summary {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-lg);
+}
+
+.ty-summary-section {
+  border-bottom: 1px solid var(--border);
+  padding-bottom: var(--space-md);
+}
+.ty-summary-section:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.ty-summary-heading {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  margin-bottom: var(--space-sm);
+}
+
+.ty-summary-completed { color: var(--success); }
+.ty-summary-added-h { color: var(--primary); }
+.ty-summary-incomplete-h { color: var(--warning); }
+
+.ty-summary-list {
+  list-style: none;
+  padding: 0;
+}
+
+.ty-summary-item {
+  padding: 4px 0;
+  font-size: var(--text-sm);
+  border-bottom: 1px solid rgba(var(--primary-rgb), 0.06);
+}
+.ty-summary-item:last-child {
+  border-bottom: none;
+}
+
+.ty-summary-done {
+  text-decoration: line-through;
+  color: var(--text-muted);
+}
+
+.ty-summary-carry {
+  color: var(--text);
+}
+
+.ty-summary-overdue {
+  font-size: var(--text-xs);
+  color: var(--danger);
+  margin-left: 4px;
+}
+
+.ty-summary-more {
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.ty-summary-empty {
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+  font-style: italic;
+  padding: var(--space-xs) 0;
+}
+
+.ty-summary-tomorrow {
+  background: rgba(var(--primary-rgb), 0.04);
+  border-radius: var(--radius-sm);
+  padding: var(--space-md);
+  border-bottom: none;
+}
+
+/* ============================
+   Quick Capture Bar (.qc-)
+   ============================ */
+.qc-bar {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 90;
+  padding: var(--space-sm) var(--space-md);
+  padding-bottom: calc(var(--space-sm) + env(safe-area-inset-bottom, 0px));
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+  box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.06);
+  transform: translateY(100%);
+  transition: transform 0.25s ease;
+  pointer-events: none;
+}
+
+.qc-bar-visible {
+  transform: translateY(0);
+  pointer-events: auto;
+}
+
+.qc-inner {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  max-width: 800px;
+  margin: 0 auto;
+}
+
+.qc-input {
+  flex: 1;
+  min-height: 40px;
+  padding: 8px 14px;
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  background: var(--bg);
+  font-size: var(--text-sm);
+  font-family: var(--font);
+  color: var(--text);
+  outline: none;
+  transition: border-color 0.15s;
+}
+.qc-input:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 2px rgba(var(--primary-rgb), 0.15);
+}
+.qc-input::placeholder {
+  color: var(--text-muted);
+}
+
+.qc-send {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: none;
+  background: var(--primary);
+  color: white;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 0.15s, opacity 0.15s;
+}
+.qc-send:hover {
+  background: var(--primary-dark);
+}
+.qc-send:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* --- Quick Capture: Responsive --- */
+
+/* Desktop: account for sidebar */
+@media (min-width: 481px) {
+  html[data-sidebar="expanded"] .qc-bar {
+    left: var(--sidebar-width);
+  }
+  html[data-sidebar="collapsed"] .qc-bar {
+    left: var(--sidebar-collapsed-width);
+  }
+}
+
+/* Mobile: push above bottom nav */
+@media (max-width: 480px) {
+  .qc-bar {
+    bottom: 64px;
+    padding-bottom: var(--space-sm);
+  }
+  /* Add bottom padding to main content so it's not hidden behind QC bar */
+  .qc-bar-visible ~ #app-content {
+    padding-bottom: 120px;
+  }
+}
+
+/* --- Today: Responsive --- */
+@media (max-width: 480px) {
+  .ty-header {
+    flex-direction: column;
+    gap: var(--space-xs);
+  }
+  .ty-header-right {
+    align-self: flex-end;
+  }
+  .ty-spotlight-card {
+    padding: var(--space-sm);
+    gap: var(--space-sm);
+  }
+  .ty-phase-header {
+    padding: var(--space-sm);
+  }
+  .ty-task-actions {
+    opacity: 1;
+  }
+}
+
+/* ============================
+   Day Phases Settings (.dp-)
+   ============================ */
+.dp-phases-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.dp-phase-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: var(--space-sm);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.dp-phase-name {
+  flex: 1;
+  min-width: 0;
+}
+
+.dp-phase-name .input,
+.dp-phase-time .input {
+  font-size: var(--text-sm);
+  min-height: 36px;
+  padding: 4px 8px;
+}
+
+.dp-phase-time {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.dp-phase-time .input {
+  width: 90px;
+}
+
+.dp-phase-time-sep {
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+}
+
+.dp-phase-remove {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+}
+.dp-phase-remove:hover {
+  color: var(--danger);
+  background: rgba(var(--danger-rgb), 0.1);
+}
+
+.dp-add-row {
+  margin-top: var(--space-sm);
+}
+
+.dp-save-row {
+  margin-top: var(--space-md);
+  display: flex;
+  gap: var(--space-sm);
+}
+
+/* ============================
    Print Styles (consolidated)
    ============================ */
 .no-print { /* markup-level hide for print */ }
@@ -4472,6 +5101,7 @@ textarea.input { resize: vertical; min-height: 80px; }
   .filter-bar,
   .todo-tabs,
   #print-btn,
+  .qc-bar,
   .no-print { display: none !important; }
 
   body {

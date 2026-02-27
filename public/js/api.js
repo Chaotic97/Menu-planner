@@ -97,6 +97,20 @@ export const updateTask = (id, data) => request(`/todos/${id}`, { method: 'PUT',
 export const deleteTask = (id) => request(`/todos/${id}`, { method: 'DELETE' });
 export const batchCompleteTasks = (taskIds, completed) => request('/todos/batch-complete', { method: 'POST', body: { task_ids: taskIds, completed } });
 
+// Today
+export const getTodayData = (date) => {
+  const qs = date ? `?date=${date}` : '';
+  return request(`/today${qs}`);
+};
+export const getTodaySummary = (date) => {
+  const qs = date ? `?date=${date}` : '';
+  return request(`/today/summary${qs}`);
+};
+export const getDayPhases = () => request('/today/day-phases');
+export const updateDayPhases = (phases) => request('/today/day-phases', { method: 'PUT', body: { phases } });
+export const setTaskNext = (id) => request(`/todos/${id}/next`, { method: 'PUT' });
+export const clearTaskNext = () => request('/todos/next', { method: 'DELETE' });
+
 // Allergen keywords
 export const getAllergenKeywords = () => request('/dishes/allergen-keywords/all');
 export const addAllergenKeyword = (data) => request('/dishes/allergen-keywords', { method: 'POST', body: data });
