@@ -995,6 +995,21 @@ textarea.input { resize: vertical; min-height: 80px; }
   white-space: nowrap;
 }
 
+.mb-cost-detail {
+  display: block;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.mb-portions-label {
+  display: block;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  margin-top: 2px;
+  width: 100%;
+  text-align: center;
+}
+
 /* ============================
    Weekly Specials
    ============================ */

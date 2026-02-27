@@ -49,15 +49,26 @@ export async function renderDishView(container, dishId) {
   function renderCostSummary() {
     if (!dish.cost || !dish.cost.totalCost) return '';
     const combined = dish.cost.combinedTotal ?? dish.cost.totalCost;
+    const costPerPortion = dish.cost.costPerPortion ?? combined;
+    const batchYield = dish.cost.batchYield || 1;
     const pct = dish.food_cost_percent;
     const pctColor = pct === null ? '' : pct > 35 ? 'var(--danger)' : pct > 30 ? 'var(--warning)' : 'var(--success)';
-    return `
-      <div class="dv-cost-row">
-        <span>Food cost</span>
-        <span>$${combined.toFixed(2)}${pct !== null ? ` <span style="color:${pctColor};font-weight:700;">(${pct}%)</span>` : ''}</span>
-      </div>
-      ${dish.suggested_price ? `<div class="dv-cost-row"><span>Selling price</span><span>$${Number(dish.suggested_price).toFixed(2)}</span></div>` : ''}
-    `;
+
+    let html = '';
+    if (batchYield > 1) {
+      html += `<div class="dv-cost-row">
+        <span>Batch cost (${batchYield} portions)</span>
+        <span>$${combined.toFixed(2)}</span>
+      </div>`;
+    }
+    html += `<div class="dv-cost-row">
+      <span>${batchYield > 1 ? 'Cost per portion' : 'Food cost'}</span>
+      <span>$${costPerPortion.toFixed(2)}${pct !== null ? ` <span style="color:${pctColor};font-weight:700;">(${pct}%)</span>` : ''}</span>
+    </div>`;
+    if (dish.suggested_price) {
+      html += `<div class="dv-cost-row"><span>Selling price</span><span>$${Number(dish.suggested_price).toFixed(2)}</span></div>`;
+    }
+    return html;
   }
 
   container.innerHTML = `
@@ -84,6 +95,7 @@ export async function renderDishView(container, dishId) {
         <div class="dv-meta">
           <span class="dv-chip dv-chip-category">${escapeHtml(categoryLabel)}</span>
           ${dish.suggested_price ? `<span class="dv-chip dv-chip-price">$${Number(dish.suggested_price).toFixed(2)}</span>` : ''}
+          ${dish.batch_yield && dish.batch_yield > 1 ? `<span class="dv-chip">Makes ${dish.batch_yield} portions</span>` : ''}
           ${tags.map(t => `<span class="dv-chip dv-chip-tag">${escapeHtml(t)}</span>`).join('')}
         </div>
 

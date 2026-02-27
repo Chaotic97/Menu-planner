@@ -112,15 +112,20 @@ export async function renderMenuBuilder(container, menuId) {
       </div>
 
       ${menu.dishes.length ? `
-        <div class="mb-summary-bar">
-          <span>${menu.dishes.length} dish${menu.dishes.length !== 1 ? 'es' : ''}</span>
-          <span>|</span>
-          <span>Total servings: ${menu.dishes.reduce((s, d) => s + d.servings, 0)}</span>
-          ${menu.all_allergens.length ? `
+        ${(() => {
+          const totalBatches = menu.dishes.reduce((s, d) => s + d.servings, 0);
+          const totalPortions = menu.dishes.reduce((s, d) => s + (d.total_portions || d.servings), 0);
+          const hasMultiPortion = menu.dishes.some(d => (d.batch_yield || 1) > 1);
+          return `<div class="mb-summary-bar">
+            <span>${menu.dishes.length} dish${menu.dishes.length !== 1 ? 'es' : ''}</span>
             <span>|</span>
-            <span>Allergens: ${renderAllergenBadges(menu.all_allergens, true)}</span>
-          ` : ''}
-        </div>
+            <span>Total batches: ${totalBatches}${hasMultiPortion ? ` (${totalPortions} portions)` : ''}</span>
+            ${menu.all_allergens.length ? `
+              <span>|</span>
+              <span>Allergens: ${renderAllergenBadges(menu.all_allergens, true)}</span>
+            ` : ''}
+          </div>`;
+        })()}
 
         <div class="menu-dishes" id="menu-dishes-list">
           ${CATEGORY_ORDER.filter(cat => grouped[cat]).map(cat => `
@@ -146,6 +151,9 @@ export async function renderMenuBuilder(container, menuId) {
                   <div class="mb-cost-info">
                     ${dish.cost_per_serving > 0 ? `
                       <span class="mb-cost-value">$${dish.cost_total.toFixed(2)}</span>
+                      ${(dish.batch_yield || 1) > 1 ? `
+                        <span class="mb-cost-detail">$${dish.cost_per_portion.toFixed(2)}/portion</span>
+                      ` : ''}
                       ${hasSellPrice && dish.percent_of_menu_price !== null ? `
                         <span class="mb-cost-percent">${dish.percent_of_menu_price}% of price</span>
                       ` : ''}
@@ -155,7 +163,8 @@ export async function renderMenuBuilder(container, menuId) {
                     <button class="btn btn-icon servings-dec" data-dish="${dish.id}">-</button>
                     <span class="mb-servings-count">${dish.servings}</span>
                     <button class="btn btn-icon servings-inc" data-dish="${dish.id}">+</button>
-                    <span class="mb-servings-label">servings</span>
+                    <span class="mb-servings-label">${(dish.batch_yield || 1) > 1 ? 'batches' : 'servings'}</span>
+                    ${(dish.batch_yield || 1) > 1 ? `<span class="mb-portions-label">(${dish.total_portions} portions)</span>` : ''}
                   </div>
                   <div class="mb-row-actions">
                     <button class="btn btn-sm btn-danger remove-from-menu" data-dish="${dish.id}">Remove</button>

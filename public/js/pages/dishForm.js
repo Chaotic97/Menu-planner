@@ -133,6 +133,11 @@ export async function renderDishForm(container, dishId) {
               <label for="dish-price">Selling Price ($)</label>
               <input type="number" id="dish-price" class="input" step="0.01" min="0" value="${dish ? dish.suggested_price : ''}" placeholder="0.00">
             </div>
+            <div class="form-group">
+              <label for="dish-batch-yield">Batch Yield</label>
+              <input type="number" id="dish-batch-yield" class="input" step="1" min="1" value="${dish ? (dish.batch_yield || 1) : 1}" placeholder="1">
+              <span class="text-muted" style="font-size:0.78rem;">Portions per batch</span>
+            </div>
           </div>
           <div class="form-group">
             <label for="dish-tags">Tags</label>
@@ -776,6 +781,7 @@ export async function renderDishForm(container, dishId) {
       chefs_notes: hasDirections ? '' : (dish ? dish.chefs_notes || '' : ''),
       service_notes: container.querySelector('#dish-service-notes').value.trim(),
       suggested_price: parseFloat(container.querySelector('#dish-price').value) || 0,
+      batch_yield: parseInt(container.querySelector('#dish-batch-yield').value) || 1,
       ingredients: ingData,
       tags,
       substitutions,
@@ -945,18 +951,33 @@ function renderCostBreakdown(dish) {
   const ingredientTotal = dish.cost.totalCost;
   const combinedTotal = dish.cost.combinedTotal !== undefined ? dish.cost.combinedTotal : ingredientTotal;
   const hasManualCosts = combinedTotal > ingredientTotal;
+  const batchYield = dish.cost.batchYield || 1;
+  const costPerPortion = dish.cost.costPerPortion !== undefined ? dish.cost.costPerPortion : combinedTotal;
 
   html += `<div class="cost-row cost-total">
-    <span>${hasManualCosts ? 'Ingredient Cost' : 'Total Dish Cost'}</span>
+    <span>${hasManualCosts ? 'Ingredient Cost' : (batchYield > 1 ? 'Total Batch Cost' : 'Total Dish Cost')}</span>
     <span></span>
     <span>$${ingredientTotal.toFixed(2)}</span>
   </div>`;
 
   if (hasManualCosts) {
     html += `<div class="cost-row cost-total">
-      <span>Total (incl. additional costs)</span>
+      <span>${batchYield > 1 ? 'Batch Total (incl. additional costs)' : 'Total (incl. additional costs)'}</span>
       <span></span>
       <span>$${combinedTotal.toFixed(2)}</span>
+    </div>`;
+  }
+
+  if (batchYield > 1) {
+    html += `<div class="cost-row">
+      <span>Batch Yield</span>
+      <span></span>
+      <span>${batchYield} portions</span>
+    </div>`;
+    html += `<div class="cost-row cost-total">
+      <span>Cost per Portion</span>
+      <span></span>
+      <span>$${costPerPortion.toFixed(2)}</span>
     </div>`;
   }
 

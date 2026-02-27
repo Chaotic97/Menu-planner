@@ -11,6 +11,7 @@ CREATE TABLE IF NOT EXISTS dishes (
     photo_path      TEXT DEFAULT NULL,
     chefs_notes     TEXT DEFAULT '',
     suggested_price REAL DEFAULT 0,
+    batch_yield     INTEGER DEFAULT 1,
     created_at      TEXT DEFAULT (datetime('now')),
     updated_at      TEXT DEFAULT (datetime('now'))
 );

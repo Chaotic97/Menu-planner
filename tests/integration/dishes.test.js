@@ -370,6 +370,144 @@ describe('GET /api/dishes/tags/all', () => {
   });
 });
 
+// ─── BATCH YIELD ─────────────────────────────────────────────────────────────
+
+describe('Batch yield', () => {
+  test('creates dish with batch_yield', async () => {
+    const res = await agent
+      .post('/api/dishes')
+      .send(createDish({ name: 'Batch Test', batch_yield: 4 }))
+      .expect(201);
+
+    const dish = await agent.get(`/api/dishes/${res.body.id}`).expect(200);
+    expect(dish.body.batch_yield).toBe(4);
+  });
+
+  test('defaults batch_yield to 1 when not provided', async () => {
+    const res = await agent
+      .post('/api/dishes')
+      .send(createDish({ name: 'Default Yield' }))
+      .expect(201);
+
+    const dish = await agent.get(`/api/dishes/${res.body.id}`).expect(200);
+    expect(dish.body.batch_yield).toBe(1);
+  });
+
+  test('rejects batch_yield of 0', async () => {
+    const res = await agent
+      .post('/api/dishes')
+      .send(createDish({ name: 'Zero Yield', batch_yield: 0 }))
+      .expect(400);
+    expect(res.body.error).toMatch(/batch_yield/i);
+  });
+
+  test('rejects negative batch_yield', async () => {
+    const res = await agent
+      .post('/api/dishes')
+      .send(createDish({ name: 'Neg Yield', batch_yield: -2 }))
+      .expect(400);
+    expect(res.body.error).toMatch(/batch_yield/i);
+  });
+
+  test('rejects non-integer batch_yield', async () => {
+    const res = await agent
+      .post('/api/dishes')
+      .send(createDish({ name: 'Float Yield', batch_yield: 2.5 }))
+      .expect(400);
+    expect(res.body.error).toMatch(/batch_yield/i);
+  });
+
+  test('cost response includes costPerPortion and batchYield', async () => {
+    const res = await agent
+      .post('/api/dishes')
+      .send(createDish({
+        name: 'Portion Cost Test',
+        batch_yield: 5,
+        ingredients: [{ name: 'Rice', quantity: 1000, unit: 'g', unit_cost: 0.002 }],
+        suggested_price: 10,
+      }))
+      .expect(201);
+
+    const dish = await agent.get(`/api/dishes/${res.body.id}`).expect(200);
+    expect(dish.body.cost.batchYield).toBe(5);
+    expect(dish.body.cost.costPerPortion).toBeDefined();
+    // Batch cost = 1000g * $0.002/g = $2.00, per-portion = $2.00 / 5 = $0.40
+    expect(dish.body.cost.combinedTotal).toBe(2);
+    expect(dish.body.cost.costPerPortion).toBe(0.4);
+  });
+
+  test('food_cost_percent based on per-portion cost', async () => {
+    const res = await agent
+      .post('/api/dishes')
+      .send(createDish({
+        name: 'FCP Yield Test',
+        batch_yield: 5,
+        ingredients: [{ name: 'Pasta', quantity: 500, unit: 'g', unit_cost: 0.004 }],
+        suggested_price: 10,
+      }))
+      .expect(201);
+
+    const dish = await agent.get(`/api/dishes/${res.body.id}`).expect(200);
+    // Batch cost = 500g * $0.004/g = $2.00, per-portion = $2.00 / 5 = $0.40
+    // Food cost % = ($0.40 / $10) * 100 = 4%
+    expect(dish.body.food_cost_percent).toBe(4);
+  });
+
+  test('suggested_price_calc based on per-portion cost', async () => {
+    const res = await agent
+      .post('/api/dishes')
+      .send(createDish({
+        name: 'Suggest Yield Test',
+        batch_yield: 4,
+        ingredients: [{ name: 'Lentils', quantity: 400, unit: 'g', unit_cost: 0.003 }],
+      }))
+      .expect(201);
+
+    const dish = await agent.get(`/api/dishes/${res.body.id}`).expect(200);
+    // Batch cost = 400g * $0.003/g = $1.20, per-portion = $1.20 / 4 = $0.30
+    // Suggested price at 30% = $0.30 / 0.30 = $1.00
+    expect(dish.body.suggested_price_calc).toBe(1);
+  });
+
+  test('updates batch_yield via PUT', async () => {
+    const res = await agent
+      .post('/api/dishes')
+      .send(createDish({ name: 'Update Yield', batch_yield: 2 }))
+      .expect(201);
+
+    await agent
+      .put(`/api/dishes/${res.body.id}`)
+      .send({ batch_yield: 8 })
+      .expect(200);
+
+    const dish = await agent.get(`/api/dishes/${res.body.id}`).expect(200);
+    expect(dish.body.batch_yield).toBe(8);
+  });
+
+  test('PUT rejects invalid batch_yield', async () => {
+    const res = await agent
+      .post('/api/dishes')
+      .send(createDish({ name: 'Bad Update Yield' }))
+      .expect(201);
+
+    await agent
+      .put(`/api/dishes/${res.body.id}`)
+      .send({ batch_yield: 0 })
+      .expect(400);
+  });
+
+  test('duplicate copies batch_yield', async () => {
+    const res = await agent
+      .post('/api/dishes')
+      .send(createDish({ name: 'Dup Yield', batch_yield: 6 }))
+      .expect(201);
+
+    const dup = await agent.post(`/api/dishes/${res.body.id}/duplicate`).expect(201);
+    const copy = await agent.get(`/api/dishes/${dup.body.id}`).expect(200);
+    expect(copy.body.batch_yield).toBe(6);
+  });
+});
+
 // ─── AUTH REQUIRED ────────────────────────────────────────────────────────────
 
 describe('Authentication required', () => {

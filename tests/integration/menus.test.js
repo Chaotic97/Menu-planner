@@ -239,6 +239,53 @@ describe('Menu cost calculations', () => {
   });
 });
 
+// ─── BATCH YIELD IN MENU CONTEXT ─────────────────────────────────────────────
+
+describe('Batch yield in menu', () => {
+  test('dish in menu includes cost_per_portion and batch_yield', async () => {
+    // Create a dish with batch_yield = 4
+    const dishRes = await agent.post('/api/dishes').send({
+      name: 'Batch Menu Dish',
+      category: 'main',
+      batch_yield: 4,
+      ingredients: [{ name: 'Chickpeas', quantity: 800, unit: 'g', unit_cost: 0.005 }],
+    });
+    const dishId = dishRes.body.id;
+
+    const menu = await agent.post('/api/menus').send({ name: 'Batch Menu' }).expect(201);
+    await agent.post(`/api/menus/${menu.body.id}/dishes`).send({ dish_id: dishId, servings: 2 });
+
+    const res = await agent.get(`/api/menus/${menu.body.id}`).expect(200);
+    const dish = res.body.dishes[0];
+
+    expect(dish.batch_yield).toBe(4);
+    expect(dish.cost_per_portion).toBeDefined();
+    expect(dish.total_portions).toBe(8); // 2 batches * 4 yield
+    // Batch cost = 800g * $0.005 = $4.00, per-portion = $4.00 / 4 = $1.00
+    expect(dish.cost_per_batch).toBe(4);
+    expect(dish.cost_per_portion).toBe(1);
+    // cost_total = batch cost * servings = $4.00 * 2 = $8.00
+    expect(dish.cost_total).toBe(8);
+  });
+
+  test('total_food_cost sums batch costs times servings', async () => {
+    const dishRes = await agent.post('/api/dishes').send({
+      name: 'Batch Cost Dish',
+      category: 'main',
+      batch_yield: 3,
+      ingredients: [{ name: 'Lentils2', quantity: 300, unit: 'g', unit_cost: 0.01 }],
+    });
+    const dishId = dishRes.body.id;
+
+    const menu = await agent.post('/api/menus').send({ name: 'Batch Cost Menu' }).expect(201);
+    await agent.post(`/api/menus/${menu.body.id}/dishes`).send({ dish_id: dishId, servings: 3 });
+
+    const res = await agent.get(`/api/menus/${menu.body.id}`).expect(200);
+    // Batch cost = 300g * $0.01 = $3.00, servings = 3 => total = $9.00
+    expect(res.body.total_food_cost).toBe(9);
+  });
+});
+
 // ─── GUEST ALLERGY CONFLICTS ──────────────────────────────────────────────────
 
 describe('Guest allergy conflict detection', () => {

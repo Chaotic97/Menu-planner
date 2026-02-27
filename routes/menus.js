@@ -92,9 +92,14 @@ router.get('/:id', (req, res) => {
     const subsRow = subsCountStmt.get(dish.id);
     dish.substitution_count = subsRow ? subsRow.cnt : 0;
 
-    // Cost per serving
+    // Cost per serving / portion
     const costResult = getDishCost(db, dish.id);
-    dish.cost_per_serving = costResult.totalCost;
+    const batchYield = dish.batch_yield || 1;
+    dish.cost_per_batch = costResult.totalCost;
+    dish.cost_per_portion = Math.round(costResult.totalCost / batchYield * 100) / 100;
+    dish.cost_per_serving = dish.cost_per_portion; // backward compat alias
+    dish.batch_yield = batchYield;
+    dish.total_portions = dish.servings * batchYield;
     dish.cost_total = Math.round(costResult.totalCost * dish.servings * 100) / 100;
     totalFoodCost += dish.cost_total;
   }

@@ -151,10 +151,14 @@ router.get('/:id', (req, res) => {
   dish.manual_costs = manualCosts;
   const manualTotal = round2(manualCosts.reduce((sum, item) => sum + (parseFloat(item.amount) || 0), 0));
   const combinedTotal = round2(costResult.totalCost + manualTotal);
-  dish.cost = { ...costResult, manualTotal, combinedTotal };
 
-  dish.food_cost_percent = calculateFoodCostPercent(combinedTotal, dish.suggested_price);
-  dish.suggested_price_calc = suggestPrice(combinedTotal);
+  // Per-portion cost based on batch yield
+  const batchYield = dish.batch_yield || 1;
+  const costPerPortion = round2(combinedTotal / batchYield);
+  dish.cost = { ...costResult, manualTotal, combinedTotal, costPerPortion, batchYield };
+
+  dish.food_cost_percent = calculateFoodCostPercent(costPerPortion, dish.suggested_price);
+  dish.suggested_price_calc = suggestPrice(costPerPortion);
 
   res.json(dish);
 });
@@ -162,14 +166,19 @@ router.get('/:id', (req, res) => {
 // POST /api/dishes - Create dish
 router.post('/', (req, res) => {
   const db = getDb();
-  const { name, description, category, chefs_notes, service_notes, suggested_price, ingredients, tags, substitutions, manual_costs, components, directions } = req.body;
+  const { name, description, category, chefs_notes, service_notes, suggested_price, ingredients, tags, substitutions, manual_costs, components, directions, batch_yield } = req.body;
 
   if (!name) return res.status(400).json({ error: 'Name is required' });
+  if (batch_yield !== undefined && batch_yield !== null) {
+    if (typeof batch_yield !== 'number' || !Number.isInteger(batch_yield) || batch_yield < 1) {
+      return res.status(400).json({ error: 'batch_yield must be a positive integer' });
+    }
+  }
 
   const result = db.prepare(`
-    INSERT INTO dishes (name, description, category, chefs_notes, service_notes, suggested_price, manual_costs)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
-  `).run(name, description || '', category || 'main', chefs_notes || '', service_notes || '', suggested_price || 0, manual_costs ? JSON.stringify(manual_costs) : '[]');
+    INSERT INTO dishes (name, description, category, chefs_notes, service_notes, suggested_price, manual_costs, batch_yield)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(name, description || '', category || 'main', chefs_notes || '', service_notes || '', suggested_price || 0, manual_costs ? JSON.stringify(manual_costs) : '[]', batch_yield || 1);
 
   const dishId = result.lastInsertRowid;
 
@@ -202,15 +211,16 @@ router.post('/:id/duplicate', (req, res) => {
   if (!source) return res.status(404).json({ error: 'Dish not found' });
 
   const result = db.prepare(`
-    INSERT INTO dishes (name, description, category, chefs_notes, service_notes, suggested_price)
-    VALUES (?, ?, ?, ?, ?, ?)
+    INSERT INTO dishes (name, description, category, chefs_notes, service_notes, suggested_price, batch_yield)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
   `).run(
     'Copy of ' + source.name,
     source.description,
     source.category,
     source.chefs_notes,
     source.service_notes || '',
-    source.suggested_price
+    source.suggested_price,
+    source.batch_yield || 1
   );
 
   const newId = result.lastInsertRowid;
@@ -347,10 +357,16 @@ router.put('/:id', (req, res) => {
   const dish = db.prepare('SELECT * FROM dishes WHERE id = ? AND deleted_at IS NULL').get(req.params.id);
   if (!dish) return res.status(404).json({ error: 'Dish not found' });
 
-  const { name, description, category, chefs_notes, service_notes, suggested_price, ingredients, tags, substitutions, manual_costs, components, directions } = req.body;
+  const { name, description, category, chefs_notes, service_notes, suggested_price, ingredients, tags, substitutions, manual_costs, components, directions, batch_yield } = req.body;
+
+  if (batch_yield !== undefined && batch_yield !== null) {
+    if (typeof batch_yield !== 'number' || !Number.isInteger(batch_yield) || batch_yield < 1) {
+      return res.status(400).json({ error: 'batch_yield must be a positive integer' });
+    }
+  }
 
   db.prepare(`
-    UPDATE dishes SET name = ?, description = ?, category = ?, chefs_notes = ?, service_notes = ?, suggested_price = ?, manual_costs = ?, updated_at = datetime('now')
+    UPDATE dishes SET name = ?, description = ?, category = ?, chefs_notes = ?, service_notes = ?, suggested_price = ?, manual_costs = ?, batch_yield = ?, updated_at = datetime('now')
     WHERE id = ?
   `).run(
     name || dish.name,
@@ -360,6 +376,7 @@ router.put('/:id', (req, res) => {
     service_notes !== undefined ? service_notes : (dish.service_notes || ''),
     suggested_price !== undefined ? suggested_price : dish.suggested_price,
     manual_costs !== undefined ? JSON.stringify(manual_costs) : (dish.manual_costs || '[]'),
+    batch_yield !== undefined ? batch_yield : (dish.batch_yield || 1),
     req.params.id
   );
 
