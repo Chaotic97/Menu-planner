@@ -1,56 +1,52 @@
+'use strict';
+
+/**
+ * Test helper: creates a fully-wired Express app backed by a fresh in-memory
+ * SQLite database. Each call returns an isolated app — no shared state between
+ * test suites.
+ *
+ * Usage:
+ *   const { createTestApp } = require('./helpers/setupTestApp');
+ *   let app;
+ *   beforeAll(async () => { app = await createTestApp(); });
+ */
+
+const express = require('express');
+const session = require('express-session');
 const initSqlJs = require('sql.js');
 const path = require('path');
 const fs = require('fs');
 
-const DB_PATH = process.env.DB_PATH || path.join(__dirname, '..', 'menu-planner.db');
+// ─── In-memory DB wrapper (mirrors db/database.js but without disk I/O) ──────
 
-let wrapper = null;
-let initPromise = null;
-
-// Save database to disk
-function save(sqlDb) {
-  if (sqlDb) {
-    const data = sqlDb.export();
-    fs.writeFileSync(DB_PATH, Buffer.from(data));
-  }
-}
-
-// Wrapper that provides a synchronous-looking API on top of sql.js
 class DbWrapper {
   constructor(sqlDb) {
     this._db = sqlDb;
-    this._saveTimer = null;
-  }
-
-  _scheduleSave() {
-    if (this._saveTimer) clearTimeout(this._saveTimer);
-    this._saveTimer = setTimeout(() => save(this._db), 500);
   }
 
   prepare(sql) {
-    return new StmtWrapper(this._db, sql, () => this._scheduleSave());
+    return new StmtWrapper(this._db, sql);
   }
 
   exec(sql) {
     this._db.run(sql);
-    this._scheduleSave();
   }
 }
 
 class StmtWrapper {
-  constructor(db, sql, onWrite) {
+  constructor(db, sql) {
     this._db = db;
     this._sql = sql;
-    this._onWrite = onWrite;
   }
 
   run(...params) {
     this._db.run(this._sql, params);
     const changes = this._db.getRowsModified();
-    const idResult = this._db.exec("SELECT last_insert_rowid() AS id");
-    const lastInsertRowid = idResult.length && idResult[0].values.length
-      ? idResult[0].values[0][0] : 0;
-    this._onWrite();
+    const idResult = this._db.exec('SELECT last_insert_rowid() AS id');
+    const lastInsertRowid =
+      idResult.length && idResult[0].values.length
+        ? idResult[0].values[0][0]
+        : 0;
     return { lastInsertRowid, changes };
   }
 
@@ -63,7 +59,7 @@ class StmtWrapper {
         const cols = stmt.getColumnNames();
         const vals = stmt.get();
         const row = {};
-        cols.forEach((c, i) => row[c] = vals[i]);
+        cols.forEach((c, i) => (row[c] = vals[i]));
         stmt.free();
         return row;
       }
@@ -71,7 +67,6 @@ class StmtWrapper {
       return undefined;
     } catch (e) {
       if (stmt) try { stmt.free(); } catch {}
-      console.error('SQL error in get():', this._sql, e.message);
       throw e;
     }
   }
@@ -86,48 +81,40 @@ class StmtWrapper {
         const cols = stmt.getColumnNames();
         const vals = stmt.get();
         const row = {};
-        cols.forEach((c, i) => row[c] = vals[i]);
+        cols.forEach((c, i) => (row[c] = vals[i]));
         results.push(row);
       }
       stmt.free();
     } catch (e) {
       if (stmt) try { stmt.free(); } catch {}
-      console.error('SQL error in all():', this._sql, e.message);
       throw e;
     }
     return results;
   }
 }
 
-async function initialize() {
+// ─── App factory ──────────────────────────────────────────────────────────────
+
+async function createTestApp() {
+  // 1. Create an in-memory sql.js database and apply schema + migrations
   const SQL = await initSqlJs();
+  const sqlDb = new SQL.Database();
 
-  let sqlDb;
-  if (fs.existsSync(DB_PATH)) {
-    const buf = fs.readFileSync(DB_PATH);
-    sqlDb = new SQL.Database(buf);
-    console.log('Loaded existing database.');
-  } else {
-    sqlDb = new SQL.Database();
+  const schemaPath = path.join(__dirname, '..', '..', 'db', 'schema.sql');
+  const schema = fs.readFileSync(schemaPath, 'utf-8');
+  sqlDb.run(schema);
 
-    // Run schema
-    const schema = fs.readFileSync(path.join(__dirname, 'schema.sql'), 'utf-8');
-    sqlDb.run(schema);
-
-    // Run seed line by line
-    const seed = fs.readFileSync(path.join(__dirname, 'seed.sql'), 'utf-8');
-    const lines = seed.split('\n').filter(l => l.trim() && !l.trim().startsWith('--'));
-    for (const line of lines) {
-      try { sqlDb.run(line); } catch {}
-    }
-
-    save(sqlDb);
-    console.log('Database initialized with schema and seed data.');
+  // Run seed data (allergen keywords)
+  const seedPath = path.join(__dirname, '..', '..', 'db', 'seed.sql');
+  const seed = fs.readFileSync(seedPath, 'utf-8');
+  const lines = seed.split('\n').filter((l) => l.trim() && !l.trim().startsWith('--'));
+  for (const line of lines) {
+    try { sqlDb.run(line); } catch {}
   }
 
-  sqlDb.run("PRAGMA foreign_keys = ON");
+  sqlDb.run('PRAGMA foreign_keys = ON');
 
-  // Run migrations for existing databases
+  // Apply the same migrations as database.js
   const MIGRATIONS = [
     `ALTER TABLE menus ADD COLUMN sell_price REAL DEFAULT 0`,
     `CREATE TABLE IF NOT EXISTS weekly_specials (
@@ -236,27 +223,77 @@ async function initialize() {
   for (const sql of MIGRATIONS) {
     try { sqlDb.run(sql); } catch {}
   }
-  console.log('Migrations applied.');
 
-  // Auto-purge soft-deleted records older than 7 days
-  try { sqlDb.run("DELETE FROM dishes WHERE deleted_at IS NOT NULL AND deleted_at < datetime('now', '-7 days')"); } catch {}
-  try { sqlDb.run("DELETE FROM menus WHERE deleted_at IS NOT NULL AND deleted_at < datetime('now', '-7 days')"); } catch {}
+  const wrapper = new DbWrapper(sqlDb);
 
-  wrapper = new DbWrapper(sqlDb);
+  // 2. Monkey-patch getDb so all route/service modules use the test DB
+  //    Also clear require cache for route/service modules so they get the patched getDb
+  const modulesToClear = [
+    '../../routes/auth', '../../routes/dishes', '../../routes/ingredients',
+    '../../routes/menus', '../../routes/todos', '../../routes/serviceNotes',
+    '../../services/allergenDetector', '../../services/shoppingListGenerator',
+    '../../services/prepTaskGenerator', '../../services/taskGenerator',
+    '../../services/specialsExporter',
+  ];
+  for (const mod of modulesToClear) {
+    try { delete require.cache[require.resolve(mod)]; } catch {}
+  }
 
-  // Save on exit
-  process.on('exit', () => save(sqlDb));
-  process.on('SIGINT', () => { save(sqlDb); process.exit(); });
+  const dbModule = require('../../db/database');
+  const originalGetDb = dbModule.getDb;
+  dbModule.getDb = () => wrapper;
 
-  return wrapper;
+  // 3. Build Express app (mirrors server.js but without listen/WebSocket/session-file-store)
+  const app = express();
+
+  app.use(express.json({ limit: '1mb' }));
+
+  // Lightweight in-memory session (no file store needed in tests)
+  app.use(
+    session({
+      secret: 'test-secret',
+      resave: false,
+      saveUninitialized: false,
+      cookie: { secure: false },
+    })
+  );
+
+  // Auth middleware
+  const authMiddleware = require('../../middleware/auth');
+  app.use(authMiddleware);
+
+  // Broadcast stub (captures calls for assertions)
+  const broadcasts = [];
+  app.use((req, res, next) => {
+    req.broadcast = (type, payload, excludeClientId) => {
+      broadcasts.push({ type, payload, excludeClientId });
+    };
+    next();
+  });
+
+  // Mount routes (same as server.js)
+  app.use('/api/auth', require('../../routes/auth'));
+  app.use('/api/dishes', require('../../routes/dishes'));
+  app.use('/api/ingredients', require('../../routes/ingredients'));
+  app.use('/api/menus', require('../../routes/menus'));
+  app.use('/api/todos', require('../../routes/todos'));
+  app.use('/api/service-notes', require('../../routes/serviceNotes'));
+
+  // Global error handler
+  app.use((err, req, res, _next) => {
+    res.status(err.status || 500).json({ error: err.message });
+  });
+
+  // Return everything tests need
+  return {
+    app,
+    db: wrapper,
+    broadcasts,
+    /** Restore the original getDb after tests complete */
+    cleanup() {
+      dbModule.getDb = originalGetDb;
+    },
+  };
 }
 
-// Returns a promise that resolves to the wrapper on first call,
-// then returns the cached wrapper directly
-function getDb() {
-  if (wrapper) return wrapper;
-  if (!initPromise) initPromise = initialize();
-  return initPromise;
-}
-
-module.exports = { getDb };
+module.exports = { createTestApp };

@@ -1,6 +1,6 @@
 const {
   Document, Packer, Paragraph, TextRun, HeadingLevel,
-  AlignmentType, BorderStyle, convertInchesToTwip,
+  BorderStyle, convertInchesToTwip,
 } = require('docx');
 const { getDb } = require('../db/database');
 

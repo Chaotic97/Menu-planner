@@ -2,8 +2,17 @@ const express = require('express');
 const { getDb } = require('../db/database');
 const { generateShoppingList } = require('../services/shoppingListGenerator');
 const { generatePrepTasks } = require('../services/prepTaskGenerator');
+const { generateAndPersistTasks, getTasks } = require('../services/taskGenerator');
+const asyncHandler = require('../middleware/asyncHandler');
 
 const router = express.Router();
+
+const VALID_TYPES = ['shopping', 'prep', 'custom'];
+const VALID_PRIORITIES = ['high', 'medium', 'low'];
+const DATE_REGEX = /^\d{4}-\d{2}-\d{2}$/;
+const TIME_REGEX = /^\d{2}:\d{2}$/;
+
+// ─── EXISTING ENDPOINTS (unchanged) ─────────────────────────────────────────
 
 // GET /api/todos/menu/:id/shopping-list
 router.get('/menu/:id/shopping-list', (req, res) => {
@@ -60,6 +69,183 @@ router.get('/menu/:id/prep-tasks', (req, res) => {
   const result = generatePrepTasks(req.params.id);
   if (!result) return res.status(404).json({ error: 'Menu not found' });
   res.json(result);
+});
+
+// ─── NEW PERSISTENT TASK ENDPOINTS ──────────────────────────────────────────
+
+// POST /api/todos/generate/:menuId — generate & persist tasks from menu
+router.post('/generate/:menuId', asyncHandler(async (req, res) => {
+  const menuId = parseInt(req.params.menuId);
+  const db = getDb();
+  const menu = db.prepare('SELECT id FROM menus WHERE id = ? AND deleted_at IS NULL').get(menuId);
+  if (!menu) return res.status(404).json({ error: 'Menu not found' });
+
+  const result = generateAndPersistTasks(menuId);
+  if (!result) return res.status(404).json({ error: 'Menu not found' });
+
+  req.broadcast('tasks_generated', { menu_id: menuId, total: result.total }, req.headers['x-client-id']);
+  res.status(201).json(result);
+}));
+
+// GET /api/todos — list tasks with filters
+router.get('/', (req, res) => {
+  const tasks = getTasks(req.query);
+  res.json(tasks);
+});
+
+// POST /api/todos — create a custom task
+router.post('/', (req, res) => {
+  const { title, description, type, priority, menu_id, due_date, due_time } = req.body;
+
+  if (!title || typeof title !== 'string' || !title.trim()) {
+    return res.status(400).json({ error: 'Title is required' });
+  }
+
+  if (type && !VALID_TYPES.includes(type)) {
+    return res.status(400).json({ error: `Type must be one of: ${VALID_TYPES.join(', ')}` });
+  }
+
+  if (priority && !VALID_PRIORITIES.includes(priority)) {
+    return res.status(400).json({ error: `Priority must be one of: ${VALID_PRIORITIES.join(', ')}` });
+  }
+
+  if (due_date && !DATE_REGEX.test(due_date)) {
+    return res.status(400).json({ error: 'due_date must be YYYY-MM-DD format' });
+  }
+
+  if (due_time && !TIME_REGEX.test(due_time)) {
+    return res.status(400).json({ error: 'due_time must be HH:MM format' });
+  }
+
+  const db = getDb();
+  const result = db.prepare(`
+    INSERT INTO tasks (title, description, type, priority, menu_id, due_date, due_time, source)
+    VALUES (?, ?, ?, ?, ?, ?, ?, 'manual')
+  `).run(
+    title.trim(),
+    (description || '').trim(),
+    type || 'custom',
+    priority || 'medium',
+    menu_id || null,
+    due_date || null,
+    due_time || null
+  );
+
+  req.broadcast('task_created', { id: result.lastInsertRowid, menu_id: menu_id || null, type: type || 'custom' }, req.headers['x-client-id']);
+  res.status(201).json({ id: result.lastInsertRowid });
+});
+
+// PUT /api/todos/:id — update a task
+router.put('/:id', (req, res) => {
+  const db = getDb();
+  const task = db.prepare('SELECT * FROM tasks WHERE id = ?').get(req.params.id);
+  if (!task) return res.status(404).json({ error: 'Task not found' });
+
+  const { title, description, priority, due_date, due_time, completed, sort_order } = req.body;
+
+  if (title !== undefined && (typeof title !== 'string' || !title.trim())) {
+    return res.status(400).json({ error: 'Title cannot be empty' });
+  }
+
+  if (priority !== undefined && !VALID_PRIORITIES.includes(priority)) {
+    return res.status(400).json({ error: `Priority must be one of: ${VALID_PRIORITIES.join(', ')}` });
+  }
+
+  if (due_date !== undefined && due_date !== null && due_date !== '' && !DATE_REGEX.test(due_date)) {
+    return res.status(400).json({ error: 'due_date must be YYYY-MM-DD format' });
+  }
+
+  if (due_time !== undefined && due_time !== null && due_time !== '' && !TIME_REGEX.test(due_time)) {
+    return res.status(400).json({ error: 'due_time must be HH:MM format' });
+  }
+
+  const updates = [];
+  const params = [];
+
+  if (title !== undefined) {
+    updates.push('title = ?');
+    params.push(title.trim());
+  }
+  if (description !== undefined) {
+    updates.push('description = ?');
+    params.push(description);
+  }
+  if (priority !== undefined) {
+    updates.push('priority = ?');
+    params.push(priority);
+  }
+  if (due_date !== undefined) {
+    updates.push('due_date = ?');
+    params.push(due_date || null);
+  }
+  if (due_time !== undefined) {
+    updates.push('due_time = ?');
+    params.push(due_time || null);
+  }
+  if (sort_order !== undefined) {
+    updates.push('sort_order = ?');
+    params.push(sort_order);
+  }
+
+  if (completed !== undefined) {
+    updates.push('completed = ?');
+    params.push(completed ? 1 : 0);
+    if (completed) {
+      updates.push("completed_at = datetime('now')");
+    } else {
+      updates.push('completed_at = NULL');
+    }
+  }
+
+  // If editing a non-completion field on an auto task, promote to manual
+  const editingContent = title !== undefined || description !== undefined ||
+    priority !== undefined || due_date !== undefined || due_time !== undefined;
+  if (editingContent && task.source === 'auto') {
+    updates.push("source = 'manual'");
+  }
+
+  if (updates.length === 0) {
+    return res.status(400).json({ error: 'Nothing to update' });
+  }
+
+  updates.push("updated_at = datetime('now')");
+  params.push(req.params.id);
+
+  db.prepare(`UPDATE tasks SET ${updates.join(', ')} WHERE id = ?`).run(...params);
+
+  req.broadcast('task_updated', { id: parseInt(req.params.id), menu_id: task.menu_id }, req.headers['x-client-id']);
+  res.json({ success: true });
+});
+
+// DELETE /api/todos/:id — delete a task
+router.delete('/:id', (req, res) => {
+  const db = getDb();
+  const result = db.prepare('DELETE FROM tasks WHERE id = ?').run(req.params.id);
+  if (result.changes === 0) return res.status(404).json({ error: 'Task not found' });
+
+  req.broadcast('task_deleted', { id: parseInt(req.params.id) }, req.headers['x-client-id']);
+  res.json({ success: true });
+});
+
+// POST /api/todos/batch-complete — batch complete/uncomplete tasks
+router.post('/batch-complete', (req, res) => {
+  const { task_ids, completed } = req.body;
+  if (!Array.isArray(task_ids) || task_ids.length === 0) {
+    return res.status(400).json({ error: 'task_ids must be a non-empty array' });
+  }
+
+  const db = getDb();
+  const placeholders = task_ids.map(() => '?').join(',');
+  const completedVal = completed ? 1 : 0;
+
+  if (completed) {
+    db.prepare(`UPDATE tasks SET completed = ?, completed_at = datetime('now'), updated_at = datetime('now') WHERE id IN (${placeholders})`).run(completedVal, ...task_ids);
+  } else {
+    db.prepare(`UPDATE tasks SET completed = ?, completed_at = NULL, updated_at = datetime('now') WHERE id IN (${placeholders})`).run(completedVal, ...task_ids);
+  }
+
+  req.broadcast('tasks_batch_updated', { task_ids, action: 'complete' }, req.headers['x-client-id']);
+  res.json({ success: true, updated: task_ids.length });
 });
 
 module.exports = router;

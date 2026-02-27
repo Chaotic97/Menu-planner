@@ -41,12 +41,13 @@ services/
   docxImporter.js                — importDocx(buffer) — parses Meez .docx exports into a dish-shaped object (incl. directions[]).
   specialsExporter.js            — exportSpecialsDocx(weekStart) — generates .docx file of active weekly specials with dish details.
   shoppingListGenerator.js       — generateShoppingList(menuId) — aggregates + unit-normalises menu ingredients
+  taskGenerator.js               — generateAndPersistTasks(menuId), getTasks(filters), buildShoppingTaskRows(), buildPrepTaskRows(). Bridges shopping/prep generators into persistent `tasks` table.
 routes/
   auth.js                        — Login, logout, setup, forgot/reset password, change password
   dishes.js                      — Full CRUD + photo upload, duplicate, favorites, tags, allergens, directions, import from URL/docx
   ingredients.js                 — Ingredient CRUD with unit_cost
   menus.js                       — Menu CRUD + dish ordering, weekly specials (CRUD + .docx export), kitchen print, scaling
-  todos.js                       — Shopping list and prep task endpoints
+  todos.js                       — Legacy shopping list/prep task endpoints + persistent task CRUD (generate, list, create, update, delete, batch-complete)
   serviceNotes.js                — Daily kitchen notes CRUD
 public/
   index.html                     — SPA shell: sidebar nav (SVG icon slots + labels), mobile bottom tab bar, offline banner, SW registration. Sidebar has three states: expanded (240px), collapsed (64px icon rail), hidden (0px reveal button shown).
@@ -69,8 +70,21 @@ public/
       unitConverter.js           — openUnitConverter()
     data/
       categories.js · units.js · allergenKeywords.js · flavorPairings.js
+eslint.config.js                 — ESLint flat config: separate rules for backend (CommonJS), frontend (ES modules), tests (Jest)
+.github/
+  workflows/ci.yml               — GitHub Actions: lint + test on push/PR to main (Node 18/20/22)
 tests/
-  costCalculator.test.js · prepTaskGenerator.test.js · docxImporter.test.js
+  costCalculator.test.js · prepTaskGenerator.test.js · docxImporter.test.js · taskGenerator.test.js
+  helpers/
+    setupTestApp.js              — Test app factory: in-memory DB, Express app, broadcast spy, getDb patch
+    auth.js                      — loginAgent(app) — sets up password + returns authenticated supertest agent
+  integration/
+    auth.test.js                 — Setup, login, logout, change-password, auth middleware
+    dishes.test.js               — Full CRUD, ingredients, tags, directions, allergens, duplicate, favorite
+    menus.test.js                — CRUD, dish management, cost rollup, allergy conflicts, kitchen print
+    ingredients.test.js          — Create, upsert, update, search, allergen detection
+    serviceNotes.test.js         — CRUD with date/shift validation
+    todos.test.js                — Shopping list, scaling, prep tasks, persistent task CRUD, generate, batch-complete
 ```
 
 ---
@@ -201,7 +215,7 @@ window.addEventListener('sync:dish_updated', (e) => {
 });
 ```
 
-Existing event types: `dish_created` · `dish_updated` · `dish_deleted` · `menu_created` · `menu_updated` · `menu_deleted`
+Existing event types: `dish_created` · `dish_updated` · `dish_deleted` · `menu_created` · `menu_updated` · `menu_deleted` · `task_created` · `task_updated` · `task_deleted` · `tasks_generated` · `tasks_batch_updated`
 
 Broadcast on creates, updates, deletes. Never on reads.
 
@@ -209,23 +223,76 @@ Broadcast on creates, updates, deletes. Never on reads.
 
 ## Testing
 
-Unit tests use **Jest**. Run with `npm test`.
+All tests use **Jest**. Run with `npm test`.
+
+### Unit tests (`tests/*.test.js`)
+Pure-function tests with no DB or network dependencies:
 
 ```
-tests/
-  costCalculator.test.js    — all 6 exports: normalizeUnit, convertUnits, round2,
-                              calculateDishCost, calculateFoodCostPercent, suggestPrice
-  prepTaskGenerator.test.js — extractTiming (all 5 buckets), extractPrepTasks (splitting,
-                              filtering, timing assignment, all sentences included)
-  docxImporter.test.js      — parseMeezText (title, ingredients with sections, directions
-                              with sections, category guessing), parseMeezIngredient
-                              (qty/unit/name/prep_note parsing)
+costCalculator.test.js    — normalizeUnit, convertUnits, round2,
+                            calculateDishCost, calculateFoodCostPercent, suggestPrice
+prepTaskGenerator.test.js — extractTiming (all 5 buckets), extractPrepTasks (splitting,
+                            filtering, timing assignment, all sentences included)
+docxImporter.test.js      — parseMeezText (title, ingredients with sections, directions
+                            with sections, category guessing), parseMeezIngredient
+                            (qty/unit/name/prep_note parsing)
+taskGenerator.test.js     — buildShoppingTaskRows (transforms shopping result to task rows,
+                            preserves quantity/unit/category, joins used_in),
+                            buildPrepTaskRows (transforms prep result to task rows,
+                            preserves timing_bucket, looks up dish IDs)
 ```
 
-Rules for new tests:
-- Test pure functions only. Functions that call `getDb()` are candidates for integration tests (not yet written).
+### Integration tests (`tests/integration/*.test.js`)
+Full request → response cycle tests using **supertest** against a real Express app backed by an in-memory SQLite database:
+
+```
+auth.test.js          — Setup, login, logout, change-password, auth middleware
+dishes.test.js        — Full CRUD, ingredients, tags, directions, allergens, duplicate, favorite
+menus.test.js         — CRUD, dish management, cost rollup, allergy conflicts, kitchen print
+ingredients.test.js   — Create, upsert, update, search, allergen detection
+serviceNotes.test.js  — CRUD with date/shift validation
+todos.test.js         — Legacy shopping list/scaling/prep tasks + persistent task CRUD, generate,
+                        batch-complete, auto→manual promotion, filter by type/priority/completed
+```
+
+**How integration tests work:**
+- `tests/helpers/setupTestApp.js` creates an isolated Express app per test suite: fresh in-memory SQLite (schema + migrations + seed), patched `getDb()`, broadcast spy, no disk I/O.
+- `tests/helpers/auth.js` provides `loginAgent(app)` — sets up the password via `/api/auth/setup` and returns a supertest agent with a valid session cookie.
+- Rate limiting is disabled in tests via `jest.mock('../../middleware/rateLimit', ...)` at the top of each integration test file.
+
+### Rules for new tests
+- **Unit tests**: test pure functions only. Place in `tests/`.
+- **Integration tests**: test route handlers and DB interactions. Place in `tests/integration/`. Use `createTestApp()` for setup.
 - `extractTiming` and `extractPrepTasks` are exported from `prepTaskGenerator.js` specifically for testing — keep them exported.
 - Do not test IEEE 754 half-way rounding in `round2` (e.g. `1.005`) — use `toBeCloseTo` or avoid that exact value.
+- Every integration test file must mock rate limiting: `jest.mock('../../middleware/rateLimit', () => ({ createRateLimit: () => (_req, _res, next) => next() }))`.
+
+---
+
+## Linting
+
+ESLint 9 with **flat config** (`eslint.config.js`). Three config blocks:
+
+| Block | Files | sourceType | Globals |
+|-------|-------|-----------|---------|
+| Backend | `server.js`, `db/`, `middleware/`, `routes/`, `services/` | `commonjs` | Node.js |
+| Frontend | `public/js/**/*.js` | `module` | Browser |
+| Tests | `tests/**/*.js` | `commonjs` | Node.js + Jest |
+
+Key rules: `no-var` (error), `prefer-const` (warn), `eqeqeq` (warn), `no-throw-literal` (error), `no-empty` with `allowEmptyCatch: true`, `no-unused-vars` with `caughtErrors: 'none'` and `argsIgnorePattern: '^_'`.
+
+Run with `npm run lint`. The CI pipeline runs this on every push/PR.
+
+---
+
+## CI / GitHub Actions
+
+`.github/workflows/ci.yml` — runs on every push and PR to `main`:
+
+1. Matrix: Node.js 18, 20, 22
+2. Steps: `npm ci` → `npm run lint` → `npm test`
+
+The pipeline catches lint errors and test failures before code reaches `main`.
 
 ---
 
@@ -271,12 +338,22 @@ Rules for new tests:
 | PUT | `/api/menus/:id/dishes/reorder` | Body: `{ order: [dishId, ...] }` |
 | GET | `/api/menus/:id/kitchen-print` | Scaled print data |
 
-### Todos
+### Todos (legacy menu-based)
 | Method | Path | Notes |
 |--------|------|-------|
 | GET | `/api/todos/menu/:id/shopping-list` | Aggregated, unit-normalised ingredient list |
 | GET | `/api/todos/menu/:id/scaled-shopping-list` | Query: `covers=N` |
 | GET | `/api/todos/menu/:id/prep-tasks` | Tasks grouped by timing bucket |
+
+### Tasks (persistent)
+| Method | Path | Notes |
+|--------|------|-------|
+| GET | `/api/todos` | Query: `menu_id`, `type`, `completed`, `priority`, `due_date_from`, `due_date_to`, `overdue`, `search`. Returns tasks with `menu_name` join. |
+| POST | `/api/todos` | Create custom task. Body: title\*, description, type (shopping/prep/custom), priority (high/medium/low), due_date, due_time, menu_id. Source set to `manual`. |
+| PUT | `/api/todos/:id` | Update task. Body: title, description, priority, due_date, due_time, completed, sort_order. Auto tasks promoted to `manual` source on content edits. |
+| DELETE | `/api/todos/:id` | Hard delete a task |
+| POST | `/api/todos/generate/:menuId` | Generate persistent tasks from menu's shopping list + prep tasks. Replaces existing `source='auto'` tasks; preserves `source='manual'`. → 201 `{ menu_id, shopping_count, prep_count, total }` |
+| POST | `/api/todos/batch-complete` | Body: `{ task_ids: [int], completed: bool }`. Batch complete/uncomplete. |
 
 ### Service Notes
 | Method | Path | Notes |
@@ -328,6 +405,7 @@ Rules for new tests:
 | `dish_substitutions` | dish_id, allergen, original_ingredient, substitute_ingredient, substitute_quantity, substitute_unit, notes |
 | `settings` | key, value — stores: password_hash, email, reset_token, reset_expires |
 | `service_notes` | id, date (YYYY-MM-DD), shift, title, content, created_at, updated_at |
+| `tasks` | id, menu_id (nullable FK→menus ON DELETE SET NULL), source_dish_id (nullable FK→dishes ON DELETE SET NULL), type (shopping/prep/custom), title, description, category, quantity, unit, timing_bucket, priority (high/medium/low), due_date, due_time, completed, completed_at, source (auto/manual), sort_order, created_at, updated_at |
 
 **Shift values:** `all` · `am` · `lunch` · `pm` · `prep`
 
@@ -351,6 +429,15 @@ Every `.run()` / `.exec()` schedules a disk write 500 ms later. There is no expl
 
 ### escapeHtml is non-negotiable
 Wrap every user-supplied string in `escapeHtml()` before inserting into template literals. Dish names, notes, ingredient names, tag names — everything. Omitting it is an XSS vulnerability.
+
+### Persistent task system (todo redesign)
+Tasks are now stored in the `tasks` table, not just computed on-the-fly. Key patterns:
+- **Auto-generated vs manual**: `source='auto'` tasks are created by `POST /api/todos/generate/:menuId`. `source='manual'` tasks are user-created or user-edited. Regeneration only deletes `source='auto'` rows, preserving user edits.
+- **Promotion on edit**: When any content field (title, description, priority, due_date, due_time) of an auto task is edited, its `source` is promoted to `'manual'` so future regenerations won't overwrite it. Toggling `completed` does NOT promote.
+- **Standalone tasks**: Tasks with `menu_id = NULL` are standalone (e.g. "Call fish supplier"). They survive independent of any menu.
+- **Completion flow**: Completing a task sets `completed=1` and `completed_at=datetime('now')`. The frontend shows an "Undo" button on the toast notification (8-second window). Completed tasks are hidden by default; a "Show completed" toggle reveals them.
+- **Frontend tabs**: "All Tasks" (grouped by due date bucket), "Shopping" (grouped by category), "Prep" (grouped by timing bucket), "By Menu" (menu selector + regenerate button + PO toggle).
+- **Legacy endpoints preserved**: `GET /api/todos/menu/:id/shopping-list`, `scaled-shopping-list`, and `prep-tasks` remain unchanged for backward compatibility (used by menu builder scale modal and purchase order).
 
 ### Directions vs legacy chefs_notes
 Dish method steps are stored in `dish_directions` (type `'step'` or `'section'`, with `sort_order`). The old `chefs_notes` TEXT column still exists for backward compatibility. Rules:
@@ -421,6 +508,7 @@ Sub-sections (responsive overrides, etc.):
 | `.ing-` | Ingredient rows (dish form) |
 | `.mb-` | Menu Builder |
 | `.dir-` | Directions (dish form) |
+| `.td-` | Todo/Task system redesign |
 | `.st-` | Settings page |
 
 Global components (`.btn`, `.card`, `.modal`, `.toast`, `.input`, `.drag-handle`) are unprefixed. New features with more than ~3 classes get a prefix; add it to this table.
@@ -463,6 +551,7 @@ NODE_ENV=production
 ### npm scripts
 ```
 npm start              Run the server
-npm test               Run Jest unit tests (tests/ directory)
+npm test               Run all tests (unit + integration)
+npm run lint           Run ESLint across the entire codebase
 npm run seed-sample    Insert 5 sample dishes (safe to re-run)
 ```
