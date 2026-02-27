@@ -2,6 +2,8 @@ import { getDish } from '../api.js';
 import { renderAllergenBadges } from '../components/allergenBadges.js';
 import { showToast } from '../components/toast.js';
 import { openLightbox } from '../components/lightbox.js';
+import { createActionMenu } from '../components/actionMenu.js';
+import { printSheet } from '../utils/printSheet.js';
 import { escapeHtml } from '../utils/escapeHtml.js';
 import { CATEGORIES } from '../data/categories.js';
 
@@ -77,6 +79,7 @@ export async function renderDishView(container, dishId) {
       <h1 class="dv-title">${escapeHtml(dish.name)}</h1>
       <div class="header-actions">
         <a href="#/dishes/${dish.id}/edit" class="btn btn-primary">Edit</a>
+        <span id="dv-overflow-slot"></span>
       </div>
     </div>
 
@@ -194,6 +197,15 @@ export async function renderDishView(container, dishId) {
     photoEl.addEventListener('click', () => openLightbox(photoEl.src, dish.name));
   }
 
+  // Overflow action menu
+  const overflowSlot = container.querySelector('#dv-overflow-slot');
+  if (overflowSlot) {
+    const menuTrigger = createActionMenu([
+      { label: 'Print Kitchen Sheet', onClick: () => printDishSheet(dish) },
+    ]);
+    overflowSlot.appendChild(menuTrigger);
+  }
+
   // Sync listener — nudge if updated elsewhere
   const onUpdate = (e) => {
     if (e.detail && e.detail.id == dishId) {
@@ -207,4 +219,115 @@ export async function renderDishView(container, dishId) {
   window.addEventListener('hashchange', () => {
     window.removeEventListener('sync:dish_updated', onUpdate);
   }, { once: true });
+}
+
+function printDishSheet(dish) {
+  const allergens = dish.allergens || [];
+  const ingredients = (dish.ingredients || []).filter(r => r.row_type !== 'section');
+  const sections = dish.ingredients || [];
+  const subs = dish.substitutions || [];
+  const components = dish.components || [];
+  const directions = dish.directions || [];
+  const categoryLabel = CATEGORIES.find(c => c.value === dish.category)?.label || dish.category || '';
+
+  let html = `
+    <html><head><title>Kitchen Sheet - ${escapeHtml(dish.name)}</title>
+    <style>
+      body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; padding: 20px; color: #1a1a1a; }
+      h1 { font-size: 1.5rem; margin: 0 0 4px; }
+      .meta { font-size: 0.85rem; color: #555; margin-bottom: 16px; padding-bottom: 10px; border-bottom: 3px solid #1a1a1a; }
+      .meta span { margin-right: 12px; }
+      .allergens { margin-bottom: 12px; }
+      .allergen-tag { display: inline-block; padding: 2px 8px; font-size: 0.72rem; font-weight: 700; background: #ffcdd2; color: #b71c1c; border-radius: 10px; margin-right: 3px; margin-bottom: 3px; }
+      .section-title { font-size: 0.95rem; font-weight: 700; margin: 16px 0 8px; padding-bottom: 4px; border-bottom: 2px solid #ddd; }
+      table { width: 100%; border-collapse: collapse; margin-bottom: 16px; font-size: 0.88rem; }
+      th { text-align: left; padding: 4px 8px; background: #f0f0ec; border-bottom: 2px solid #ccc; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.04em; }
+      td { padding: 4px 8px; border-bottom: 1px solid #eee; }
+      .components { margin-bottom: 16px; }
+      .components ul { padding-left: 0; list-style: none; margin: 0; }
+      .components li { padding: 3px 0; font-size: 0.9rem; font-weight: 600; border-bottom: 1px solid #f0f0f0; }
+      .dir-step { display: flex; gap: 8px; margin-bottom: 6px; font-size: 0.88rem; }
+      .dir-num { font-weight: 700; color: #888; min-width: 20px; }
+      .dir-section { font-weight: 700; font-size: 0.9rem; margin: 12px 0 4px; padding-bottom: 2px; border-bottom: 1px solid #ddd; }
+      .notes { font-size: 0.85rem; color: #333; padding: 6px 10px; background: #f5f5f0; border-left: 3px solid #999; margin-bottom: 12px; white-space: pre-line; }
+      .notes-label { font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: #888; margin-bottom: 2px; }
+      .subs { font-size: 0.82rem; padding: 5px 10px; background: #fff3e0; border-left: 3px solid #e65100; margin-bottom: 12px; }
+      .subs strong { color: #e65100; }
+      .cost-row { display: flex; justify-content: space-between; font-size: 0.85rem; padding: 2px 0; }
+      @media print { body { padding: 0; } }
+    </style></head><body>
+    <h1>${escapeHtml(dish.name)}</h1>
+    <div class="meta">
+      <span>${escapeHtml(categoryLabel)}</span>
+      ${dish.suggested_price ? `<span><strong>$${Number(dish.suggested_price).toFixed(2)}</strong></span>` : ''}
+      ${dish.batch_yield && dish.batch_yield > 1 ? `<span>Makes ${dish.batch_yield} portions</span>` : ''}
+      <span style="float:right;color:#888;">Printed: ${new Date().toLocaleDateString()}</span>
+    </div>
+  `;
+
+  // Allergens
+  if (allergens.length) {
+    html += `<div class="allergens">${allergens.map(a => `<span class="allergen-tag">${escapeHtml(a)}</span>`).join('')}</div>`;
+  }
+
+  // Description
+  if (dish.description) {
+    html += `<p style="font-size:0.9rem;margin:0 0 12px;">${escapeHtml(dish.description)}</p>`;
+  }
+
+  // Ingredients table (with section headers inline)
+  if (sections.length) {
+    html += `<div class="section-title">Ingredients</div>`;
+    html += `<table><thead><tr><th>Ingredient</th><th>Qty</th><th>Unit</th><th>Prep Note</th></tr></thead><tbody>`;
+    for (const row of sections) {
+      if (row.row_type === 'section') {
+        html += `<tr><td colspan="4" style="font-weight:700;padding-top:10px;border-bottom:1px solid #ccc;">${escapeHtml(row.label)}</td></tr>`;
+      } else {
+        html += `<tr><td>${escapeHtml(row.ingredient_name)}</td><td>${row.quantity || ''}</td><td>${escapeHtml(row.unit || '')}</td><td>${escapeHtml(row.prep_note || '')}</td></tr>`;
+      }
+    }
+    html += `</tbody></table>`;
+  }
+
+  // Service components
+  if (components.length) {
+    html += `<div class="section-title">Service Components</div>`;
+    html += `<div class="components"><ul>${components.map(c => `<li>${escapeHtml(c.name)}</li>`).join('')}</ul></div>`;
+  }
+
+  // Directions
+  if (directions.length) {
+    html += `<div class="section-title">Directions</div>`;
+    let stepNum = 0;
+    for (const d of directions) {
+      if (d.type === 'section') {
+        html += `<div class="dir-section">${escapeHtml(d.text)}</div>`;
+      } else {
+        stepNum++;
+        html += `<div class="dir-step"><span class="dir-num">${stepNum}.</span><span>${escapeHtml(d.text)}</span></div>`;
+      }
+    }
+  } else if (dish.chefs_notes) {
+    html += `<div class="section-title">Chef's Notes</div>`;
+    html += `<div class="notes">${escapeHtml(dish.chefs_notes)}</div>`;
+  }
+
+  // Substitutions
+  if (subs.length) {
+    html += `<div class="section-title">Allergen Substitutions</div>`;
+    html += `<div class="subs">`;
+    html += subs.map(s =>
+      `${escapeHtml(s.allergen)}: ${escapeHtml(s.original_ingredient)} &rarr; ${escapeHtml(s.substitute_ingredient)}${s.notes ? ' (' + escapeHtml(s.notes) + ')' : ''}`
+    ).join('<br>');
+    html += `</div>`;
+  }
+
+  // Service notes
+  if (dish.service_notes) {
+    html += `<div class="section-title">Service Notes</div>`;
+    html += `<div class="notes">${escapeHtml(dish.service_notes)}</div>`;
+  }
+
+  html += `</body></html>`;
+  printSheet(html);
 }
