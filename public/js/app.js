@@ -80,6 +80,16 @@ async function handleLogout() {
   window.location.reload();
 }
 
+function openMoreMenu() {
+  const overlay = document.getElementById('bottom-more-overlay');
+  if (overlay) overlay.classList.add('show');
+}
+
+function closeMoreMenu() {
+  const overlay = document.getElementById('bottom-more-overlay');
+  if (overlay) overlay.classList.remove('show');
+}
+
 function updateActiveNav(hash) {
   // Top nav links
   document.querySelectorAll('.nav-link').forEach(link => {
@@ -95,6 +105,24 @@ function updateActiveNav(hash) {
     const isActive = hash === `#${route}` || (hash.startsWith(`#${route}`) && route !== '#/');
     link.classList.toggle('active', isActive);
   });
+
+  // More menu — highlight "More" button when on a sub-page
+  const moreRoutes = ['/specials', '/service-notes', '/flavor-pairings', '/settings'];
+  const moreBtn = document.getElementById('bottom-more-btn');
+  if (moreBtn) {
+    const onMorePage = moreRoutes.some(r => hash === `#${r}` || hash.startsWith(`#${r}/`));
+    moreBtn.classList.toggle('active', onMorePage);
+  }
+
+  // Highlight active item inside the More sheet
+  document.querySelectorAll('.bottom-more-item[data-route]').forEach(item => {
+    const route = item.getAttribute('data-route');
+    const isActive = hash === `#${route}` || (hash.startsWith(`#${route}`) && route !== '#/');
+    item.classList.toggle('active', isActive);
+  });
+
+  // Close More sheet on navigation
+  closeMoreMenu();
 }
 
 async function router() {
@@ -201,6 +229,22 @@ window.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('theme-toggle')?.addEventListener('click', toggleTheme);
   document.getElementById('logout-btn')?.addEventListener('click', handleLogout);
   document.getElementById('bottom-logout-btn')?.addEventListener('click', handleLogout);
+  document.getElementById('bottom-more-btn')?.addEventListener('click', () => {
+    const overlay = document.getElementById('bottom-more-overlay');
+    if (overlay?.classList.contains('show')) {
+      closeMoreMenu();
+    } else {
+      openMoreMenu();
+    }
+  });
+  document.getElementById('bottom-more-overlay')?.addEventListener('click', (e) => {
+    // Close when tapping the backdrop (not the sheet itself)
+    if (e.target === e.currentTarget) closeMoreMenu();
+  });
+  // Close more menu when navigating via a link inside it
+  document.querySelectorAll('.bottom-more-item[data-route]').forEach(item => {
+    item.addEventListener('click', () => closeMoreMenu());
+  });
   document.getElementById('unit-converter-nav-btn')?.addEventListener('click', () => openUnitConverter());
   document.getElementById('sidebar-toggle-btn')?.addEventListener('click', () => {
     const state = document.documentElement.getAttribute('data-sidebar');
