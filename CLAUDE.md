@@ -45,13 +45,13 @@ routes/
   auth.js                        — Login, logout, setup, forgot/reset password, change password
   dishes.js                      — Full CRUD + photo upload, duplicate, favorites, tags, allergens, directions, import from URL/docx
   ingredients.js                 — Ingredient CRUD with unit_cost
-  menus.js                       — Menu CRUD + dish ordering, weekly specials, kitchen print, scaling
+  menus.js                       — Menu CRUD + dish ordering, weekly specials (CRUD + .docx export), kitchen print, scaling
   todos.js                       — Shopping list and prep task endpoints
   serviceNotes.js                — Daily kitchen notes CRUD
 public/
   index.html                     — SPA shell: sidebar nav (SVG icon slots + labels), mobile bottom tab bar, offline banner, SW registration. Sidebar has three states: expanded (240px), collapsed (64px icon rail), hidden (0px reveal button shown).
   manifest.json + service-worker.js — PWA assets
-  css/style.css                  — All styles (~3100 lines). See CSS conventions.
+  css/style.css                  — All styles (~3700 lines). See CSS conventions.
   js/
     app.js                       — Hash router, auth check, theme, sidebar state (initSidebar / setSidebarState / updateSidebarToggleBtn), route table
     api.js                       — SOLE HTTP layer. Never call fetch() elsewhere.
@@ -137,7 +137,7 @@ export async function renderMyPage(container) {
 Rules:
 - **`escapeHtml()` is mandatory** on every piece of user-supplied content in template literals. Dish names, ingredient names, notes, everything. Skipping it is an XSS hole. Import from `../utils/escapeHtml.js`.
 - `container.innerHTML = ...` wipes previous event listeners — no manual cleanup needed.
-- **Never call `fetch()` directly.** Use functions from `../api.js`.
+- **Never call `fetch()` directly.** Use functions from `../api.js`. Exception: binary blob downloads (e.g. `.docx` export in `specials.js`) use `fetch()` directly since `api.js` assumes JSON responses.
 - Feedback: `showToast(message, type)` from `../components/toast.js`. The `type` param is a string (`'error'`, `'success'`, `'warning'`), **not** an options object.
 - Dialogs/pickers: `openModal(title, contentHtml, onClose)` / `closeModal()` from `../components/modal.js`. Modal handles Escape key, auto-focuses first input, restores focus on close.
 - Real-time updates: `window.addEventListener('sync:event_type', e => { ... })` — payload is in `e.detail`.
@@ -313,7 +313,7 @@ Rules for new tests:
 
 | Table | Key columns |
 |-------|-------------|
-| `dishes` | id, name, description, category, photo_path, chefs_notes, suggested_price, is_favorite, deleted_at, manual_costs (JSON `[]`), created_at, updated_at |
+| `dishes` | id, name, description, category, photo_path, chefs_notes, suggested_price, is_favorite, deleted_at, manual_costs (JSON `[]`), service_notes, created_at, updated_at |
 | `ingredients` | id, name, unit_cost, base_unit, category |
 | `dish_ingredients` | dish_id, ingredient_id, quantity, unit, prep_note, sort_order — **UNIQUE(dish_id, ingredient_id)** |
 | `dish_section_headers` | id, dish_id, label, sort_order — visual dividers in the ingredient list |
