@@ -109,7 +109,7 @@ const UNIT_NORMALIZE = {
   'gram': 'g', 'grams': 'g', 'g': 'g',
   'kilogram': 'kg', 'kilograms': 'kg', 'kg': 'kg',
   'milliliter': 'ml', 'milliliters': 'ml', 'ml': 'ml',
-  'liter': 'L', 'liters': 'L', 'litre': 'L', 'litres': 'L', 'l': 'L',
+  'liter': 'l', 'liters': 'l', 'litre': 'l', 'litres': 'l', 'l': 'l',
   'pinch': 'pinch', 'bunch': 'bunch',
   'sprig': 'each', 'sprigs': 'each',
   'clove': 'each', 'cloves': 'each',
@@ -324,18 +324,41 @@ function guessCategory(name, description) {
   return 'main';
 }
 
-async function importRecipe(url) {
-  // SSRF protection: validate URL scheme and block private IPs
-  await validateUrl(url);
+async function safeFetch(url) {
+  const MAX_REDIRECTS = 5;
+  let currentUrl = url;
 
-  const response = await fetch(url, {
-    headers: {
-      'User-Agent': 'Mozilla/5.0 (compatible; MenuPlanner/1.0)',
-      'Accept': 'text/html',
-    },
-    redirect: 'follow',
-    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-  });
+  for (let i = 0; i <= MAX_REDIRECTS; i++) {
+    await validateUrl(currentUrl);
+
+    const response = await fetch(currentUrl, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (compatible; MenuPlanner/1.0)',
+        'Accept': 'text/html',
+      },
+      redirect: 'manual',
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+    });
+
+    if (response.status >= 300 && response.status < 400) {
+      const location = response.headers.get('location');
+      if (!location) {
+        throw new Error('Redirect with no Location header.');
+      }
+      // Resolve relative redirects against the current URL
+      currentUrl = new URL(location, currentUrl).href;
+      continue;
+    }
+
+    return response;
+  }
+
+  throw new Error('Too many redirects.');
+}
+
+async function importRecipe(url) {
+  // SSRF protection: validate URL scheme and block private IPs (checked at each redirect hop)
+  const response = await safeFetch(url);
 
   if (!response.ok) {
     throw new Error(`Failed to fetch URL: ${response.status} ${response.statusText}`);

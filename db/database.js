@@ -7,11 +7,13 @@ const DB_PATH = process.env.DB_PATH || path.join(__dirname, '..', 'menu-planner.
 let wrapper = null;
 let initPromise = null;
 
-// Save database to disk
+// Save database to disk (atomic write-to-temp-then-rename)
 function save(sqlDb) {
   if (sqlDb) {
     const data = sqlDb.export();
-    fs.writeFileSync(DB_PATH, Buffer.from(data));
+    const tmpPath = DB_PATH + '.tmp';
+    fs.writeFileSync(tmpPath, Buffer.from(data));
+    fs.renameSync(tmpPath, DB_PATH);
   }
 }
 
@@ -20,11 +22,22 @@ class DbWrapper {
   constructor(sqlDb) {
     this._db = sqlDb;
     this._saveTimer = null;
+    this._maxTimer = null;
   }
 
   _scheduleSave() {
     if (this._saveTimer) clearTimeout(this._saveTimer);
-    this._saveTimer = setTimeout(() => save(this._db), 500);
+    this._saveTimer = setTimeout(() => this._flushSave(), 500);
+    // Guarantee a save within 5 seconds even under sustained writes
+    if (!this._maxTimer) {
+      this._maxTimer = setTimeout(() => this._flushSave(), 5000);
+    }
+  }
+
+  _flushSave() {
+    if (this._saveTimer) { clearTimeout(this._saveTimer); this._saveTimer = null; }
+    if (this._maxTimer) { clearTimeout(this._maxTimer); this._maxTimer = null; }
+    save(this._db);
   }
 
   prepare(sql) {
@@ -270,6 +283,7 @@ async function initialize() {
   // Save on exit
   process.on('exit', () => save(sqlDb));
   process.on('SIGINT', () => { save(sqlDb); process.exit(); });
+  process.on('SIGTERM', () => { save(sqlDb); process.exit(); });
 
   return wrapper;
 }

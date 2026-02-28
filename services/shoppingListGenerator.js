@@ -72,7 +72,7 @@ function generateShoppingList(menuId) {
       item.unit = 'kg';
     } else if (norm === 'ml' && item.total_quantity >= 1000) {
       item.total_quantity = round2(item.total_quantity / 1000);
-      item.unit = 'L';
+      item.unit = 'l';
     } else {
       item.total_quantity = round2(item.total_quantity);
     }
