@@ -1,4 +1,4 @@
-import { getMenu, updateMenu, getDishes, addDishToMenu, removeDishFromMenu, updateMenuDish, getScaledShoppingList, reorderMenuDishes, getMenuKitchenPrint } from '../api.js';
+import { getMenu, updateMenu, getDishes, addDishToMenu, removeDishFromMenu, updateMenuDish, getScaledShoppingList, reorderMenuDishes, getMenuKitchenPrint, generateTasks } from '../api.js';
 import { renderAllergenBadges } from '../components/allergenBadges.js';
 import { showToast } from '../components/toast.js';
 import { openModal, closeModal } from '../components/modal.js';
@@ -8,6 +8,25 @@ import { makeCollapsible, collapsibleHeader } from '../components/collapsible.js
 import { escapeHtml } from '../utils/escapeHtml.js';
 import { ALLERGEN_LIST, CATEGORY_ORDER, capitalize } from '../data/allergens.js';
 import { printSheet } from '../utils/printSheet.js';
+
+const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const DAY_LETTERS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
+
+function getNextMonday() {
+  const d = new Date();
+  const day = d.getDay();
+  const diff = day === 0 ? 1 : 8 - day;
+  d.setDate(d.getDate() + diff);
+  return d.toISOString().slice(0, 10);
+}
+
+function formatWeekLabel(mondayStr) {
+  const mon = new Date(mondayStr + 'T12:00:00Z');
+  const sun = new Date(mon);
+  sun.setUTCDate(sun.getUTCDate() + 6);
+  const fmt = (d) => d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  return `${fmt(mon)} – ${fmt(sun)}`;
+}
 
 export async function renderMenuBuilder(container, menuId) {
   container.innerHTML = '<div class="loading">Loading menu...</div>';
@@ -26,6 +45,10 @@ export async function renderMenuBuilder(container, menuId) {
       ? menu.guest_allergies.split(',').map(a => a.trim()).filter(Boolean)
       : [];
 
+    // Parse schedule_days from menu
+    let scheduleDays = [];
+    try { scheduleDays = JSON.parse(menu.schedule_days || '[]'); } catch {}
+
     // Group dishes by category
     const grouped = {};
     for (const dish of menu.dishes) {
@@ -33,11 +56,6 @@ export async function renderMenuBuilder(container, menuId) {
       if (!grouped[cat]) grouped[cat] = [];
       grouped[cat].push(dish);
     }
-
-    const hasSellPrice = menu.sell_price && menu.sell_price > 0;
-    const foodCostClass = menu.menu_food_cost_percent > 35
-      ? 'text-danger' : menu.menu_food_cost_percent > 30
-      ? 'text-warning' : 'text-success';
 
     container.innerHTML = `
       <div class="page-header">
@@ -57,64 +75,42 @@ export async function renderMenuBuilder(container, menuId) {
         </div>
       </div>
 
-      <!-- Menu Sell Price -->
-      <div class="mb-pricing-bar">
-        <div class="mb-pricing-group">
-          <label for="menu-sell-price">Menu Sell Price ($)</label>
-          <input type="number" id="menu-sell-price" class="input" step="0.01" min="0"
-                 value="${menu.sell_price || ''}" placeholder="e.g., 120.00">
+      <!-- Weekly Schedule -->
+      <div class="mb-schedule-bar">
+        <div class="mb-schedule-days">
+          <label class="mb-schedule-label">Service Days</label>
+          <div class="mb-day-toggles" id="schedule-day-toggles">
+            ${DAY_NAMES.map((name, i) => {
+              const active = scheduleDays.includes(i);
+              return `<button type="button" class="mb-day-btn ${active ? 'active' : ''}" data-day="${i}">${escapeHtml(name)}</button>`;
+            }).join('')}
+          </div>
         </div>
-        ${hasSellPrice ? `
-          <div class="mb-pricing-stats">
-            <div class="mb-pricing-stat">
-              <span class="mb-pricing-label">Total Food Cost</span>
-              <span class="mb-pricing-value">$${menu.total_food_cost.toFixed(2)}</span>
-            </div>
-            <div class="mb-pricing-stat">
-              <span class="mb-pricing-label">Food Cost %</span>
-              <span class="mb-pricing-value ${foodCostClass}">${menu.menu_food_cost_percent}%</span>
-            </div>
-            <div class="mb-pricing-stat">
-              <span class="mb-pricing-label">Profit</span>
-              <span class="mb-pricing-value">$${(menu.sell_price - menu.total_food_cost).toFixed(2)}</span>
-            </div>
+        ${scheduleDays.length ? `
+          <div class="mb-schedule-actions">
+            <button id="prepare-week-btn" class="btn btn-primary">Prepare Week</button>
           </div>
         ` : `
-          <div class="mb-pricing-hint">Set a sell price to see cost breakdown per dish</div>
+          <div class="mb-schedule-hint">Select the days this menu runs to enable weekly prep task generation</div>
         `}
       </div>
 
-      <!-- Expected Covers & Guest Allergies (collapsible) -->
+      <!-- Guest Allergies (collapsible) -->
       <div class="collapsible-section" id="mb-allergy-section">
-        ${collapsibleHeader('Guest Allergies & Covers', (() => {
-          const parts = [];
-          if (guestAllergies.length) parts.push(guestAllergies.length + ' allerg' + (guestAllergies.length > 1 ? 'ies' : 'y'));
-          if (menu.expected_covers) parts.push(menu.expected_covers + ' covers');
-          return parts.join(', ');
-        })())}
+        ${collapsibleHeader('Guest Allergies', guestAllergies.length
+          ? guestAllergies.length + ' allerg' + (guestAllergies.length > 1 ? 'ies' : 'y')
+          : '')}
         <div class="collapsible-section__body">
           <div class="mb-info-bar">
-            <div class="mb-info-group">
-              <label for="menu-covers">Expected Covers</label>
-              <input type="number" id="menu-covers" class="input" style="max-width:120px;" min="0"
-                     value="${menu.expected_covers || ''}" placeholder="0">
-            </div>
             <div class="mb-info-group" style="flex:1;">
-              <label>Guest Allergies &amp; Cover Counts</label>
+              <label>Guest Allergies</label>
               <div class="allergen-cover-grid" id="guest-allergy-toggles">
-                ${(() => {
-                  let covers = {};
-                  try { covers = JSON.parse(menu.allergen_covers || '{}'); } catch {}
-                  return ALLERGEN_LIST.map(a => `
-                    <div class="allergen-cover-item">
-                      <button type="button" class="allergen-toggle ${guestAllergies.includes(a) ? 'active' : ''}"
-                              data-allergen="${a}">${capitalize(a)}</button>
-                      <input type="number" class="allergen-cover-count" data-allergen="${a}" placeholder="# covers"
-                             min="0" max="999" value="${covers[a] || ''}"
-                             style="display:${guestAllergies.includes(a) ? 'block' : 'none'};">
-                    </div>
-                  `).join('');
-                })()}
+                ${ALLERGEN_LIST.map(a => `
+                  <div class="allergen-cover-item">
+                    <button type="button" class="allergen-toggle ${guestAllergies.includes(a) ? 'active' : ''}"
+                            data-allergen="${a}">${capitalize(a)}</button>
+                  </div>
+                `).join('')}
               </div>
             </div>
           </div>
@@ -143,6 +139,8 @@ export async function renderMenuBuilder(container, menuId) {
               <h2 class="mb-category-heading">${capitalize(cat)}s</h2>
               ${grouped[cat].map(dish => {
                 const hasConflict = dish.allergy_conflicts && dish.allergy_conflicts.length > 0;
+                let dishActiveDays = null;
+                try { dishActiveDays = dish.active_days ? JSON.parse(dish.active_days) : null; } catch {}
                 return `
                 <div class="mb-dish-row ${hasConflict ? 'allergy-conflict' : ''}" data-dish-id="${dish.id}" draggable="true">
                   <div class="drag-handle" title="Drag to reorder">&#8942;&#8942;</div>
@@ -157,15 +155,20 @@ export async function renderMenuBuilder(container, menuId) {
                     ${renderAllergenBadges(dish.allergens, true)}
                     ${hasConflict ? `<div class="mb-allergy-warning">&#9888; Guest allergy: ${dish.allergy_conflicts.join(', ')}</div>` : ''}
                     ${dish.substitution_count > 0 ? `<span class="subs-badge" data-dish-id="${dish.id}" title="Has allergen substitutions">&#8644; ${dish.substitution_count} sub${dish.substitution_count > 1 ? 's' : ''}</span>` : ''}
+                    ${scheduleDays.length ? `
+                      <div class="mb-dish-days" data-dish-id="${dish.id}">
+                        ${scheduleDays.map(d => {
+                          const isActive = dishActiveDays === null || dishActiveDays.includes(d);
+                          return `<button type="button" class="mb-dish-day-btn ${isActive ? 'active' : ''}" data-day="${d}" data-dish="${dish.id}">${escapeHtml(DAY_LETTERS[d])}</button>`;
+                        }).join('')}
+                      </div>
+                    ` : ''}
                   </div>
                   <div class="mb-cost-info">
                     ${dish.cost_per_serving > 0 ? `
                       <span class="mb-cost-value">$${dish.cost_total.toFixed(2)}</span>
                       ${(dish.batch_yield || 1) > 1 ? `
                         <span class="mb-cost-detail">$${dish.cost_per_portion.toFixed(2)}/portion</span>
-                      ` : ''}
-                      ${hasSellPrice && dish.percent_of_menu_price !== null ? `
-                        <span class="mb-cost-percent">${dish.percent_of_menu_price}% of price</span>
                       ` : ''}
                     ` : ''}
                   </div>
@@ -231,86 +234,72 @@ export async function renderMenuBuilder(container, menuId) {
       });
     });
 
-    // Wire up sell price input
-    const priceInput = container.querySelector('#menu-sell-price');
-    let priceDebounce;
-    priceInput.addEventListener('input', () => {
-      clearTimeout(priceDebounce);
-      priceDebounce = setTimeout(async () => {
-        const newPrice = parseFloat(priceInput.value) || 0;
+    // Wire up schedule day toggles
+    container.querySelectorAll('#schedule-day-toggles .mb-day-btn').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        btn.classList.toggle('active');
+        const newDays = [];
+        container.querySelectorAll('#schedule-day-toggles .mb-day-btn.active').forEach(b => {
+          newDays.push(parseInt(b.dataset.day));
+        });
         try {
-          await updateMenu(menuId, { sell_price: newPrice });
-          menu.sell_price = newPrice;
-          if (newPrice > 0) {
-            menu.menu_food_cost_percent = Math.round((menu.total_food_cost / newPrice) * 10000) / 100;
-            for (const dish of menu.dishes) {
-              dish.percent_of_menu_price = Math.round((dish.cost_total / newPrice) * 10000) / 100;
-            }
-          }
+          await updateMenu(menuId, { schedule_days: newDays });
+          menu.schedule_days = JSON.stringify(newDays);
+          menu = await getMenu(menuId);
           render();
-          showToast('Price updated');
+          showToast('Schedule updated');
         } catch (err) {
-          showToast('Failed to update price', 'error');
+          showToast('Failed to update schedule', 'error');
         }
-      }, 800);
+      });
     });
 
-    // Wire up expected covers
-    const coversInput = container.querySelector('#menu-covers');
-    let coversDebounce;
-    coversInput.addEventListener('input', () => {
-      clearTimeout(coversDebounce);
-      coversDebounce = setTimeout(async () => {
-        const covers = parseInt(coversInput.value) || 0;
+    // Wire up per-dish day toggles
+    container.querySelectorAll('.mb-dish-day-btn').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const dishId = btn.dataset.dish;
+        const dish = menu.dishes.find(d => d.id == dishId);
+        if (!dish) return;
+
+        btn.classList.toggle('active');
+        const dayBtns = container.querySelectorAll(`.mb-dish-day-btn[data-dish="${dishId}"]`);
+        const activeDays = [];
+        dayBtns.forEach(b => {
+          if (b.classList.contains('active')) activeDays.push(parseInt(b.dataset.day));
+        });
+
+        // If all schedule days are active, store null (= all days)
+        const allActive = scheduleDays.length === activeDays.length && scheduleDays.every(d => activeDays.includes(d));
         try {
-          await updateMenu(menuId, { expected_covers: covers });
-          menu.expected_covers = covers;
-          showToast('Covers updated');
+          await updateMenuDish(menuId, dishId, { active_days: allActive ? null : activeDays });
+          dish.active_days = allActive ? null : JSON.stringify(activeDays);
+          showToast('Dish schedule updated');
         } catch (err) {
           showToast('Failed to update', 'error');
         }
-      }, 800);
+      });
     });
+
+    // Wire up "Prepare Week" button
+    container.querySelector('#prepare-week-btn')?.addEventListener('click', showPrepareWeek);
 
     // Wire up guest allergy toggles
     container.querySelectorAll('.allergen-toggle').forEach(btn => {
       btn.addEventListener('click', async () => {
         btn.classList.toggle('active');
-        const countInput = btn.closest('.allergen-cover-item').querySelector('.allergen-cover-count');
-        if (countInput) {
-          countInput.style.display = btn.classList.contains('active') ? 'block' : 'none';
-          if (!btn.classList.contains('active')) countInput.value = '';
-        }
         await saveAllergyState();
-      });
-    });
-
-    // Wire up allergen cover count changes
-    container.querySelectorAll('.allergen-cover-count').forEach(input => {
-      let debounce;
-      input.addEventListener('input', () => {
-        clearTimeout(debounce);
-        debounce = setTimeout(saveAllergyState, 600);
       });
     });
 
     async function saveAllergyState() {
       const activeAllergens = [];
-      const allergenCovers = {};
       container.querySelectorAll('.allergen-toggle.active').forEach(b => {
-        const allergen = b.dataset.allergen;
-        activeAllergens.push(allergen);
-        const countInput = b.closest('.allergen-cover-item').querySelector('.allergen-cover-count');
-        if (countInput && countInput.value) {
-          allergenCovers[allergen] = parseInt(countInput.value) || 0;
-        }
+        activeAllergens.push(b.dataset.allergen);
       });
       const newVal = activeAllergens.join(',');
       try {
-        await updateMenu(menuId, { guest_allergies: newVal, allergen_covers: JSON.stringify(allergenCovers) });
+        await updateMenu(menuId, { guest_allergies: newVal });
         menu.guest_allergies = newVal;
-        menu.allergen_covers = JSON.stringify(allergenCovers);
-        // Refresh to update conflict highlighting
         menu = await getMenu(menuId);
         render();
         showToast('Guest allergies updated');
@@ -329,7 +318,7 @@ export async function renderMenuBuilder(container, menuId) {
       const menuBtn = createActionMenu([
         { label: 'Print Kitchen Sheet', icon: '🖨', onClick: showKitchenPrint },
         { label: 'Scale for Event', icon: '⚖', onClick: showScaleModal },
-        { label: 'Generate Todos', icon: '✓', onClick: () => { window.location.hash = `#/menus/${menuId}/todos`; } },
+        { label: 'View Tasks', icon: '✓', onClick: () => { window.location.hash = `#/todos`; } },
       ]);
       mbOverflowSlot.appendChild(menuBtn);
     }
@@ -529,6 +518,73 @@ export async function renderMenuBuilder(container, menuId) {
         }
         touchDragId = null;
       });
+    });
+  }
+
+  // ---- Prepare Week ----
+  async function showPrepareWeek() {
+    let scheduleDays = [];
+    try { scheduleDays = JSON.parse(menu.schedule_days || '[]'); } catch {}
+    if (!scheduleDays.length) {
+      showToast('Set service days first', 'warning');
+      return;
+    }
+
+    const defaultMonday = getNextMonday();
+    const dayOrder = { 1: 0, 2: 1, 3: 2, 4: 3, 5: 4, 6: 5, 0: 6 };
+    const sortedDays = [...scheduleDays].sort((a, b) => dayOrder[a] - dayOrder[b]);
+
+    const modal = openModal('Prepare Week', `
+      <div class="form-group">
+        <label for="week-start-input">Week Starting (Monday)</label>
+        <input type="date" id="week-start-input" class="input" value="${defaultMonday}">
+        <p class="text-muted" style="margin-top:6px;font-size:0.85rem;">
+          ${formatWeekLabel(defaultMonday)}
+        </p>
+      </div>
+      <div class="mb-week-preview">
+        <h4 style="margin:0 0 8px;">Service days: ${sortedDays.map(d => DAY_NAMES[d]).join(', ')}</h4>
+        <p style="margin:0 0 4px;font-size:0.9rem;">${menu.dishes.length} dish${menu.dishes.length !== 1 ? 'es' : ''} on this menu</p>
+        ${(() => {
+          const daySpecific = menu.dishes.filter(d => {
+            let ad = null;
+            try { ad = d.active_days ? JSON.parse(d.active_days) : null; } catch {}
+            return ad !== null && ad.length < scheduleDays.length;
+          });
+          return daySpecific.length ? `<p style="margin:0;font-size:0.85rem;color:var(--text-secondary);">${daySpecific.length} dish${daySpecific.length !== 1 ? 'es' : ''} with day-specific schedules</p>` : '';
+        })()}
+      </div>
+      <button id="generate-week-btn" class="btn btn-primary" style="width:100%;margin-top:16px;">Generate Prep Tasks</button>
+    `);
+
+    const weekInput = modal.querySelector('#week-start-input');
+    const hintP = weekInput.nextElementSibling;
+    weekInput.addEventListener('input', () => {
+      if (weekInput.value) {
+        hintP.textContent = formatWeekLabel(weekInput.value);
+      }
+    });
+
+    modal.querySelector('#generate-week-btn').addEventListener('click', async () => {
+      const weekStart = weekInput.value;
+      if (!weekStart) {
+        showToast('Select a week start date', 'error');
+        return;
+      }
+
+      const btn = modal.querySelector('#generate-week-btn');
+      btn.disabled = true;
+      btn.textContent = 'Generating...';
+
+      try {
+        const result = await generateTasks(menuId, { week_start: weekStart });
+        closeModal(modal);
+        showToast(`Generated ${result.prep_count} prep task${result.prep_count !== 1 ? 's' : ''} for ${formatWeekLabel(weekStart)}`, 'success');
+      } catch (err) {
+        btn.disabled = false;
+        btn.textContent = 'Generate Prep Tasks';
+        showToast(err.message || 'Failed to generate tasks', 'error');
+      }
     });
   }
 

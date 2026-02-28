@@ -201,6 +201,37 @@ describe('POST /api/todos/generate/:menuId', () => {
     const autoTasks = tasks.body.filter(t => t.source === 'auto' && t.menu_id === menuId);
     expect(autoTasks.length).toBe(second.body.total);
   });
+
+  test('generates weekly tasks with due_dates when week_start provided', async () => {
+    // Set schedule_days on the menu (Wed-Sun = days 3,4,5,6,0)
+    await agent.put(`/api/menus/${menuId}`).send({ schedule_days: [3, 4, 5, 6, 0] }).expect(200);
+
+    const res = await agent
+      .post(`/api/todos/generate/${menuId}`)
+      .send({ week_start: '2026-03-02' })
+      .expect(201);
+
+    expect(res.body.prep_count).toBeGreaterThan(0);
+    expect(res.body.week_start).toBe('2026-03-02');
+
+    // All generated tasks should have due_dates
+    const tasks = await agent.get(`/api/todos?menu_id=${menuId}`).expect(200);
+    const autoTasks = tasks.body.filter(t => t.source === 'auto' && t.menu_id === menuId);
+    for (const t of autoTasks) {
+      expect(t.due_date).toBeTruthy();
+      // Due dates should be within the week range (Mon to Sun = 2026-03-02 to 2026-03-08)
+      // day_before tasks can be the day before first service, so 2026-03-03 (Tue before Wed)
+      expect(t.due_date >= '2026-03-02').toBe(true);
+      expect(t.due_date <= '2026-03-08').toBe(true);
+    }
+  });
+
+  test('rejects invalid week_start format', async () => {
+    await agent
+      .post(`/api/todos/generate/${menuId}`)
+      .send({ week_start: 'bad-date' })
+      .expect(400);
+  });
 });
 
 // ─── LIST TASKS ──────────────────────────────────────────────────────────────

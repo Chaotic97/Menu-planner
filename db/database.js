@@ -241,6 +241,10 @@ async function initialize() {
     // SQLite ignores column type changes, but we can update existing integer values
     // and the app validation now accepts any positive number
     `UPDATE dishes SET batch_yield = CAST(batch_yield AS REAL) WHERE typeof(batch_yield) = 'integer'`,
+    // Weekly schedule: which days of the week a menu runs (JSON array of day numbers 0=Sun..6=Sat)
+    `ALTER TABLE menus ADD COLUMN schedule_days TEXT DEFAULT '[]'`,
+    // Per-dish active days within the menu schedule (JSON array of day numbers, NULL = all scheduled days)
+    `ALTER TABLE menu_dishes ADD COLUMN active_days TEXT DEFAULT NULL`,
   ];
 
   for (const sql of MIGRATIONS) {

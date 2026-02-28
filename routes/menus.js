@@ -59,7 +59,7 @@ router.get('/:id', (req, res) => {
 
   // Get dishes in this menu
   menu.dishes = db.prepare(`
-    SELECT d.*, md.servings, md.sort_order, md.id AS menu_dish_id
+    SELECT d.*, md.servings, md.sort_order, md.id AS menu_dish_id, md.active_days
     FROM menu_dishes md
     JOIN dishes d ON d.id = md.dish_id
     WHERE md.menu_id = ?
@@ -196,7 +196,7 @@ router.get('/:id/kitchen-print', (req, res) => {
 // POST /api/menus - Create menu
 router.post('/', (req, res) => {
   const db = getDb();
-  const { name, description, sell_price, expected_covers, guest_allergies, allergen_covers } = req.body;
+  const { name, description, sell_price, expected_covers, guest_allergies, allergen_covers, schedule_days } = req.body;
   if (!name) return res.status(400).json({ error: 'Name is required' });
   if (sell_price !== undefined && (typeof sell_price !== 'number' || sell_price < 0)) {
     return res.status(400).json({ error: 'sell_price must be a non-negative number' });
@@ -204,14 +204,20 @@ router.post('/', (req, res) => {
   if (expected_covers !== undefined && (typeof expected_covers !== 'number' || expected_covers < 0 || !Number.isInteger(expected_covers))) {
     return res.status(400).json({ error: 'expected_covers must be a non-negative integer' });
   }
+  if (schedule_days !== undefined) {
+    if (!Array.isArray(schedule_days) || !schedule_days.every(d => Number.isInteger(d) && d >= 0 && d <= 6)) {
+      return res.status(400).json({ error: 'schedule_days must be an array of day numbers (0=Sun..6=Sat)' });
+    }
+  }
 
   const coversJson = allergen_covers
     ? (typeof allergen_covers === 'string' ? allergen_covers : JSON.stringify(allergen_covers))
     : '{}';
+  const scheduleDaysJson = schedule_days ? JSON.stringify(schedule_days) : '[]';
 
   const result = db.prepare(
-    'INSERT INTO menus (name, description, sell_price, expected_covers, guest_allergies, allergen_covers) VALUES (?, ?, ?, ?, ?, ?)'
-  ).run(name, description || '', sell_price || 0, expected_covers || 0, guest_allergies || '', coversJson);
+    'INSERT INTO menus (name, description, sell_price, expected_covers, guest_allergies, allergen_covers, schedule_days) VALUES (?, ?, ?, ?, ?, ?, ?)'
+  ).run(name, description || '', sell_price || 0, expected_covers || 0, guest_allergies || '', coversJson, scheduleDaysJson);
 
   req.broadcast('menu_created', { id: result.lastInsertRowid }, req.headers['x-client-id']);
   res.status(201).json({ id: result.lastInsertRowid });
@@ -220,7 +226,13 @@ router.post('/', (req, res) => {
 // PUT /api/menus/:id - Update menu
 router.put('/:id', (req, res) => {
   const db = getDb();
-  const { name, description, is_active, sell_price, expected_covers, guest_allergies, allergen_covers } = req.body;
+  const { name, description, is_active, sell_price, expected_covers, guest_allergies, allergen_covers, schedule_days } = req.body;
+
+  if (schedule_days !== undefined) {
+    if (!Array.isArray(schedule_days) || !schedule_days.every(d => Number.isInteger(d) && d >= 0 && d <= 6)) {
+      return res.status(400).json({ error: 'schedule_days must be an array of day numbers (0=Sun..6=Sat)' });
+    }
+  }
 
   const updates = [];
   const params = [];
@@ -233,6 +245,10 @@ router.put('/:id', (req, res) => {
   if (allergen_covers !== undefined) {
     updates.push('allergen_covers = ?');
     params.push(typeof allergen_covers === 'string' ? allergen_covers : JSON.stringify(allergen_covers));
+  }
+  if (schedule_days !== undefined) {
+    updates.push('schedule_days = ?');
+    params.push(JSON.stringify(schedule_days));
   }
   updates.push("updated_at = datetime('now')");
 
@@ -284,19 +300,25 @@ router.put('/:id/dishes/reorder', (req, res) => {
 // POST /api/menus/:id/dishes - Add dish to menu
 router.post('/:id/dishes', (req, res) => {
   const db = getDb();
-  const { dish_id, servings, sort_order } = req.body;
+  const { dish_id, servings, sort_order, active_days } = req.body;
 
   if (!dish_id) return res.status(400).json({ error: 'dish_id is required' });
   if (servings !== undefined && (typeof servings !== 'number' || servings < 1)) {
     return res.status(400).json({ error: 'servings must be a positive number' });
   }
+  if (active_days !== undefined && active_days !== null) {
+    if (!Array.isArray(active_days) || !active_days.every(d => Number.isInteger(d) && d >= 0 && d <= 6)) {
+      return res.status(400).json({ error: 'active_days must be an array of day numbers (0=Sun..6=Sat)' });
+    }
+  }
 
   const maxOrder = db.prepare('SELECT MAX(sort_order) AS max_order FROM menu_dishes WHERE menu_id = ?').get(req.params.id);
   const order = sort_order !== undefined ? sort_order : (maxOrder.max_order || 0) + 1;
+  const activeDaysJson = active_days ? JSON.stringify(active_days) : null;
 
   try {
-    db.prepare('INSERT INTO menu_dishes (menu_id, dish_id, servings, sort_order) VALUES (?, ?, ?, ?)').run(
-      req.params.id, dish_id, servings || 1, order
+    db.prepare('INSERT INTO menu_dishes (menu_id, dish_id, servings, sort_order, active_days) VALUES (?, ?, ?, ?, ?)').run(
+      req.params.id, dish_id, servings || 1, order, activeDaysJson
     );
     req.broadcast('menu_updated', { id: parseInt(req.params.id) }, req.headers['x-client-id']);
     res.status(201).json({ success: true });
@@ -308,15 +330,25 @@ router.post('/:id/dishes', (req, res) => {
   }
 });
 
-// PUT /api/menus/:id/dishes/:dishId - Update servings/order
+// PUT /api/menus/:id/dishes/:dishId - Update servings/order/active_days
 router.put('/:id/dishes/:dishId', (req, res) => {
   const db = getDb();
-  const { servings, sort_order } = req.body;
+  const { servings, sort_order, active_days } = req.body;
+
+  if (active_days !== undefined && active_days !== null) {
+    if (!Array.isArray(active_days) || !active_days.every(d => Number.isInteger(d) && d >= 0 && d <= 6)) {
+      return res.status(400).json({ error: 'active_days must be an array of day numbers (0=Sun..6=Sat)' });
+    }
+  }
 
   const updates = [];
   const params = [];
   if (servings !== undefined) { updates.push('servings = ?'); params.push(servings); }
   if (sort_order !== undefined) { updates.push('sort_order = ?'); params.push(sort_order); }
+  if (active_days !== undefined) {
+    updates.push('active_days = ?');
+    params.push(active_days === null ? null : JSON.stringify(active_days));
+  }
 
   if (!updates.length) return res.status(400).json({ error: 'Nothing to update' });
 

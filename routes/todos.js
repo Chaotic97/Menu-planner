@@ -88,13 +88,19 @@ router.get('/menu/:id/prep-tasks', (req, res) => {
 // ─── NEW PERSISTENT TASK ENDPOINTS ──────────────────────────────────────────
 
 // POST /api/todos/generate/:menuId — generate & persist tasks from menu
+// Body: { week_start?: 'YYYY-MM-DD' } — when provided, generates calendar-aware tasks
 router.post('/generate/:menuId', asyncHandler(async (req, res) => {
   const menuId = parseInt(req.params.menuId);
+  const { week_start } = req.body || {};
   const db = getDb();
   const menu = db.prepare('SELECT id FROM menus WHERE id = ? AND deleted_at IS NULL').get(menuId);
   if (!menu) return res.status(404).json({ error: 'Menu not found' });
 
-  const result = generateAndPersistTasks(menuId);
+  if (week_start && !DATE_REGEX.test(week_start)) {
+    return res.status(400).json({ error: 'week_start must be YYYY-MM-DD format' });
+  }
+
+  const result = generateAndPersistTasks(menuId, { weekStart: week_start || null });
   if (!result) return res.status(404).json({ error: 'Menu not found' });
 
   req.broadcast('tasks_generated', { menu_id: menuId, total: result.total }, req.headers['x-client-id']);

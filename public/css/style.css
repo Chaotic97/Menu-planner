@@ -1167,6 +1167,117 @@ textarea.input { resize: vertical; min-height: 80px; }
 }
 
 /* ============================
+   Weekly Schedule (Menu Builder)
+   ============================ */
+.mb-schedule-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding: 16px 20px;
+  background: var(--surface);
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--primary);
+  margin-bottom: 20px;
+}
+
+.mb-schedule-days {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.mb-schedule-label {
+  font-weight: 600;
+  font-size: 0.9rem;
+  white-space: nowrap;
+}
+
+.mb-day-toggles {
+  display: flex;
+  gap: 4px;
+}
+
+.mb-day-btn {
+  width: 42px;
+  height: 36px;
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.mb-day-btn:hover {
+  border-color: var(--primary);
+  color: var(--primary);
+}
+
+.mb-day-btn.active {
+  background: var(--primary);
+  color: #fff;
+  border-color: var(--primary);
+}
+
+.mb-schedule-actions {
+  flex-shrink: 0;
+}
+
+.mb-schedule-hint {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+/* Per-dish day toggles */
+.mb-dish-days {
+  display: flex;
+  gap: 3px;
+  margin-top: 4px;
+}
+
+.mb-dish-day-btn {
+  width: 24px;
+  height: 22px;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  background: var(--bg);
+  color: var(--text-muted);
+  font-size: 0.65rem;
+  font-weight: 700;
+  cursor: pointer;
+  padding: 0;
+  line-height: 22px;
+  text-align: center;
+  transition: all 0.15s ease;
+}
+
+.mb-dish-day-btn:hover {
+  border-color: var(--primary);
+}
+
+.mb-dish-day-btn.active {
+  background: rgba(var(--primary-rgb), 0.15);
+  color: var(--primary);
+  border-color: var(--primary);
+}
+
+/* Week preview in prepare modal */
+.mb-week-preview {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 16px;
+  margin-top: 16px;
+}
+
+/* ============================
    Weekly Specials
    ============================ */
 .specials-week-nav {

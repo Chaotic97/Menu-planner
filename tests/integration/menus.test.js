@@ -323,3 +323,74 @@ describe('GET /api/menus/:id/kitchen-print', () => {
     await agent.get('/api/menus/99999/kitchen-print').expect(404);
   });
 });
+
+// ─── WEEKLY SCHEDULE ─────────────────────────────────────────────────────────
+
+describe('Weekly schedule (schedule_days & active_days)', () => {
+  test('creates menu with schedule_days', async () => {
+    const res = await agent
+      .post('/api/menus')
+      .send({ name: 'Weekly Menu', schedule_days: [3, 4, 5, 6, 0] })
+      .expect(201);
+
+    const detail = await agent.get(`/api/menus/${res.body.id}`).expect(200);
+    expect(JSON.parse(detail.body.schedule_days)).toEqual([3, 4, 5, 6, 0]);
+  });
+
+  test('updates schedule_days on existing menu', async () => {
+    const menu = await agent.post('/api/menus').send({ name: 'Update Schedule' }).expect(201);
+    await agent.put(`/api/menus/${menu.body.id}`).send({ schedule_days: [1, 2, 3] }).expect(200);
+
+    const detail = await agent.get(`/api/menus/${menu.body.id}`).expect(200);
+    expect(JSON.parse(detail.body.schedule_days)).toEqual([1, 2, 3]);
+  });
+
+  test('rejects invalid schedule_days', async () => {
+    await agent
+      .post('/api/menus')
+      .send({ name: 'Bad Schedule', schedule_days: [7] })
+      .expect(400);
+
+    await agent
+      .post('/api/menus')
+      .send({ name: 'Bad Schedule', schedule_days: 'not-array' })
+      .expect(400);
+  });
+
+  test('sets active_days on a menu dish', async () => {
+    const dishId = await createDish('Schedule Dish');
+    const menu = await agent.post('/api/menus').send({ name: 'Day Menu', schedule_days: [3, 4, 5, 6, 0] }).expect(201);
+    await agent.post(`/api/menus/${menu.body.id}/dishes`).send({ dish_id: dishId, servings: 1 }).expect(201);
+
+    // Set active_days to Wed only
+    await agent.put(`/api/menus/${menu.body.id}/dishes/${dishId}`).send({ active_days: [3] }).expect(200);
+
+    const detail = await agent.get(`/api/menus/${menu.body.id}`).expect(200);
+    const dish = detail.body.dishes.find(d => d.id === dishId);
+    expect(JSON.parse(dish.active_days)).toEqual([3]);
+  });
+
+  test('clears active_days back to null', async () => {
+    const dishId = await createDish('Clear Days Dish');
+    const menu = await agent.post('/api/menus').send({ name: 'Clear Menu', schedule_days: [3, 4, 5] }).expect(201);
+    await agent.post(`/api/menus/${menu.body.id}/dishes`).send({ dish_id: dishId, servings: 1 }).expect(201);
+
+    await agent.put(`/api/menus/${menu.body.id}/dishes/${dishId}`).send({ active_days: [3] }).expect(200);
+    await agent.put(`/api/menus/${menu.body.id}/dishes/${dishId}`).send({ active_days: null }).expect(200);
+
+    const detail = await agent.get(`/api/menus/${menu.body.id}`).expect(200);
+    const dish = detail.body.dishes.find(d => d.id === dishId);
+    expect(dish.active_days).toBeNull();
+  });
+
+  test('rejects invalid active_days', async () => {
+    const dishId = await createDish('Invalid Days Dish');
+    const menu = await agent.post('/api/menus').send({ name: 'Invalid Menu' }).expect(201);
+    await agent.post(`/api/menus/${menu.body.id}/dishes`).send({ dish_id: dishId, servings: 1 }).expect(201);
+
+    await agent
+      .put(`/api/menus/${menu.body.id}/dishes/${dishId}`)
+      .send({ active_days: [8] })
+      .expect(400);
+  });
+});
