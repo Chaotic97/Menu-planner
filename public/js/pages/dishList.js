@@ -1,4 +1,4 @@
-import { getDishes, deleteDish, restoreDish, duplicateDish, importRecipeFromUrl, importRecipeFromDocx, toggleFavorite, getAllTags } from '../api.js';
+import { getDishes, deleteDish, restoreDish, duplicateDish, importRecipeFromUrl, importRecipeFromDocx, bulkImportDocx, toggleFavorite, getAllTags } from '../api.js';
 import { renderAllergenBadges } from '../components/allergenBadges.js';
 import { showToast } from '../components/toast.js';
 import { openModal, closeModal } from '../components/modal.js';
@@ -181,6 +181,7 @@ export async function renderDishList(container) {
     const importMenu = createActionMenu([
       { label: 'Import from URL', icon: '🔗', onClick: showImportUrlModal },
       { label: 'Import .docx', icon: '📄', onClick: showImportDocxModal },
+      { label: 'Bulk Import .docx', icon: '📦', onClick: showBulkImportDocxModal },
     ]);
     importSlot.appendChild(importMenu);
   }
@@ -274,6 +275,90 @@ export async function renderDishList(container) {
         statusDiv.innerHTML = `<div class="error" style="padding:12px;">${escapeHtml(err.message)}</div>`;
         submitBtn.disabled = false;
         submitBtn.textContent = 'Import Recipe';
+      }
+    });
+  }
+
+  function showBulkImportDocxModal() {
+    const modal = openModal('Bulk Import Dishes from .docx', `
+      <div class="form-group">
+        <label for="bulk-import-docx-input">Select .docx files (Meez exports)</label>
+        <input type="file" id="bulk-import-docx-input" class="input" multiple accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document">
+        <p class="text-muted" style="margin-top:6px;font-size:0.85rem;">
+          Select one or more .docx recipe files. Each file will be imported as a separate dish.
+        </p>
+      </div>
+      <div id="bulk-import-file-list" style="margin-bottom:12px;"></div>
+      <div id="bulk-import-status"></div>
+      <button id="bulk-import-submit" class="btn btn-primary" style="width:100%;">Import All</button>
+    `);
+
+    const fileInput = modal.querySelector('#bulk-import-docx-input');
+    const fileListDiv = modal.querySelector('#bulk-import-file-list');
+    const submitBtn = modal.querySelector('#bulk-import-submit');
+    const statusDiv = modal.querySelector('#bulk-import-status');
+
+    fileInput.addEventListener('change', () => {
+      const files = fileInput.files;
+      if (!files.length) {
+        fileListDiv.innerHTML = '';
+        return;
+      }
+      fileListDiv.innerHTML = `
+        <div style="font-size:0.85rem;color:var(--text-secondary);margin-bottom:4px;">${files.length} file${files.length === 1 ? '' : 's'} selected:</div>
+        <ul style="margin:0;padding-left:20px;font-size:0.85rem;">
+          ${Array.from(files).map(f => `<li>${escapeHtml(f.name)}</li>`).join('')}
+        </ul>
+      `;
+    });
+
+    submitBtn.addEventListener('click', async () => {
+      const files = fileInput.files;
+      if (!files.length) {
+        showToast('Select at least one .docx file', 'error');
+        return;
+      }
+
+      submitBtn.disabled = true;
+      submitBtn.textContent = 'Importing...';
+      statusDiv.innerHTML = `<div class="loading" style="padding:12px;">Importing ${files.length} file${files.length === 1 ? '' : 's'}...</div>`;
+
+      try {
+        const formData = new FormData();
+        for (const file of files) {
+          formData.append('files', file);
+        }
+        const result = await bulkImportDocx(formData);
+
+        let html = '';
+        if (result.created.length) {
+          html += `<div style="padding:8px 12px;background:rgba(var(--success-rgb),0.1);border-radius:var(--radius-sm);margin-bottom:8px;font-size:0.9rem;">
+            <strong>${result.created.length} dish${result.created.length === 1 ? '' : 'es'} imported successfully</strong>
+            <ul style="margin:4px 0 0;padding-left:20px;">
+              ${result.created.map(d => `<li>${escapeHtml(d.name)}</li>`).join('')}
+            </ul>
+          </div>`;
+        }
+        if (result.errors.length) {
+          html += `<div style="padding:8px 12px;background:rgba(var(--danger-rgb),0.1);border-radius:var(--radius-sm);margin-bottom:8px;font-size:0.9rem;">
+            <strong>${result.errors.length} file${result.errors.length === 1 ? '' : 's'} failed</strong>
+            <ul style="margin:4px 0 0;padding-left:20px;">
+              ${result.errors.map(e => `<li>${escapeHtml(e.filename)}: ${escapeHtml(e.error)}</li>`).join('')}
+            </ul>
+          </div>`;
+        }
+
+        statusDiv.innerHTML = html;
+        submitBtn.textContent = 'Done';
+
+        if (result.created.length) {
+          loadDishes();
+          showToast(`${result.created.length} dish${result.created.length === 1 ? '' : 'es'} imported`);
+        }
+      } catch (err) {
+        statusDiv.innerHTML = `<div class="error" style="padding:12px;">${escapeHtml(err.message)}</div>`;
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Import All';
       }
     });
   }

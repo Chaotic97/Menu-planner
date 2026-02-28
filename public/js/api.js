@@ -50,6 +50,7 @@ export const duplicateDish = (id) => request(`/dishes/${id}/duplicate`, { method
 export const toggleFavorite = (id) => request(`/dishes/${id}/favorite`, { method: 'POST' });
 export const importRecipeFromUrl = (url) => request('/dishes/import-url', { method: 'POST', body: { url } });
 export const importRecipeFromDocx = (formData) => request('/dishes/import-docx', { method: 'POST', body: formData });
+export const bulkImportDocx = (formData) => request('/dishes/bulk-import-docx', { method: 'POST', body: formData });
 export const uploadDishPhoto = (id, formData) => request(`/dishes/${id}/photo`, { method: 'POST', body: formData });
 export const deleteDishPhoto = (id) => request(`/dishes/${id}/photo`, { method: 'DELETE' });
 export const updateDishAllergen = (id, data) => request(`/dishes/${id}/allergens`, { method: 'POST', body: data });
