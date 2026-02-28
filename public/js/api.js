@@ -86,7 +86,7 @@ export const getScaledShoppingList = (menuId, covers) => request(`/todos/menu/${
 export const getPrepTasks = (menuId) => request(`/todos/menu/${menuId}/prep-tasks`);
 
 // Tasks (persistent task system)
-export const generateTasks = (menuId) => request(`/todos/generate/${menuId}`, { method: 'POST' });
+export const generateTasks = (menuId, options = {}) => request(`/todos/generate/${menuId}`, { method: 'POST', body: options });
 export const getTasks = (params = {}) => {
   const filtered = Object.fromEntries(Object.entries(params).filter(([, v]) => v !== undefined && v !== ''));
   const qs = new URLSearchParams(filtered).toString();

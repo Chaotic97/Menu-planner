@@ -225,6 +225,8 @@ async function createTestApp() {
     `CREATE INDEX IF NOT EXISTS idx_tasks_day_phase ON tasks(day_phase)`,
     `CREATE INDEX IF NOT EXISTS idx_tasks_is_next ON tasks(is_next)`,
     `UPDATE dishes SET batch_yield = CAST(batch_yield AS REAL) WHERE typeof(batch_yield) = 'integer'`,
+    `ALTER TABLE menus ADD COLUMN schedule_days TEXT DEFAULT '[]'`,
+    `ALTER TABLE menu_dishes ADD COLUMN active_days TEXT DEFAULT NULL`,
   ];
 
   for (const sql of MIGRATIONS) {
