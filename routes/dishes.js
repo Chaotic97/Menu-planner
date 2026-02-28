@@ -347,6 +347,59 @@ router.post('/import-docx', docxUpload.single('file'), asyncHandler(async (req, 
   }
 }));
 
+// POST /api/dishes/bulk-import-docx - Bulk import recipes from multiple .docx files and create dishes
+router.post('/bulk-import-docx', docxUpload.array('files', 50), asyncHandler(async (req, res) => {
+  if (!req.files || !req.files.length) {
+    return res.status(400).json({ error: 'At least one .docx file is required.' });
+  }
+
+  const db = getDb();
+  const created = [];
+  const errors = [];
+
+  for (const file of req.files) {
+    const filename = file.originalname || 'unknown.docx';
+    try {
+      const recipe = await importDocx(file.buffer);
+
+      // Create the dish using the parsed recipe data
+      const result = db.prepare(`
+        INSERT INTO dishes (name, description, category, chefs_notes, suggested_price)
+        VALUES (?, ?, ?, ?, ?)
+      `).run(
+        recipe.name,
+        recipe.description || '',
+        recipe.category || 'main',
+        recipe.instructions || '',
+        0
+      );
+      const dishId = result.lastInsertRowid;
+
+      // Save ingredients
+      saveIngredients(db, dishId, recipe.ingredients);
+
+      // Save directions
+      saveDishDirections(db, dishId, recipe.directions);
+
+      // If directions were saved, clear chefs_notes (same behavior as dish form)
+      if (recipe.directions && recipe.directions.length) {
+        db.prepare('UPDATE dishes SET chefs_notes = ? WHERE id = ?').run('', dishId);
+      }
+
+      // Detect allergens
+      updateDishAllergens(dishId);
+
+      req.broadcast('dish_created', { id: dishId }, req.headers['x-client-id']);
+      created.push({ id: dishId, name: recipe.name, filename });
+    } catch (err) {
+      errors.push({ filename, error: err.message });
+    }
+  }
+
+  const status = created.length > 0 ? 201 : 422;
+  res.status(status).json({ created, errors });
+}));
+
 // POST /api/dishes/:id/favorite - Toggle favorite
 router.post('/:id/favorite', (req, res) => {
   const db = getDb();
