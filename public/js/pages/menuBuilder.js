@@ -2,7 +2,6 @@ import { getMenu, updateMenu, getDishes, addDishToMenu, removeDishFromMenu, upda
 import { renderAllergenBadges } from '../components/allergenBadges.js';
 import { showToast } from '../components/toast.js';
 import { openModal, closeModal } from '../components/modal.js';
-import { openLightbox } from '../components/lightbox.js';
 import { createActionMenu } from '../components/actionMenu.js';
 import { makeCollapsible, collapsibleHeader } from '../components/collapsible.js';
 import { escapeHtml } from '../utils/escapeHtml.js';
@@ -144,12 +143,6 @@ export async function renderMenuBuilder(container, menuId) {
                 return `
                 <div class="mb-dish-row ${hasConflict ? 'allergy-conflict' : ''}" data-dish-id="${dish.id}" draggable="true">
                   <div class="drag-handle" title="Drag to reorder">&#8942;&#8942;</div>
-                  <div class="mb-dish-thumb">
-                    ${dish.photo_path
-                      ? `<img src="${escapeHtml(dish.photo_path)}" alt="${escapeHtml(dish.name)}">`
-                      : '<div class="mb-no-thumb"></div>'
-                    }
-                  </div>
                   <div class="mb-dish-info">
                     <a href="#/dishes/${dish.id}" class="dish-name-link"><strong>${escapeHtml(dish.name)}</strong></a>
                     ${renderAllergenBadges(dish.allergens, true)}
@@ -325,15 +318,6 @@ export async function renderMenuBuilder(container, menuId) {
 
     // Collapsible allergy section
     makeCollapsible(container.querySelector('#mb-allergy-section'), { open: false, storageKey: 'mb_allergy_section' });
-
-    // Photo lightbox
-    container.querySelectorAll('.mb-dish-thumb img').forEach(img => {
-      img.style.cursor = 'zoom-in';
-      img.addEventListener('click', (e) => {
-        e.stopPropagation();
-        openLightbox(img.src, img.alt);
-      });
-    });
 
     // Servings controls
     container.querySelectorAll('.servings-inc').forEach(btn => {

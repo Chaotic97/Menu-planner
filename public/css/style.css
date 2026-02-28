@@ -82,11 +82,7 @@
 [data-theme="dark"] .btn:hover { background: #3a3a3a; }
 [data-theme="dark"] .btn-secondary:hover { background: rgba(var(--primary-rgb),0.15); }
 [data-theme="dark"] .btn-danger:hover { background: rgba(var(--danger-rgb), 0.15); }
-[data-theme="dark"] .card-image { background: #3a3a3a; }
-[data-theme="dark"] .no-image { background: #3a3a3a; }
-[data-theme="dark"] .special-image { background: #3a3a3a; }
 [data-theme="dark"] .photo-placeholder { background: #333; }
-[data-theme="dark"] .mb-no-thumb { background: #333; }
 [data-theme="dark"] .menu-status.active { background: #1b3a2a; color: var(--success); }
 [data-theme="dark"] .menu-status.inactive { background: #3a2020; color: var(--danger); }
 [data-theme="dark"] .allergen-badge { color: #1a1a1a; }
@@ -96,7 +92,7 @@
 [data-theme="dark"] .special-dish-option:hover { background: rgba(var(--primary-rgb),0.1); }
 
 /* --- Component-specific dark overrides (kept here so all dark-mode rules are in one place) --- */
-[data-theme="dark"] .favorite-btn { background: rgba(0,0,0,0.6); }
+[data-theme="dark"] .favorite-btn { color: #666; }
 [data-theme="dark"] .tag-badge { background: rgba(var(--primary-rgb),0.2); }
 [data-theme="dark"] .subs-badge { background: #3a2a1a; color: #ffb74d; }
 [data-theme="dark"] .po-category-row td { background: rgba(var(--primary-rgb),0.12); }
@@ -671,6 +667,12 @@ textarea.input { resize: vertical; min-height: 80px; }
 }
 
 .card-body { padding: 16px; }
+
+.card-body-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
 
 .card-title {
   font-size: 1.1rem;
@@ -2082,10 +2084,8 @@ textarea.input { resize: vertical; min-height: 80px; }
    Favorites
    ============================ */
 .favorite-btn {
-  position: absolute;
-  top: 8px;
-  right: 8px;
-  background: rgba(255,255,255,0.9);
+  position: relative;
+  background: none;
   border: none;
   font-size: 1.3rem;
   cursor: pointer;
@@ -2095,7 +2095,7 @@ textarea.input { resize: vertical; min-height: 80px; }
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 5;
+  flex-shrink: 0;
   transition: transform 0.15s, background 0.15s;
   color: #ccc;
 }
@@ -2324,7 +2324,6 @@ textarea.input { resize: vertical; min-height: 80px; }
   .mb-pricing-stats { gap: 16px; }
 
   .special-card { flex-direction: column; }
-  .special-image { width: 100%; height: 160px; }
   .special-actions {
     flex-direction: row;
     border-left: none;

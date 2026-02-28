@@ -2,7 +2,6 @@ import { getDishes, deleteDish, restoreDish, duplicateDish, importRecipeFromUrl,
 import { renderAllergenBadges } from '../components/allergenBadges.js';
 import { showToast } from '../components/toast.js';
 import { openModal, closeModal } from '../components/modal.js';
-import { openLightbox } from '../components/lightbox.js';
 import { createActionMenu } from '../components/actionMenu.js';
 import { CATEGORIES } from '../data/categories.js';
 import { escapeHtml } from '../utils/escapeHtml.js';
@@ -66,15 +65,11 @@ export async function renderDishList(container) {
 
       grid.innerHTML = dishes.map(dish => `
         <div class="card dish-card" data-id="${dish.id}">
-          <div class="card-image">
-            ${dish.photo_path
-              ? `<img src="${escapeHtml(dish.photo_path)}" alt="${escapeHtml(dish.name)}" loading="lazy">`
-              : '<div class="no-image"><span>No Photo</span></div>'
-            }
-            <button class="favorite-btn ${dish.is_favorite ? 'favorited' : ''}" data-id="${dish.id}" title="${dish.is_favorite ? 'Remove from favorites' : 'Add to favorites'}">&hearts;</button>
-          </div>
           <div class="card-body">
-            <span class="category-badge">${escapeHtml(dish.category)}</span>
+            <div class="card-body-top">
+              <span class="category-badge">${escapeHtml(dish.category)}</span>
+              <button class="favorite-btn ${dish.is_favorite ? 'favorited' : ''}" data-id="${dish.id}" title="${dish.is_favorite ? 'Remove from favorites' : 'Add to favorites'}">&hearts;</button>
+            </div>
             <h3 class="card-title">${escapeHtml(dish.name)}</h3>
             ${dish.description ? `<p class="card-desc">${escapeHtml(dish.description.substring(0, 80))}${dish.description.length > 80 ? '...' : ''}</p>` : ''}
             ${renderAllergenBadges(dish.allergens, true)}
@@ -94,15 +89,6 @@ export async function renderDishList(container) {
         card.addEventListener('click', (e) => {
           if (e.target.closest('.card-actions') || e.target.closest('.favorite-btn')) return;
           window.location.hash = `#/dishes/${card.dataset.id}`;
-        });
-      });
-
-      // Photo lightbox
-      grid.querySelectorAll('.card-image img').forEach(img => {
-        img.style.cursor = 'zoom-in';
-        img.addEventListener('click', (e) => {
-          e.stopPropagation();
-          openLightbox(img.src, img.alt);
         });
       });
 

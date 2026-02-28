@@ -99,12 +99,6 @@ export async function renderSpecials(container) {
 
       listEl.innerHTML = specials.map(s => `
         <div class="special-card ${!s.is_active ? 'special-inactive' : ''}" data-id="${s.id}">
-          <div class="special-image">
-            ${s.photo_path
-              ? `<img src="${escapeHtml(s.photo_path)}" alt="${escapeHtml(s.dish_name)}">`
-              : '<div class="no-image"><span>No Photo</span></div>'
-            }
-          </div>
           <div class="special-body">
             <div class="special-header">
               <span class="category-badge">${escapeHtml(s.category)}</span>
