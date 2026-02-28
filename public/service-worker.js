@@ -26,6 +26,26 @@ self.addEventListener('activate', (event) => {
   self.clients.claim();
 });
 
+// Notification click: focus the app and navigate to the relevant page
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const hash = event.notification.data && event.notification.data.hash;
+  event.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clients) => {
+      // Focus existing window if available
+      for (const client of clients) {
+        if (client.url.includes(self.location.origin)) {
+          client.focus();
+          if (hash) client.navigate(self.location.origin + '/' + hash);
+          return;
+        }
+      }
+      // Open new window if none found
+      return self.clients.openWindow('/' + (hash || ''));
+    })
+  );
+});
+
 // Fetch strategy:
 //  - API requests: network-first, fall back to cached response
 //  - Static assets: cache-first, fall back to network then cache

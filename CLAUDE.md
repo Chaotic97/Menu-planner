@@ -49,6 +49,7 @@ routes/
   menus.js                       — Menu CRUD + dish ordering, weekly specials (CRUD + .docx export), kitchen print, scaling
   todos.js                       — Legacy shopping list/prep task endpoints + persistent task CRUD (generate, list, create, update, delete, batch-complete)
   serviceNotes.js                — Daily kitchen notes CRUD
+  notifications.js               — Notification preferences CRUD + pending items endpoint
 public/
   index.html                     — SPA shell: sidebar nav (SVG icon slots + labels), mobile bottom tab bar, offline banner, SW registration. Sidebar has three states: expanded (240px), collapsed (64px icon rail), hidden (0px reveal button shown).
   manifest.json + service-worker.js — PWA assets
@@ -58,10 +59,11 @@ public/
     api.js                       — SOLE HTTP layer. Never call fetch() elsewhere.
     sync.js                      — WebSocket client. Dispatches sync:TYPE events on window.
     utils/escapeHtml.js          — escapeHtml(). Must wrap all user content in templates.
+    utils/notifications.js       — Client-side notification engine. Schedules reminders via setTimeout, uses Notification API.
     pages/                       — One file per page. Each exports renderXxx(container).
       dishList.js · dishForm.js · dishView.js · menuList.js · menuBuilder.js
       todoView.js · shoppingList.js · serviceNotes.js · flavorPairings.js · specials.js · login.js
-      settings.js                — Settings page: change password (Security section) + allergen keyword manager (Allergen Detection section). Route: #/settings
+      settings.js                — Settings page: change password (Security) + notifications (Notifications) + day phases (Day Phases) + allergen keyword manager (Allergen Detection). Route: #/settings
     components/
       actionMenu.js              — createActionMenu(items[], opts). Three-dot overflow dropdown. Click trigger toggles; click-outside/Escape closes. Items: { label, icon?, danger?, onClick }.
       collapsible.js             — makeCollapsible(sectionEl, opts) / collapsibleHeader(title, subtitle?). Toggle sections open/closed with optional localStorage persistence via `storageKey`.
@@ -86,6 +88,7 @@ tests/
     menus.test.js                — CRUD, dish management, cost rollup, allergy conflicts, kitchen print
     ingredients.test.js          — Create, upsert, update, search, allergen detection
     serviceNotes.test.js         — CRUD with date/shift validation
+    notifications.test.js        — Preferences CRUD (defaults, merge, validation), pending items (overdue, today summary)
     todos.test.js                — Shopping list, scaling, prep tasks, persistent task CRUD, generate, batch-complete
 ```
 
@@ -267,6 +270,7 @@ dishes.test.js        — Full CRUD, ingredients, tags, directions, allergens, d
 menus.test.js         — CRUD, dish management, cost rollup, allergy conflicts, kitchen print
 ingredients.test.js   — Create, upsert, update, search, in-stock toggle/clear, allergen detection
 serviceNotes.test.js  — CRUD with date/shift validation
+notifications.test.js — Preferences CRUD (defaults, merge, validation), pending items (overdue, today summary)
 todos.test.js         — Legacy shopping list/scaling/prep tasks + persistent task CRUD (prep+custom only),
                         generate, batch-complete, auto→manual promotion, filter by type/priority/completed
 ```
@@ -390,6 +394,13 @@ The pipeline catches lint errors and test failures before code reaches `main`.
 | POST | `/api/menus/specials` | Body: dish_id, week_start, week_end, notes |
 | PUT | `/api/menus/specials/:id` | Same body |
 | DELETE | `/api/menus/specials/:id` | Hard delete |
+
+### Notifications
+| Method | Path | Notes |
+|--------|------|-------|
+| GET | `/api/notifications/preferences` | Returns merged notification prefs (defaults + saved). |
+| PUT | `/api/notifications/preferences` | Body: any subset of preference keys. Merges with existing. Validates numeric fields (1–120), time format (HH:MM). |
+| GET | `/api/notifications/pending` | Returns overdue tasks, upcoming tasks with due_time, today's summary counts, expiring specials, day phases. Used by client-side notification engine. |
 
 ### Auth (all public — no session required, except change-password)
 | Method | Path | Notes |
@@ -537,6 +548,16 @@ Use `setSidebarState(state)` in `app.js` to change state — it updates the attr
 
 The `data-sidebar` attribute is set on `<html>` alongside `data-theme` so a single selector like `html[data-sidebar="collapsed"] .nav-label { display: none; }` works without specificity fights.
 
+### Notification & reminder engine
+Client-side notification scheduling via `public/js/utils/notifications.js`. Architecture:
+- **Preferences** stored in `settings` table as JSON (`notification_preferences` key). Managed via `GET/PUT /api/notifications/preferences`.
+- **Pending items** fetched from `GET /api/notifications/pending` — returns overdue tasks, upcoming timed tasks, today's summary, expiring specials, and day phases.
+- **Scheduling** is client-side: `initNotifications()` runs on app load after auth, fetches pending data every 3 minutes, and sets `setTimeout` timers for upcoming events.
+- **Deduplication**: shown notifications tracked in `localStorage` with daily keys (`nt_shown_{tag}_{date}`). Stale markers auto-cleaned.
+- **Notification types**: daily briefing, prep phase transitions, task due reminders, overdue alerts, expiring specials. Each toggleable with configurable lead times.
+- **Service worker**: `notificationclick` handler in `service-worker.js` focuses the app window and navigates to the relevant hash route.
+- **Settings UI**: Notifications section in `#/settings` with per-type toggles, lead time inputs, and a test notification button.
+
 ---
 
 ## CSS conventions
@@ -566,6 +587,7 @@ Sub-sections (responsive overrides, etc.):
 | `.td-` | Todo/Task system redesign |
 | `.sl-` | Shopping List page |
 | `.st-` | Settings page |
+| `.nt-` | Notification settings |
 
 Global components (`.btn`, `.btn-ghost`, `.card`, `.modal`, `.toast`, `.input`, `.drag-handle`, `.action-menu-*`, `.collapsible-section*`, `.no-print`) are unprefixed. New features with more than ~3 classes get a prefix; add it to this table.
 

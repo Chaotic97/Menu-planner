@@ -1,6 +1,7 @@
-import { getAllergenKeywords, addAllergenKeyword, deleteAllergenKeyword, changePassword, getDayPhases, updateDayPhases } from '../api.js';
+import { getAllergenKeywords, addAllergenKeyword, deleteAllergenKeyword, changePassword, getDayPhases, updateDayPhases, getNotificationPreferences, updateNotificationPreferences } from '../api.js';
 import { showToast } from '../components/toast.js';
 import { escapeHtml } from '../utils/escapeHtml.js';
+import { restartNotifications } from '../utils/notifications.js';
 
 const EU_14 = [
   'celery', 'crustaceans', 'eggs', 'fish', 'gluten', 'lupin',
@@ -45,6 +46,96 @@ export async function renderSettings(container) {
                 <button type="submit" class="btn btn-primary" id="st-pw-btn">Update password</button>
               </div>
             </form>
+          </div>
+        </div>
+      </section>
+
+      <section class="st-section">
+        <button class="st-section-toggle" aria-expanded="true">
+          <span class="st-section-title">Notifications</span>
+          <span class="st-chevron" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16"><polyline points="6 9 12 15 18 9"/></svg>
+          </span>
+        </button>
+        <div class="st-section-body">
+          <p class="ak-intro">
+            Get reminders for upcoming tasks, phase transitions, overdue items, and expiring specials.
+            Notifications only work while the app is open.
+          </p>
+          <div id="nt-settings" class="card" style="padding: var(--space-md);">
+            <div class="nt-status" id="nt-permission-status"></div>
+
+            <div class="nt-toggle-row">
+              <label class="nt-toggle-label">
+                <input type="checkbox" id="nt-enabled" class="nt-checkbox">
+                <span class="nt-toggle-text">Enable notifications</span>
+              </label>
+            </div>
+
+            <div id="nt-options" class="nt-options">
+              <div class="nt-option-group">
+                <label class="nt-toggle-label">
+                  <input type="checkbox" id="nt-daily-briefing" class="nt-checkbox">
+                  <span class="nt-toggle-text">Daily briefing</span>
+                </label>
+                <div class="nt-option-detail">
+                  <label class="nt-inline-label">Time:
+                    <input type="time" id="nt-briefing-time" class="input nt-time-input" value="08:00">
+                  </label>
+                </div>
+              </div>
+
+              <div class="nt-option-group">
+                <label class="nt-toggle-label">
+                  <input type="checkbox" id="nt-prep-reminders" class="nt-checkbox">
+                  <span class="nt-toggle-text">Phase transition reminders</span>
+                </label>
+                <div class="nt-option-detail">
+                  <label class="nt-inline-label">Lead time:
+                    <input type="number" id="nt-prep-lead" class="input nt-num-input" min="1" max="120" value="15">
+                    <span>min</span>
+                  </label>
+                </div>
+              </div>
+
+              <div class="nt-option-group">
+                <label class="nt-toggle-label">
+                  <input type="checkbox" id="nt-task-due" class="nt-checkbox">
+                  <span class="nt-toggle-text">Task due reminders</span>
+                </label>
+                <div class="nt-option-detail">
+                  <label class="nt-inline-label">Lead time:
+                    <input type="number" id="nt-task-lead" class="input nt-num-input" min="1" max="120" value="10">
+                    <span>min</span>
+                  </label>
+                </div>
+              </div>
+
+              <div class="nt-option-group">
+                <label class="nt-toggle-label">
+                  <input type="checkbox" id="nt-overdue" class="nt-checkbox">
+                  <span class="nt-toggle-text">Overdue task alerts</span>
+                </label>
+                <div class="nt-option-detail">
+                  <label class="nt-inline-label">Repeat every:
+                    <input type="number" id="nt-overdue-interval" class="input nt-num-input" min="5" max="120" value="30">
+                    <span>min</span>
+                  </label>
+                </div>
+              </div>
+
+              <div class="nt-option-group">
+                <label class="nt-toggle-label">
+                  <input type="checkbox" id="nt-specials" class="nt-checkbox">
+                  <span class="nt-toggle-text">Expiring specials alerts</span>
+                </label>
+              </div>
+
+              <div class="st-form-actions">
+                <button id="nt-save-btn" class="btn btn-primary">Save Notification Settings</button>
+                <button id="nt-test-btn" class="btn btn-secondary" style="margin-left:8px;">Test Notification</button>
+              </div>
+            </div>
           </div>
         </div>
       </section>
@@ -334,4 +425,127 @@ export async function renderSettings(container) {
   });
 
   await loadPhases();
+
+  // --- Notification Settings ---
+  const ntEnabled = container.querySelector('#nt-enabled');
+  const ntOptions = container.querySelector('#nt-options');
+  const ntStatus = container.querySelector('#nt-permission-status');
+  const ntSaveBtn = container.querySelector('#nt-save-btn');
+  const ntTestBtn = container.querySelector('#nt-test-btn');
+
+  function updatePermissionStatus() {
+    if (!('Notification' in window)) {
+      ntStatus.textContent = 'Notifications are not supported in this browser.';
+      ntStatus.className = 'nt-status nt-status--warning';
+      ntEnabled.disabled = true;
+      return;
+    }
+    const perm = Notification.permission;
+    if (perm === 'granted') {
+      ntStatus.textContent = 'Notification permission: granted';
+      ntStatus.className = 'nt-status nt-status--ok';
+    } else if (perm === 'denied') {
+      ntStatus.textContent = 'Notifications are blocked. Please enable them in your browser settings.';
+      ntStatus.className = 'nt-status nt-status--warning';
+    } else {
+      ntStatus.textContent = 'Notification permission not yet requested. Enable below and you\'ll be prompted.';
+      ntStatus.className = 'nt-status nt-status--info';
+    }
+  }
+
+  function applyPrefsToUI(p) {
+    ntEnabled.checked = p.enabled;
+    ntOptions.style.display = p.enabled ? '' : 'none';
+    container.querySelector('#nt-daily-briefing').checked = p.daily_briefing;
+    container.querySelector('#nt-briefing-time').value = p.daily_briefing_time || '08:00';
+    container.querySelector('#nt-prep-reminders').checked = p.prep_reminders;
+    container.querySelector('#nt-prep-lead').value = p.prep_lead_minutes || 15;
+    container.querySelector('#nt-task-due').checked = p.task_due_reminders;
+    container.querySelector('#nt-task-lead').value = p.task_lead_minutes || 10;
+    container.querySelector('#nt-overdue').checked = p.overdue_alerts;
+    container.querySelector('#nt-overdue-interval').value = p.overdue_interval_minutes || 30;
+    container.querySelector('#nt-specials').checked = p.specials_expiring;
+  }
+
+  function readPrefsFromUI() {
+    return {
+      enabled: ntEnabled.checked,
+      daily_briefing: container.querySelector('#nt-daily-briefing').checked,
+      daily_briefing_time: container.querySelector('#nt-briefing-time').value || '08:00',
+      prep_reminders: container.querySelector('#nt-prep-reminders').checked,
+      prep_lead_minutes: parseInt(container.querySelector('#nt-prep-lead').value) || 15,
+      task_due_reminders: container.querySelector('#nt-task-due').checked,
+      task_lead_minutes: parseInt(container.querySelector('#nt-task-lead').value) || 10,
+      overdue_alerts: container.querySelector('#nt-overdue').checked,
+      overdue_interval_minutes: parseInt(container.querySelector('#nt-overdue-interval').value) || 30,
+      specials_expiring: container.querySelector('#nt-specials').checked,
+    };
+  }
+
+  updatePermissionStatus();
+
+  // Load current notification preferences
+  try {
+    const currentPrefs = await getNotificationPreferences();
+    applyPrefsToUI(currentPrefs);
+  } catch {
+    applyPrefsToUI({ enabled: false, daily_briefing: true, daily_briefing_time: '08:00', prep_reminders: true, prep_lead_minutes: 15, task_due_reminders: true, task_lead_minutes: 10, overdue_alerts: true, overdue_interval_minutes: 30, specials_expiring: true });
+  }
+
+  ntEnabled.addEventListener('change', () => {
+    ntOptions.style.display = ntEnabled.checked ? '' : 'none';
+  });
+
+  ntSaveBtn.addEventListener('click', async () => {
+    const newPrefs = readPrefsFromUI();
+
+    // Request permission if enabling and not yet granted
+    if (newPrefs.enabled && 'Notification' in window && Notification.permission === 'default') {
+      const result = await Notification.requestPermission();
+      if (result !== 'granted') {
+        showToast('Notification permission was denied', 'warning');
+        newPrefs.enabled = false;
+        ntEnabled.checked = false;
+        ntOptions.style.display = 'none';
+      }
+      updatePermissionStatus();
+    }
+
+    ntSaveBtn.disabled = true;
+    ntSaveBtn.textContent = 'Saving…';
+    try {
+      await updateNotificationPreferences(newPrefs);
+      showToast('Notification settings saved');
+      restartNotifications();
+    } catch (err) {
+      showToast(err.message || 'Failed to save', 'error');
+    } finally {
+      ntSaveBtn.disabled = false;
+      ntSaveBtn.textContent = 'Save Notification Settings';
+    }
+  });
+
+  ntTestBtn.addEventListener('click', async () => {
+    if (!('Notification' in window)) {
+      showToast('Notifications not supported', 'error');
+      return;
+    }
+    if (Notification.permission === 'default') {
+      await Notification.requestPermission();
+      updatePermissionStatus();
+    }
+    if (Notification.permission !== 'granted') {
+      showToast('Notification permission denied', 'error');
+      return;
+    }
+    try {
+      new Notification('PlateStack Test', {
+        body: 'Notifications are working! You\'ll see reminders here.',
+        icon: '/favicon.svg',
+      });
+      showToast('Test notification sent');
+    } catch {
+      showToast('Failed to show notification', 'error');
+    }
+  });
 }

@@ -116,6 +116,11 @@ export const getAllergenKeywords = () => request('/dishes/allergen-keywords/all'
 export const addAllergenKeyword = (data) => request('/dishes/allergen-keywords', { method: 'POST', body: data });
 export const deleteAllergenKeyword = (id) => request(`/dishes/allergen-keywords/${id}`, { method: 'DELETE' });
 
+// Notifications
+export const getNotificationPreferences = () => request('/notifications/preferences');
+export const updateNotificationPreferences = (prefs) => request('/notifications/preferences', { method: 'PUT', body: prefs });
+export const getNotificationPending = () => request('/notifications/pending');
+
 // Auth — public endpoints (no 401 redirect)
 async function authRequest(path, options = {}) {
   const url = `${BASE}${path}`;
