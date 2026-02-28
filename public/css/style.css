@@ -4001,7 +4001,8 @@ textarea.input { resize: vertical; min-height: 80px; }
 /* ============================
    Directions (dish form)
    ============================ */
-.dir-step-row {
+.dir-step-row,
+.svc-dir-step-row {
   display: flex;
   gap: 8px;
   align-items: flex-start;
@@ -4009,7 +4010,8 @@ textarea.input { resize: vertical; min-height: 80px; }
   padding: 6px 0;
 }
 
-.dir-step-row .dir-text {
+.dir-step-row .dir-text,
+.svc-dir-step-row .svc-dir-text {
   flex: 1;
   min-width: 0;
   min-height: 52px;
@@ -4031,7 +4033,8 @@ textarea.input { resize: vertical; min-height: 80px; }
   margin-top: 6px;
 }
 
-.dir-section-row {
+.dir-section-row,
+.svc-dir-section-row {
   display: flex;
   gap: 8px;
   align-items: center;
@@ -4041,12 +4044,15 @@ textarea.input { resize: vertical; min-height: 80px; }
   padding-left: 8px;
 }
 
-.dir-section-row .section-header-input-wrap {
+.dir-section-row .section-header-input-wrap,
+.svc-dir-section-row .section-header-input-wrap {
   flex: 1;
 }
 
 .remove-dir-step,
-.remove-dir-section {
+.remove-dir-section,
+.remove-svc-dir-step,
+.remove-svc-dir-section {
   color: var(--danger);
   border: none;
   background: none;

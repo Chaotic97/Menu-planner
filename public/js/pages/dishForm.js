@@ -76,6 +76,8 @@ export async function renderDishForm(container, dishId) {
   const existingSubs = dish ? (dish.substitutions || []) : [];
   // Service Components (never populated from URL import)
   const existingComponents = dish ? (dish.components || []) : [];
+  // Service Directions (plating/assembly steps)
+  const existingServiceDirections = dish ? (dish.service_directions || []) : [];
 
   // Directions (structured steps)
   let existingDirections;
@@ -245,10 +247,10 @@ export async function renderDishForm(container, dishId) {
             </div>
           </div>
 
-          <!-- Directions -->
+          <!-- Prep Directions -->
           <div class="form-group">
-            <label>Directions</label>
-            <p class="text-muted" style="font-size:0.85rem;margin-bottom:8px;">Step-by-step method — drag to reorder, add section headers to group steps.</p>
+            <label>Prep Directions</label>
+            <p class="text-muted" style="font-size:0.85rem;margin-bottom:8px;">Step-by-step prep method — drag to reorder, add section headers to group steps.</p>
             ${dish && dish.chefs_notes && !existingDirections.length ? `
               <div class="dir-legacy-notes">
                 <span class="dir-legacy-label">Legacy Chef's Notes</span>
@@ -266,6 +268,23 @@ export async function renderDishForm(container, dishId) {
             <div class="ing-add-buttons">
               <button type="button" id="add-direction-step" class="btn btn-secondary">+ Add Step</button>
               <button type="button" id="add-direction-section" class="btn btn-secondary">+ Add Section</button>
+            </div>
+          </div>
+
+          <!-- Service Directions -->
+          <div class="form-group">
+            <label>Service Directions</label>
+            <p class="text-muted" style="font-size:0.85rem;margin-bottom:8px;">Step-by-step plating & assembly at service — drag to reorder, add section headers to group steps.</p>
+            <div id="service-directions-list">
+              ${existingServiceDirections.map((d, i) =>
+                d.type === 'section'
+                  ? serviceDirectionSectionRow(d, i)
+                  : serviceDirectionStepRow(d, i)
+              ).join('')}
+            </div>
+            <div class="ing-add-buttons">
+              <button type="button" id="add-svc-direction-step" class="btn btn-secondary">+ Add Step</button>
+              <button type="button" id="add-svc-direction-section" class="btn btn-secondary">+ Add Section</button>
             </div>
           </div>
 
@@ -719,6 +738,42 @@ export async function renderDishForm(container, dishId) {
 
   setupDirectionDragDrop(directionsList);
 
+  // ── Service Directions ──────────────────────────────────────────────────────
+  const svcDirectionsList = container.querySelector('#service-directions-list');
+  let svcDirStepCounter = existingServiceDirections.length;
+
+  container.querySelector('#add-svc-direction-step').addEventListener('click', () => {
+    svcDirStepCounter++;
+    const div = document.createElement('div');
+    div.innerHTML = serviceDirectionStepRow(null, svcDirStepCounter);
+    svcDirectionsList.appendChild(div.firstElementChild);
+    const rows = svcDirectionsList.querySelectorAll('.svc-dir-step-row');
+    const last = rows[rows.length - 1];
+    if (last) last.querySelector('.svc-dir-text').focus();
+  });
+
+  container.querySelector('#add-svc-direction-section').addEventListener('click', () => {
+    svcDirStepCounter++;
+    const div = document.createElement('div');
+    div.innerHTML = serviceDirectionSectionRow(null, svcDirStepCounter);
+    svcDirectionsList.appendChild(div.firstElementChild);
+    const rows = svcDirectionsList.querySelectorAll('.svc-dir-section-row');
+    const last = rows[rows.length - 1];
+    if (last) last.querySelector('.svc-dir-section-label').focus();
+  });
+
+  svcDirectionsList.addEventListener('click', (e) => {
+    if (e.target.closest('.remove-svc-dir-step')) {
+      e.target.closest('.svc-dir-step-row').remove();
+      return;
+    }
+    if (e.target.closest('.remove-svc-dir-section')) {
+      e.target.closest('.svc-dir-section-row').remove();
+    }
+  });
+
+  setupServiceDirectionDragDrop(svcDirectionsList);
+
   // Form submit
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -793,6 +848,18 @@ export async function renderDishForm(container, dishId) {
       }
     }).filter(Boolean);
 
+    // Collect service directions
+    const svcDirRows = svcDirectionsList.querySelectorAll('.svc-dir-step-row, .svc-dir-section-row');
+    const service_directions = Array.from(svcDirRows).map((row, idx) => {
+      if (row.classList.contains('svc-dir-section-row')) {
+        const label = row.querySelector('.svc-dir-section-label').value.trim();
+        return label ? { type: 'section', text: label, sort_order: idx } : null;
+      } else {
+        const text = row.querySelector('.svc-dir-text').value.trim();
+        return text ? { type: 'step', text, sort_order: idx } : null;
+      }
+    }).filter(Boolean);
+
     // If directions were added, clear legacy chefs_notes; otherwise preserve it
     const hasDirections = directions.some(d => d.type === 'step');
 
@@ -810,6 +877,7 @@ export async function renderDishForm(container, dishId) {
       manual_costs,
       components,
       directions,
+      service_directions,
     };
 
     try {
@@ -1281,6 +1349,127 @@ function directionSectionRow(d, index) {
 
 function setupDirectionDragDrop(list) {
   const ROW_SEL = '.dir-step-row, .dir-section-row';
+  let dragSrc = null;
+
+  list.addEventListener('dragstart', (e) => {
+    const row = e.target.closest(ROW_SEL);
+    if (!row) return;
+    dragSrc = row;
+    setTimeout(() => row.classList.add('dragging'), 0);
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', '');
+  });
+
+  list.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    const target = e.target.closest(ROW_SEL);
+    if (!target || target === dragSrc) return;
+    list.querySelectorAll('.drop-above, .drop-below').forEach(el => el.classList.remove('drop-above', 'drop-below'));
+    const rect = target.getBoundingClientRect();
+    target.classList.add(e.clientY < rect.top + rect.height / 2 ? 'drop-above' : 'drop-below');
+    e.dataTransfer.dropEffect = 'move';
+  });
+
+  list.addEventListener('dragleave', (e) => {
+    if (!list.contains(e.relatedTarget)) {
+      list.querySelectorAll('.drop-above, .drop-below').forEach(el => el.classList.remove('drop-above', 'drop-below'));
+    }
+  });
+
+  list.addEventListener('drop', (e) => {
+    e.preventDefault();
+    const target = e.target.closest(ROW_SEL);
+    list.querySelectorAll('.drop-above, .drop-below').forEach(el => el.classList.remove('drop-above', 'drop-below'));
+    if (!target || !dragSrc || target === dragSrc) return;
+    const rect = target.getBoundingClientRect();
+    if (e.clientY < rect.top + rect.height / 2) {
+      list.insertBefore(dragSrc, target);
+    } else {
+      target.after(dragSrc);
+    }
+  });
+
+  list.addEventListener('dragend', () => {
+    if (dragSrc) dragSrc.classList.remove('dragging');
+    list.querySelectorAll('.drop-above, .drop-below').forEach(el => el.classList.remove('drop-above', 'drop-below'));
+    dragSrc = null;
+  });
+
+  // Touch support
+  let touchRow = null;
+  list.addEventListener('touchstart', (e) => {
+    const handle = e.target.closest('.drag-handle');
+    if (!handle) return;
+    touchRow = handle.closest(ROW_SEL);
+    if (!touchRow) return;
+    touchRow.classList.add('dragging');
+    e.preventDefault();
+  }, { passive: false });
+
+  list.addEventListener('touchmove', (e) => {
+    if (!touchRow) return;
+    e.preventDefault();
+    const touchY = e.touches[0].clientY;
+    const siblings = [...list.querySelectorAll(ROW_SEL)].filter(r => r !== touchRow);
+    list.querySelectorAll('.drop-above, .drop-below').forEach(el => el.classList.remove('drop-above', 'drop-below'));
+    for (const row of siblings) {
+      const rect = row.getBoundingClientRect();
+      if (touchY >= rect.top && touchY <= rect.bottom) {
+        row.classList.add(touchY < rect.top + rect.height / 2 ? 'drop-above' : 'drop-below');
+        break;
+      }
+    }
+  }, { passive: false });
+
+  list.addEventListener('touchend', (e) => {
+    if (!touchRow) return;
+    const touchY = e.changedTouches[0].clientY;
+    const siblings = [...list.querySelectorAll(ROW_SEL)].filter(r => r !== touchRow);
+    list.querySelectorAll('.drop-above, .drop-below').forEach(el => el.classList.remove('drop-above', 'drop-below'));
+    for (const row of siblings) {
+      const rect = row.getBoundingClientRect();
+      if (touchY >= rect.top && touchY <= rect.bottom) {
+        if (touchY < rect.top + rect.height / 2) list.insertBefore(touchRow, row);
+        else row.after(touchRow);
+        break;
+      }
+    }
+    touchRow.classList.remove('dragging');
+    touchRow = null;
+  });
+}
+
+// ── Service Direction step / section row templates ───────────────────────────
+
+function serviceDirectionStepRow(d, index) {
+  const text = d ? escapeHtml(d.text || '') : '';
+  return `
+    <div class="svc-dir-step-row" data-index="${index}" draggable="true">
+      <span class="drag-handle" title="Drag to reorder">&#11835;</span>
+      <span class="dir-step-num"></span>
+      <textarea class="input svc-dir-text" rows="2" placeholder="Describe this service step…">${text}</textarea>
+      <button type="button" class="btn btn-icon remove-svc-dir-step" title="Remove">&times;</button>
+    </div>
+  `;
+}
+
+function serviceDirectionSectionRow(d, index) {
+  const text = d ? escapeHtml(d.text || '') : '';
+  return `
+    <div class="svc-dir-section-row" data-index="${index}" draggable="true">
+      <span class="drag-handle" title="Drag to reorder">&#11835;</span>
+      <div class="section-header-input-wrap">
+        <input type="text" class="input svc-dir-section-label" placeholder="Section name (e.g. Plating)" value="${text}">
+      </div>
+      <button type="button" class="btn btn-icon remove-svc-dir-section" title="Remove section">&times;</button>
+    </div>
+  `;
+}
+
+// ── Drag-and-drop for service direction rows ─────────────────────────────────
+
+function setupServiceDirectionDragDrop(list) {
+  const ROW_SEL = '.svc-dir-step-row, .svc-dir-section-row';
   let dragSrc = null;
 
   list.addEventListener('dragstart', (e) => {
