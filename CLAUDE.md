@@ -22,7 +22,7 @@ PlateStack is a chef-focused menu planning web app. Full workflow: create dishes
 ## Project structure
 
 ```
-server.js                        — Express entry point: middleware, WebSocket, route mounting, global error handler
+server.js                        — Express entry point: middleware, security headers, WebSocket, route mounting, global error handler
 db/
   database.js                    — sql.js wrapper (DbWrapper/StmtWrapper), schema init, migrations, auto-purge
   schema.sql                     — Core table definitions (run once on first start)
@@ -31,13 +31,13 @@ db/
 middleware/
   auth.js                        — Blocks unauthenticated /api/* requests. PUBLIC_PATHS list is the bypass list.
   asyncHandler.js                — Wraps async route handlers so thrown errors reach the global error handler
-  rateLimit.js                   — createRateLimit({ windowMs, max, message }) — in-memory IP rate limiter
+  rateLimit.js                   — createRateLimit({ windowMs, max, message, maxEntries }) — in-memory IP rate limiter (capped at maxEntries to prevent unbounded growth)
 services/
   allergenDetector.js            — updateDishAllergens(dishId), getAllergenKeywords()
-  costCalculator.js              — calculateDishCost(), calculateFoodCostPercent(), suggestPrice(), convertUnits(), normalizeUnit(), round2()
+  costCalculator.js              — calculateDishCost(), calculateFoodCostPercent(), suggestPrice(), convertUnits(), normalizeUnit() (null-safe), round2()
   emailService.js                — sendPasswordResetEmail(toAddress, resetUrl)
   prepTaskGenerator.js           — generatePrepTasks(menuId), extractPrepTasks(notes, dishName), extractTiming(text). Prefers structured dish_directions; falls back to chefs_notes text parsing.
-  recipeImporter.js              — importRecipe(url) — scrapes a URL and returns a dish-shaped object (incl. directions[]). Has SSRF protection (blocks private IPs, enforces https, timeout + size limits).
+  recipeImporter.js              — importRecipe(url) — scrapes a URL and returns a dish-shaped object (incl. directions[]). Has SSRF protection (blocks private IPs, enforces https, timeout + size limits, manual redirect following with per-hop validation).
   docxImporter.js                — importDocx(buffer) — parses Meez .docx exports into a dish-shaped object (incl. directions[]).
   specialsExporter.js            — exportSpecialsDocx(weekStart) — generates .docx file of active weekly specials with dish details.
   shoppingListGenerator.js       — generateShoppingList(menuId) — aggregates + unit-normalises menu ingredients. Includes in_stock flag and ingredient_id per item.
@@ -327,10 +327,10 @@ The pipeline catches lint errors and test failures before code reaches `main`.
 | PUT | `/api/dishes/:id` | Same body as POST |
 | DELETE | `/api/dishes/:id` | Soft delete (sets deleted_at) |
 | POST | `/api/dishes/:id/restore` | Clears deleted_at. Returns 404 if dish not found. |
-| POST | `/api/dishes/:id/duplicate` | Full copy including ingredients, headers, subs, tags, directions → 201 `{ id }` |
+| POST | `/api/dishes/:id/duplicate` | Full copy including ingredients, headers, subs, tags, directions, manual_costs → 201 `{ id }` |
 | POST | `/api/dishes/:id/favorite` | Toggles is_favorite |
-| POST | `/api/dishes/:id/photo` | multipart/form-data, field name: `photo` |
-| POST | `/api/dishes/:id/allergens` | Body: `{ allergen, action: 'add'|'remove', source: 'manual' }`. Broadcasts `dish_updated`. |
+| POST | `/api/dishes/:id/photo` | multipart/form-data, field name: `photo`. Returns 404 if dish not found. |
+| POST | `/api/dishes/:id/allergens` | Body: `{ allergen, action: 'add'|'remove', source: 'manual' }`. Returns 404 if dish not found. Broadcasts `dish_updated`. |
 | GET | `/api/dishes/tags/all` | All tags |
 | POST | `/api/dishes/import-url` | Body: `{ url }`. Scrapes recipe → returns dish-shaped JSON (incl. directions[]) |
 | POST | `/api/dishes/import-docx` | multipart/form-data, field name: `file` (.docx). Parses Meez export → returns dish-shaped JSON (incl. directions[]) |
@@ -355,7 +355,7 @@ The pipeline catches lint errors and test failures before code reaches `main`.
 | DELETE | `/api/menus/:id` | Soft delete |
 | POST | `/api/menus/:id/restore` | Returns 404 if menu not found. |
 | POST | `/api/menus/:id/dishes` | Body: dish_id, servings. Validates servings is a positive number. |
-| PUT | `/api/menus/:id/dishes/:dishId` | Body: servings |
+| PUT | `/api/menus/:id/dishes/:dishId` | Body: servings. Validates servings is a positive number. |
 | DELETE | `/api/menus/:id/dishes/:dishId` | Remove dish from menu |
 | PUT | `/api/menus/:id/dishes/reorder` | Body: `{ order: [dishId, ...] }` |
 | GET | `/api/menus/:id/kitchen-print` | Scaled print data: ingredients scaled by servings (includes `base_quantity`), directions, section headers, batch info (`batch_yield`, `total_portions`) per dish |
@@ -463,7 +463,7 @@ The login route calls `req.session.save(cb)` before `res.json()`. Without this, 
 `getDb()` returns a Promise on the very first call (server startup). After `initialize()` resolves, it returns the `DbWrapper` synchronously. `server.js` awaits it once. Inside every route handler, call it synchronously — never `await getDb()` in a route.
 
 ### Debounced disk write
-Every `.run()` / `.exec()` schedules a disk write 500 ms later. There is no explicit commit. The in-memory DB is authoritative; the file is a snapshot. PM2 and `process.on('exit')` call `save()` synchronously on shutdown, so normal restarts are safe.
+Every `.run()` / `.exec()` schedules a disk write 500 ms later (with a 5-second ceiling under sustained writes). Writes are atomic (write-to-temp-then-rename). There is no explicit commit. The in-memory DB is authoritative; the file is a snapshot. `process.on('exit')`, `SIGINT`, and `SIGTERM` all call `save()` synchronously on shutdown, so normal restarts and PM2 are safe.
 
 ### UNIQUE constraint on dish_ingredients
 `UNIQUE(dish_id, ingredient_id)` — adding the same ingredient twice throws. The dish form prevents this in the UI. API callers must handle the error.
