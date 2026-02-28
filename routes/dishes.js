@@ -142,6 +142,11 @@ router.get('/:id', (req, res) => {
     'SELECT id, type, text, sort_order FROM dish_directions WHERE dish_id = ? ORDER BY sort_order, id'
   ).all(dish.id);
 
+  // Get service directions (plating/assembly steps)
+  dish.service_directions = db.prepare(
+    'SELECT id, type, text, sort_order FROM dish_service_directions WHERE dish_id = ? ORDER BY sort_order, id'
+  ).all(dish.id);
+
   // Calculate cost (section header rows have no ingredient data — exclude them)
   const costResult = calculateDishCost(dish.ingredients.filter(r => r.row_type === 'ingredient'));
 
@@ -166,7 +171,7 @@ router.get('/:id', (req, res) => {
 // POST /api/dishes - Create dish
 router.post('/', (req, res) => {
   const db = getDb();
-  const { name, description, category, chefs_notes, service_notes, suggested_price, ingredients, tags, substitutions, manual_costs, components, directions, batch_yield } = req.body;
+  const { name, description, category, chefs_notes, service_notes, suggested_price, ingredients, tags, substitutions, manual_costs, components, directions, service_directions, batch_yield } = req.body;
 
   if (!name) return res.status(400).json({ error: 'Name is required' });
   if (batch_yield !== undefined && batch_yield !== null) {
@@ -196,6 +201,9 @@ router.post('/', (req, res) => {
 
   // Save directions
   saveDishDirections(db, dishId, directions);
+
+  // Save service directions
+  saveDishServiceDirections(db, dishId, service_directions);
 
   // Detect allergens
   updateDishAllergens(dishId);
@@ -287,6 +295,15 @@ router.post('/:id/duplicate', (req, res) => {
     insertDir.run(newId, d.type, d.text, d.sort_order);
   }
 
+  // Copy service directions
+  const svcDirs = db.prepare(
+    'SELECT type, text, sort_order FROM dish_service_directions WHERE dish_id = ? ORDER BY sort_order, id'
+  ).all(req.params.id);
+  const insertSvcDir = db.prepare('INSERT INTO dish_service_directions (dish_id, type, text, sort_order) VALUES (?, ?, ?, ?)');
+  for (const d of svcDirs) {
+    insertSvcDir.run(newId, d.type, d.text, d.sort_order);
+  }
+
   updateDishAllergens(newId);
 
   req.broadcast('dish_created', { id: newId }, req.headers['x-client-id']);
@@ -357,7 +374,7 @@ router.put('/:id', (req, res) => {
   const dish = db.prepare('SELECT * FROM dishes WHERE id = ? AND deleted_at IS NULL').get(req.params.id);
   if (!dish) return res.status(404).json({ error: 'Dish not found' });
 
-  const { name, description, category, chefs_notes, service_notes, suggested_price, ingredients, tags, substitutions, manual_costs, components, directions, batch_yield } = req.body;
+  const { name, description, category, chefs_notes, service_notes, suggested_price, ingredients, tags, substitutions, manual_costs, components, directions, service_directions, batch_yield } = req.body;
 
   if (batch_yield !== undefined && batch_yield !== null) {
     if (typeof batch_yield !== 'number' || isNaN(batch_yield) || batch_yield <= 0) {
@@ -408,6 +425,11 @@ router.put('/:id', (req, res) => {
   // Update directions if provided
   if (directions !== undefined) {
     saveDishDirections(db, req.params.id, directions);
+  }
+
+  // Update service directions if provided
+  if (service_directions !== undefined) {
+    saveDishServiceDirections(db, req.params.id, service_directions);
   }
 
   req.broadcast('dish_updated', { id: parseInt(req.params.id) }, req.headers['x-client-id']);
@@ -611,6 +633,21 @@ function saveDishDirections(db, dishId, directions) {
   const insert = db.prepare('INSERT INTO dish_directions (dish_id, type, text, sort_order) VALUES (?, ?, ?, ?)');
   for (let i = 0; i < directions.length; i++) {
     const d = directions[i];
+    const type = d.type === 'section' ? 'section' : 'step';
+    const text = (d.text || '').trim();
+    if (!text) continue;
+    insert.run(dishId, type, text, d.sort_order !== undefined ? d.sort_order : i);
+  }
+}
+
+function saveDishServiceDirections(db, dishId, serviceDirections) {
+  if (!serviceDirections || !Array.isArray(serviceDirections)) return;
+
+  db.prepare('DELETE FROM dish_service_directions WHERE dish_id = ?').run(dishId);
+
+  const insert = db.prepare('INSERT INTO dish_service_directions (dish_id, type, text, sort_order) VALUES (?, ?, ?, ?)');
+  for (let i = 0; i < serviceDirections.length; i++) {
+    const d = serviceDirections[i];
     const type = d.type === 'section' ? 'section' : 'step';
     const text = (d.text || '').trim();
     if (!text) continue;

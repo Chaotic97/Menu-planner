@@ -154,6 +154,9 @@ router.get('/:id/kitchen-print', (req, res) => {
   const directionStmt = db.prepare(
     'SELECT type, text, sort_order FROM dish_directions WHERE dish_id = ? ORDER BY sort_order, id'
   );
+  const serviceDirectionStmt = db.prepare(
+    'SELECT type, text, sort_order FROM dish_service_directions WHERE dish_id = ? ORDER BY sort_order, id'
+  );
 
   for (const dish of dishes) {
     dish.allergens = allergenStmt.all(dish.id).map(a => a.allergen);
@@ -170,6 +173,7 @@ router.get('/:id/kitchen-print', (req, res) => {
     dish.substitutions = subsStmt.all(dish.id);
     dish.components = componentStmt.all(dish.id);
     dish.directions = directionStmt.all(dish.id);
+    dish.service_directions = serviceDirectionStmt.all(dish.id);
 
     // Batch yield info for print
     const batchYield = dish.batch_yield || 1;

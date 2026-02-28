@@ -245,6 +245,15 @@ async function initialize() {
     `ALTER TABLE menus ADD COLUMN schedule_days TEXT DEFAULT '[]'`,
     // Per-dish active days within the menu schedule (JSON array of day numbers, NULL = all scheduled days)
     `ALTER TABLE menu_dishes ADD COLUMN active_days TEXT DEFAULT NULL`,
+    // Structured service directions (plating/assembly steps at service time)
+    `CREATE TABLE IF NOT EXISTS dish_service_directions (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      dish_id    INTEGER NOT NULL REFERENCES dishes(id) ON DELETE CASCADE,
+      type       TEXT NOT NULL DEFAULT 'step',
+      text       TEXT NOT NULL DEFAULT '',
+      sort_order INTEGER DEFAULT 0
+    )`,
+    `CREATE INDEX IF NOT EXISTS idx_dish_service_directions_dish_id ON dish_service_directions(dish_id)`,
   ];
 
   for (const sql of MIGRATIONS) {

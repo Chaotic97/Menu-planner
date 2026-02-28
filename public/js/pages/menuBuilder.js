@@ -751,9 +751,9 @@ export async function renderMenuBuilder(container, menuId) {
           html += '</table></div>';
         }
 
-        // Directions
+        // Prep Directions
         if (dish.directions && dish.directions.length) {
-          html += '<div style="margin:8px 0;"><div class="notes-label">Method</div>';
+          html += '<div style="margin:8px 0;"><div class="notes-label">Prep Method</div>';
           let stepNum = 0;
           for (const d of dish.directions) {
             if (d.type === 'section') {
@@ -766,6 +766,21 @@ export async function renderMenuBuilder(container, menuId) {
           html += '</div>';
         } else if (dish.chefs_notes) {
           html += '<div class="notes"><div class="notes-label">Chef\'s Notes</div>' + escapeHtml(dish.chefs_notes) + '</div>';
+        }
+
+        // Service Directions
+        if (dish.service_directions && dish.service_directions.length) {
+          html += '<div style="margin:8px 0;"><div class="notes-label">Service Process</div>';
+          let stepNum = 0;
+          for (const d of dish.service_directions) {
+            if (d.type === 'section') {
+              html += '<div style="font-weight:700;margin:8px 0 4px;border-bottom:1px solid #ddd;padding-bottom:2px;">' + escapeHtml(d.text) + '</div>';
+            } else {
+              stepNum++;
+              html += '<div style="display:flex;gap:6px;margin-bottom:4px;font-size:0.85rem;"><span style="font-weight:700;color:#888;min-width:18px;">' + stepNum + '.</span><span>' + escapeHtml(d.text) + '</span></div>';
+            }
+          }
+          html += '</div>';
         }
 
         if (dish.substitutions && dish.substitutions.length) {
