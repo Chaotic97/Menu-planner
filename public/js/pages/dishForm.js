@@ -137,7 +137,7 @@ export async function renderDishForm(container, dishId) {
             </div>
             <div class="form-group">
               <label for="dish-batch-yield">Batch Yield</label>
-              <input type="number" id="dish-batch-yield" class="input" step="1" min="1" value="${dish ? (dish.batch_yield || 1) : 1}" placeholder="1">
+              <input type="number" id="dish-batch-yield" class="input" step="0.5" min="0.5" value="${dish ? (dish.batch_yield || 1) : 1}" placeholder="1">
               <span class="text-muted" style="font-size:0.78rem;">Portions per batch</span>
             </div>
           </div>
@@ -803,7 +803,7 @@ export async function renderDishForm(container, dishId) {
       chefs_notes: hasDirections ? '' : (dish ? dish.chefs_notes || '' : ''),
       service_notes: container.querySelector('#dish-service-notes').value.trim(),
       suggested_price: parseFloat(container.querySelector('#dish-price').value) || 0,
-      batch_yield: parseInt(container.querySelector('#dish-batch-yield').value) || 1,
+      batch_yield: parseFloat(container.querySelector('#dish-batch-yield').value) || 1,
       ingredients: ingData,
       tags,
       substitutions,

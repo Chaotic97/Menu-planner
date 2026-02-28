@@ -174,7 +174,12 @@ export async function renderMenuBuilder(container, menuId) {
                     <span class="mb-servings-count">${dish.servings}</span>
                     <button class="btn btn-icon servings-inc" data-dish="${dish.id}">+</button>
                     <span class="mb-servings-label">${(dish.batch_yield || 1) > 1 ? 'batches' : 'servings'}</span>
-                    ${(dish.batch_yield || 1) > 1 ? `<span class="mb-portions-label">(${dish.total_portions} portions)</span>` : ''}
+                    ${(dish.batch_yield || 1) > 1 ? `
+                      <span class="mb-portions-label">(${dish.total_portions} portions)</span>
+                      <input type="number" class="input mb-portion-target" data-dish="${dish.id}" data-yield="${dish.batch_yield}"
+                             min="1" step="1" placeholder="target" title="Enter target portions to auto-calculate batches"
+                             style="width:70px;padding:2px 6px;font-size:0.8rem;margin-left:4px;">
+                    ` : ''}
                   </div>
                   <div class="mb-row-actions" data-dish-id="${dish.id}"></div>
                 </div>
@@ -375,6 +380,29 @@ export async function renderMenuBuilder(container, menuId) {
             showToast(err.message || 'Failed to update servings', 'error');
           }
         }
+      });
+    });
+
+    // Portion target → auto-calculate batches
+    container.querySelectorAll('.mb-portion-target').forEach(input => {
+      let debounce;
+      input.addEventListener('input', () => {
+        clearTimeout(debounce);
+        debounce = setTimeout(async () => {
+          const dishId = input.dataset.dish;
+          const batchYield = parseFloat(input.dataset.yield) || 1;
+          const targetPortions = parseInt(input.value);
+          if (!targetPortions || targetPortions < 1) return;
+          const neededBatches = Math.ceil(targetPortions / batchYield);
+          try {
+            await updateMenuDish(menuId, dishId, { servings: neededBatches });
+            menu = await getMenu(menuId);
+            showToast(`${neededBatches} batch${neededBatches !== 1 ? 'es' : ''} = ${neededBatches * batchYield} portions`);
+            render();
+          } catch (err) {
+            showToast(err.message || 'Failed to update', 'error');
+          }
+        }, 600);
       });
     });
 
@@ -634,10 +662,16 @@ export async function renderMenuBuilder(container, menuId) {
       `;
 
       data.dishes.forEach((dish, i) => {
+        const batchYield = dish.batch_yield || 1;
+        const servings = dish.servings || 1;
+        const batchInfo = servings > 1 || batchYield > 1
+          ? ` &mdash; ${servings} batch${servings !== 1 ? 'es' : ''}${batchYield > 1 ? ` (${dish.total_portions || servings * batchYield} portions)` : ''}`
+          : '';
+
         html += `<div class="dish-block">`;
         html += `<div><div class="course-num">Course ${i + 1}</div><div class="course-cat">${escapeHtml(dish.category || '')}</div></div>`;
         html += `<div>`;
-        html += `<div class="dish-name">${escapeHtml(dish.name)}</div>`;
+        html += `<div class="dish-name">${escapeHtml(dish.name)}${batchInfo}</div>`;
 
         if (dish.allergens.length) {
           html += `<div class="allergens">${dish.allergens.map(a => `<span class="allergen-tag">${escapeHtml(a)}</span>`).join('')}</div>`;
@@ -647,6 +681,35 @@ export async function renderMenuBuilder(container, menuId) {
           html += `<ul class="ingredients">${dish.components.map(c => `<li>${escapeHtml(c.name)}</li>`).join('')}</ul>`;
         } else {
           html += `<p style="font-size:0.85rem;color:#888;margin:4px 0 8px;font-style:italic;">No service components added.</p>`;
+        }
+
+        // Scaled ingredient list (quantities pre-multiplied by servings on the server)
+        if (dish.ingredients && dish.ingredients.length) {
+          html += `<div style="margin:8px 0;"><div class="notes-label">Ingredients${servings > 1 ? ' (scaled &times;' + servings + ')' : ''}</div>`;
+          html += '<table style="width:100%;border-collapse:collapse;font-size:0.85rem;margin-top:4px;">';
+          for (const ing of dish.ingredients) {
+            html += '<tr><td style="padding:2px 6px;border-bottom:1px solid #f0f0f0;">' + escapeHtml(ing.ingredient_name) + '</td>';
+            html += '<td style="padding:2px 6px;border-bottom:1px solid #f0f0f0;text-align:right;white-space:nowrap;"><strong>' + ing.quantity + '</strong> ' + escapeHtml(ing.unit || '') + '</td>';
+            html += '<td style="padding:2px 6px;border-bottom:1px solid #f0f0f0;color:#888;font-size:0.8rem;">' + escapeHtml(ing.prep_note || '') + '</td></tr>';
+          }
+          html += '</table></div>';
+        }
+
+        // Directions
+        if (dish.directions && dish.directions.length) {
+          html += '<div style="margin:8px 0;"><div class="notes-label">Method</div>';
+          let stepNum = 0;
+          for (const d of dish.directions) {
+            if (d.type === 'section') {
+              html += '<div style="font-weight:700;margin:8px 0 4px;border-bottom:1px solid #ddd;padding-bottom:2px;">' + escapeHtml(d.text) + '</div>';
+            } else {
+              stepNum++;
+              html += '<div style="display:flex;gap:6px;margin-bottom:4px;font-size:0.85rem;"><span style="font-weight:700;color:#888;min-width:18px;">' + stepNum + '.</span><span>' + escapeHtml(d.text) + '</span></div>';
+            }
+          }
+          html += '</div>';
+        } else if (dish.chefs_notes) {
+          html += '<div class="notes"><div class="notes-label">Chef\'s Notes</div>' + escapeHtml(dish.chefs_notes) + '</div>';
         }
 
         if (dish.substitutions && dish.substitutions.length) {

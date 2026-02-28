@@ -224,6 +224,7 @@ async function createTestApp() {
     `ALTER TABLE tasks ADD COLUMN is_next INTEGER DEFAULT 0`,
     `CREATE INDEX IF NOT EXISTS idx_tasks_day_phase ON tasks(day_phase)`,
     `CREATE INDEX IF NOT EXISTS idx_tasks_is_next ON tasks(is_next)`,
+    `UPDATE dishes SET batch_yield = CAST(batch_yield AS REAL) WHERE typeof(batch_yield) = 'integer'`,
   ];
 
   for (const sql of MIGRATIONS) {
@@ -237,7 +238,7 @@ async function createTestApp() {
   const modulesToClear = [
     '../../routes/auth', '../../routes/dishes', '../../routes/ingredients',
     '../../routes/menus', '../../routes/todos', '../../routes/today',
-    '../../routes/serviceNotes',
+    '../../routes/serviceNotes', '../../routes/notifications',
     '../../services/allergenDetector', '../../services/shoppingListGenerator',
     '../../services/prepTaskGenerator', '../../services/taskGenerator',
     '../../services/specialsExporter',
@@ -286,6 +287,7 @@ async function createTestApp() {
   app.use('/api/todos', require('../../routes/todos'));
   app.use('/api/today', require('../../routes/today'));
   app.use('/api/service-notes', require('../../routes/serviceNotes'));
+  app.use('/api/notifications', require('../../routes/notifications'));
 
   // Global error handler
   app.use((err, req, res, _next) => {

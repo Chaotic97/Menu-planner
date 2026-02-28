@@ -326,6 +326,24 @@ export async function renderServiceNotes(container) {
     renderCalendar();
   });
 
+  // Sync event listeners — refresh when notes change in another tab
+  const syncEvents = ['sync:service_note_created', 'sync:service_note_updated', 'sync:service_note_deleted'];
+  const syncHandler = async () => {
+    await loadDatesWithNotes();
+    renderCalendar();
+    await loadNotes();
+  };
+  for (const evt of syncEvents) {
+    window.addEventListener(evt, syncHandler);
+  }
+  const cleanupOnNav = () => {
+    for (const evt of syncEvents) {
+      window.removeEventListener(evt, syncHandler);
+    }
+    window.removeEventListener('hashchange', cleanupOnNav);
+  };
+  window.addEventListener('hashchange', cleanupOnNav);
+
   await loadDatesWithNotes();
   renderCalendar();
   await loadNotes();

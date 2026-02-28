@@ -46,11 +46,13 @@ router.post('/', (req, res) => {
       params.push(existing.id);
       db.prepare(`UPDATE ingredients SET ${updates.join(', ')} WHERE id = ?`).run(...params);
     }
+    req.broadcast('ingredient_updated', { id: existing.id }, req.headers['x-client-id']);
     res.json({ id: existing.id, updated: true });
   } else {
     const result = db.prepare(
       'INSERT INTO ingredients (name, unit_cost, base_unit, category) VALUES (?, ?, ?, ?)'
     ).run(name, unit_cost || 0, base_unit || 'g', category || 'other');
+    req.broadcast('ingredient_created', { id: result.lastInsertRowid }, req.headers['x-client-id']);
     res.status(201).json({ id: result.lastInsertRowid });
   }
 });
@@ -75,6 +77,7 @@ router.put('/:id', (req, res) => {
 
   params.push(req.params.id);
   db.prepare(`UPDATE ingredients SET ${updates.join(', ')} WHERE id = ?`).run(...params);
+  req.broadcast('ingredient_updated', { id: parseInt(req.params.id) }, req.headers['x-client-id']);
   res.json({ success: true });
 });
 

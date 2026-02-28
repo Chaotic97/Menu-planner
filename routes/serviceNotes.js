@@ -51,6 +51,7 @@ router.post('/', (req, res) => {
     'INSERT INTO service_notes (date, shift, title, content) VALUES (?, ?, ?, ?)'
   ).run(date, shift || 'all', title || '', content || '');
 
+  req.broadcast('service_note_created', { id: result.lastInsertRowid, date }, req.headers['x-client-id']);
   res.status(201).json({ id: result.lastInsertRowid });
 });
 
@@ -74,6 +75,7 @@ router.put('/:id', (req, res) => {
 
   params.push(req.params.id);
   db.prepare(`UPDATE service_notes SET ${updates.join(', ')} WHERE id = ?`).run(...params);
+  req.broadcast('service_note_updated', { id: parseInt(req.params.id) }, req.headers['x-client-id']);
   res.json({ success: true });
 });
 
@@ -81,6 +83,7 @@ router.put('/:id', (req, res) => {
 router.delete('/:id', (req, res) => {
   const db = getDb();
   db.prepare('DELETE FROM service_notes WHERE id = ?').run(req.params.id);
+  req.broadcast('service_note_deleted', { id: parseInt(req.params.id) }, req.headers['x-client-id']);
   res.json({ success: true });
 });
 

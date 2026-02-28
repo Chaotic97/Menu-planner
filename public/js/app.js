@@ -15,6 +15,7 @@ import { initQuickCapture } from './components/quickCapture.js';
 import { renderLogin } from './pages/login.js';
 import { authStatus, authLogout } from './api.js';
 import { connectSync } from './sync.js';
+import { initNotifications } from './utils/notifications.js';
 
 const appContent = document.getElementById('app-content');
 
@@ -260,6 +261,7 @@ window.addEventListener('DOMContentLoaded', async () => {
   if (authed) {
     connectSync();
     initQuickCapture();
+    initNotifications();
     router();
   }
 });

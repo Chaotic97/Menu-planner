@@ -49,6 +49,7 @@ routes/
   menus.js                       — Menu CRUD + dish ordering, weekly specials (CRUD + .docx export), kitchen print, scaling
   todos.js                       — Legacy shopping list/prep task endpoints + persistent task CRUD (generate, list, create, update, delete, batch-complete)
   serviceNotes.js                — Daily kitchen notes CRUD
+  notifications.js               — Notification preferences CRUD + pending items endpoint
 public/
   index.html                     — SPA shell: sidebar nav (SVG icon slots + labels), mobile bottom tab bar, offline banner, SW registration. Sidebar has three states: expanded (240px), collapsed (64px icon rail), hidden (0px reveal button shown).
   manifest.json + service-worker.js — PWA assets
@@ -58,10 +59,11 @@ public/
     api.js                       — SOLE HTTP layer. Never call fetch() elsewhere.
     sync.js                      — WebSocket client. Dispatches sync:TYPE events on window.
     utils/escapeHtml.js          — escapeHtml(). Must wrap all user content in templates.
+    utils/notifications.js       — Client-side notification engine. Schedules reminders via setTimeout, uses Notification API.
     pages/                       — One file per page. Each exports renderXxx(container).
       dishList.js · dishForm.js · dishView.js · menuList.js · menuBuilder.js
       todoView.js · shoppingList.js · serviceNotes.js · flavorPairings.js · specials.js · login.js
-      settings.js                — Settings page: change password (Security section) + allergen keyword manager (Allergen Detection section). Route: #/settings
+      settings.js                — Settings page: change password (Security) + notifications (Notifications) + day phases (Day Phases) + allergen keyword manager (Allergen Detection). Route: #/settings
     components/
       actionMenu.js              — createActionMenu(items[], opts). Three-dot overflow dropdown. Click trigger toggles; click-outside/Escape closes. Items: { label, icon?, danger?, onClick }.
       collapsible.js             — makeCollapsible(sectionEl, opts) / collapsibleHeader(title, subtitle?). Toggle sections open/closed with optional localStorage persistence via `storageKey`.
@@ -86,6 +88,7 @@ tests/
     menus.test.js                — CRUD, dish management, cost rollup, allergy conflicts, kitchen print
     ingredients.test.js          — Create, upsert, update, search, allergen detection
     serviceNotes.test.js         — CRUD with date/shift validation
+    notifications.test.js        — Preferences CRUD (defaults, merge, validation), pending items (overdue, today summary)
     todos.test.js                — Shopping list, scaling, prep tasks, persistent task CRUD, generate, batch-complete
 ```
 
@@ -219,9 +222,23 @@ window.addEventListener('sync:dish_updated', (e) => {
 });
 ```
 
-Existing event types: `dish_created` · `dish_updated` · `dish_deleted` · `menu_created` · `menu_updated` · `menu_deleted` · `task_created` · `task_updated` · `task_deleted` · `tasks_generated` · `tasks_batch_updated` · `ingredient_updated` · `ingredients_stock_cleared`
+Existing event types: `dish_created` · `dish_updated` · `dish_deleted` · `menu_created` · `menu_updated` · `menu_deleted` · `task_created` · `task_updated` · `task_deleted` · `tasks_generated` · `tasks_batch_updated` · `ingredient_created` · `ingredient_updated` · `ingredients_stock_cleared` · `service_note_created` · `service_note_updated` · `service_note_deleted` · `special_created` · `special_updated` · `special_deleted`
 
 Broadcast on creates, updates, deletes. Never on reads.
+
+**Frontend sync listener cleanup pattern:**
+Pages that register `sync:` listeners must clean them up on navigation to prevent memory leaks. Use the `hashchange` event:
+```js
+const syncEvents = ['sync:some_created', 'sync:some_updated', 'sync:some_deleted'];
+const syncHandler = () => { /* re-fetch and re-render */ };
+for (const evt of syncEvents) window.addEventListener(evt, syncHandler);
+const cleanup = () => {
+  for (const evt of syncEvents) window.removeEventListener(evt, syncHandler);
+  window.removeEventListener('hashchange', cleanup);
+};
+window.addEventListener('hashchange', cleanup);
+```
+Pages using this pattern: `todoView.js`, `shoppingList.js`, `serviceNotes.js`, `specials.js`.
 
 ---
 
@@ -249,10 +266,11 @@ Full request → response cycle tests using **supertest** against a real Express
 
 ```
 auth.test.js          — Setup, login, logout, change-password, auth middleware
-dishes.test.js        — Full CRUD, ingredients, tags, directions, allergens, duplicate, favorite
+dishes.test.js        — Full CRUD, ingredients, tags, directions, allergens, duplicate, favorite, decimal batch_yield
 menus.test.js         — CRUD, dish management, cost rollup, allergy conflicts, kitchen print
 ingredients.test.js   — Create, upsert, update, search, in-stock toggle/clear, allergen detection
 serviceNotes.test.js  — CRUD with date/shift validation
+notifications.test.js — Preferences CRUD (defaults, merge, validation), pending items (overdue, today summary)
 todos.test.js         — Legacy shopping list/scaling/prep tasks + persistent task CRUD (prep+custom only),
                         generate, batch-complete, auto→manual promotion, filter by type/priority/completed
 ```
@@ -312,7 +330,7 @@ The pipeline catches lint errors and test failures before code reaches `main`.
 | POST | `/api/dishes/:id/duplicate` | Full copy including ingredients, headers, subs, tags, directions → 201 `{ id }` |
 | POST | `/api/dishes/:id/favorite` | Toggles is_favorite |
 | POST | `/api/dishes/:id/photo` | multipart/form-data, field name: `photo` |
-| POST | `/api/dishes/:id/allergens` | Body: `{ allergen, action: 'add'|'remove', source: 'manual' }` |
+| POST | `/api/dishes/:id/allergens` | Body: `{ allergen, action: 'add'|'remove', source: 'manual' }`. Broadcasts `dish_updated`. |
 | GET | `/api/dishes/tags/all` | All tags |
 | POST | `/api/dishes/import-url` | Body: `{ url }`. Scrapes recipe → returns dish-shaped JSON (incl. directions[]) |
 | POST | `/api/dishes/import-docx` | multipart/form-data, field name: `file` (.docx). Parses Meez export → returns dish-shaped JSON (incl. directions[]) |
@@ -340,7 +358,7 @@ The pipeline catches lint errors and test failures before code reaches `main`.
 | PUT | `/api/menus/:id/dishes/:dishId` | Body: servings |
 | DELETE | `/api/menus/:id/dishes/:dishId` | Remove dish from menu |
 | PUT | `/api/menus/:id/dishes/reorder` | Body: `{ order: [dishId, ...] }` |
-| GET | `/api/menus/:id/kitchen-print` | Scaled print data |
+| GET | `/api/menus/:id/kitchen-print` | Scaled print data: ingredients scaled by servings (includes `base_quantity`), directions, section headers, batch info (`batch_yield`, `total_portions`) per dish |
 
 ### Todos (legacy menu-based)
 | Method | Path | Notes |
@@ -377,6 +395,13 @@ The pipeline catches lint errors and test failures before code reaches `main`.
 | PUT | `/api/menus/specials/:id` | Same body |
 | DELETE | `/api/menus/specials/:id` | Hard delete |
 
+### Notifications
+| Method | Path | Notes |
+|--------|------|-------|
+| GET | `/api/notifications/preferences` | Returns merged notification prefs (defaults + saved). |
+| PUT | `/api/notifications/preferences` | Body: any subset of preference keys. Merges with existing. Validates numeric fields (1–120), time format (HH:MM). |
+| GET | `/api/notifications/pending` | Returns overdue tasks, upcoming tasks with due_time, today's summary counts, expiring specials, day phases. Used by client-side notification engine. |
+
 ### Auth (all public — no session required, except change-password)
 | Method | Path | Notes |
 |--------|------|-------|
@@ -394,7 +419,7 @@ The pipeline catches lint errors and test failures before code reaches `main`.
 
 | Table | Key columns |
 |-------|-------------|
-| `dishes` | id, name, description, category, photo_path, chefs_notes, suggested_price, is_favorite, deleted_at, manual_costs (JSON `[]`), service_notes, created_at, updated_at |
+| `dishes` | id, name, description, category, photo_path, chefs_notes, suggested_price, is_favorite, deleted_at, manual_costs (JSON `[]`), service_notes, batch_yield (REAL, default 1, portions per batch), created_at, updated_at |
 | `ingredients` | id, name, unit_cost, base_unit, category, in_stock (0/1, default 0) |
 | `dish_ingredients` | dish_id, ingredient_id, quantity, unit, prep_note, sort_order — **UNIQUE(dish_id, ingredient_id)** |
 | `dish_section_headers` | id, dish_id, label, sort_order — visual dividers in the ingredient list |
@@ -485,6 +510,15 @@ All `dishes` and `menus` queries must include `WHERE deleted_at IS NULL`. Record
 ### Photo paths
 The stored `photo_path` is the relative URL `/uploads/dish-TIMESTAMP.ext` — not a filesystem path. Served by Express static middleware. Do not store absolute paths.
 
+### Batch yield (recipe scaling)
+`dishes.batch_yield` (REAL, default 1) represents how many portions one batch of a recipe produces. Accepts any positive number (including decimals like 2.5). Used throughout:
+- **Dish cost**: `cost_per_portion = total_cost / batch_yield` (computed in `GET /api/dishes/:id`)
+- **Menu totals**: `total_portions = servings * batch_yield` (computed in `GET /api/menus/:id`)
+- **Shopping list**: `computed_covers` uses batch_yield for accurate scaling
+- **Kitchen print**: Ingredients are multiplied by `servings` (batch count); response includes `base_quantity`, `batch_yield`, and `total_portions`
+- **Menu builder portion calculator**: User enters a target portion count → `Math.ceil(target / batchYield)` auto-calculates the required number of batches (servings)
+- **Dish form**: Input accepts step 0.5, min 0.5, parsed as float
+
 ### Food cost colour thresholds (Menu Builder UI)
 green ≤30% · yellow 30–35% · red >35%
 
@@ -513,6 +547,16 @@ The sidebar has three states stored on `<html data-sidebar="...">` and persisted
 Use `setSidebarState(state)` in `app.js` to change state — it updates the attribute, persists to localStorage, and refreshes the toggle button icon in one call. The early inline `<script>` in `<head>` sets the attribute before the stylesheet renders to prevent a layout shift.
 
 The `data-sidebar` attribute is set on `<html>` alongside `data-theme` so a single selector like `html[data-sidebar="collapsed"] .nav-label { display: none; }` works without specificity fights.
+
+### Notification & reminder engine
+Client-side notification scheduling via `public/js/utils/notifications.js`. Architecture:
+- **Preferences** stored in `settings` table as JSON (`notification_preferences` key). Managed via `GET/PUT /api/notifications/preferences`.
+- **Pending items** fetched from `GET /api/notifications/pending` — returns overdue tasks, upcoming timed tasks, today's summary, expiring specials, and day phases.
+- **Scheduling** is client-side: `initNotifications()` runs on app load after auth, fetches pending data every 3 minutes, and sets `setTimeout` timers for upcoming events.
+- **Deduplication**: shown notifications tracked in `localStorage` with daily keys (`nt_shown_{tag}_{date}`). Stale markers auto-cleaned.
+- **Notification types**: daily briefing, prep phase transitions, task due reminders, overdue alerts, expiring specials. Each toggleable with configurable lead times.
+- **Service worker**: `notificationclick` handler in `service-worker.js` focuses the app window and navigates to the relevant hash route.
+- **Settings UI**: Notifications section in `#/settings` with per-type toggles, lead time inputs, and a test notification button.
 
 ---
 
@@ -543,6 +587,7 @@ Sub-sections (responsive overrides, etc.):
 | `.td-` | Todo/Task system redesign |
 | `.sl-` | Shopping List page |
 | `.st-` | Settings page |
+| `.nt-` | Notification settings |
 
 Global components (`.btn`, `.btn-ghost`, `.card`, `.modal`, `.toast`, `.input`, `.drag-handle`, `.action-menu-*`, `.collapsible-section*`, `.no-print`) are unprefixed. New features with more than ~3 classes get a prefix; add it to this table.
 

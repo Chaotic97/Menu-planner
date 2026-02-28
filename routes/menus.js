@@ -4,6 +4,8 @@ const { calculateDishCost } = require('../services/costCalculator');
 const { exportSpecialsDocx } = require('../services/specialsExporter');
 const asyncHandler = require('../middleware/asyncHandler');
 
+const { round2 } = require('../services/costCalculator');
+
 const router = express.Router();
 
 // Helper: compute cost for a single dish
@@ -149,11 +151,29 @@ router.get('/:id/kitchen-print', (req, res) => {
     'SELECT name, sort_order FROM dish_components WHERE dish_id = ? ORDER BY sort_order, id'
   );
 
+  const directionStmt = db.prepare(
+    'SELECT type, text, sort_order FROM dish_directions WHERE dish_id = ? ORDER BY sort_order, id'
+  );
+
   for (const dish of dishes) {
     dish.allergens = allergenStmt.all(dish.id).map(a => a.allergen);
-    dish.ingredients = ingredientStmt.all(dish.id);
+
+    // Scale ingredient quantities by servings (batch count)
+    const rawIngredients = ingredientStmt.all(dish.id);
+    const scaleFactor = dish.servings || 1;
+    dish.ingredients = rawIngredients.map(ing => ({
+      ...ing,
+      base_quantity: ing.quantity,
+      quantity: round2((Number(ing.quantity) || 0) * scaleFactor),
+    }));
+
     dish.substitutions = subsStmt.all(dish.id);
     dish.components = componentStmt.all(dish.id);
+    dish.directions = directionStmt.all(dish.id);
+
+    // Batch yield info for print
+    const batchYield = dish.batch_yield || 1;
+    dish.total_portions = dish.servings * batchYield;
   }
 
   // Group by category
@@ -383,6 +403,7 @@ router.post('/specials', (req, res) => {
     'INSERT INTO weekly_specials (dish_id, week_start, week_end, notes) VALUES (?, ?, ?, ?)'
   ).run(dish_id, week_start, week_end, notes || '');
 
+  req.broadcast('special_created', { id: result.lastInsertRowid, week_start }, req.headers['x-client-id']);
   res.status(201).json({ id: result.lastInsertRowid });
 });
 
@@ -403,6 +424,7 @@ router.put('/specials/:id', (req, res) => {
 
   params.push(req.params.id);
   db.prepare(`UPDATE weekly_specials SET ${updates.join(', ')} WHERE id = ?`).run(...params);
+  req.broadcast('special_updated', { id: parseInt(req.params.id) }, req.headers['x-client-id']);
   res.json({ success: true });
 });
 
@@ -410,6 +432,7 @@ router.put('/specials/:id', (req, res) => {
 router.delete('/specials/:id', (req, res) => {
   const db = getDb();
   db.prepare('DELETE FROM weekly_specials WHERE id = ?').run(req.params.id);
+  req.broadcast('special_deleted', { id: parseInt(req.params.id) }, req.headers['x-client-id']);
   res.json({ success: true });
 });
 
