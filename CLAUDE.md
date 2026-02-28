@@ -219,9 +219,23 @@ window.addEventListener('sync:dish_updated', (e) => {
 });
 ```
 
-Existing event types: `dish_created` · `dish_updated` · `dish_deleted` · `menu_created` · `menu_updated` · `menu_deleted` · `task_created` · `task_updated` · `task_deleted` · `tasks_generated` · `tasks_batch_updated` · `ingredient_updated` · `ingredients_stock_cleared`
+Existing event types: `dish_created` · `dish_updated` · `dish_deleted` · `menu_created` · `menu_updated` · `menu_deleted` · `task_created` · `task_updated` · `task_deleted` · `tasks_generated` · `tasks_batch_updated` · `ingredient_created` · `ingredient_updated` · `ingredients_stock_cleared` · `service_note_created` · `service_note_updated` · `service_note_deleted` · `special_created` · `special_updated` · `special_deleted`
 
 Broadcast on creates, updates, deletes. Never on reads.
+
+**Frontend sync listener cleanup pattern:**
+Pages that register `sync:` listeners must clean them up on navigation to prevent memory leaks. Use the `hashchange` event:
+```js
+const syncEvents = ['sync:some_created', 'sync:some_updated', 'sync:some_deleted'];
+const syncHandler = () => { /* re-fetch and re-render */ };
+for (const evt of syncEvents) window.addEventListener(evt, syncHandler);
+const cleanup = () => {
+  for (const evt of syncEvents) window.removeEventListener(evt, syncHandler);
+  window.removeEventListener('hashchange', cleanup);
+};
+window.addEventListener('hashchange', cleanup);
+```
+Pages using this pattern: `todoView.js`, `shoppingList.js`, `serviceNotes.js`, `specials.js`.
 
 ---
 
@@ -249,7 +263,7 @@ Full request → response cycle tests using **supertest** against a real Express
 
 ```
 auth.test.js          — Setup, login, logout, change-password, auth middleware
-dishes.test.js        — Full CRUD, ingredients, tags, directions, allergens, duplicate, favorite
+dishes.test.js        — Full CRUD, ingredients, tags, directions, allergens, duplicate, favorite, decimal batch_yield
 menus.test.js         — CRUD, dish management, cost rollup, allergy conflicts, kitchen print
 ingredients.test.js   — Create, upsert, update, search, in-stock toggle/clear, allergen detection
 serviceNotes.test.js  — CRUD with date/shift validation
@@ -312,7 +326,7 @@ The pipeline catches lint errors and test failures before code reaches `main`.
 | POST | `/api/dishes/:id/duplicate` | Full copy including ingredients, headers, subs, tags, directions → 201 `{ id }` |
 | POST | `/api/dishes/:id/favorite` | Toggles is_favorite |
 | POST | `/api/dishes/:id/photo` | multipart/form-data, field name: `photo` |
-| POST | `/api/dishes/:id/allergens` | Body: `{ allergen, action: 'add'|'remove', source: 'manual' }` |
+| POST | `/api/dishes/:id/allergens` | Body: `{ allergen, action: 'add'|'remove', source: 'manual' }`. Broadcasts `dish_updated`. |
 | GET | `/api/dishes/tags/all` | All tags |
 | POST | `/api/dishes/import-url` | Body: `{ url }`. Scrapes recipe → returns dish-shaped JSON (incl. directions[]) |
 | POST | `/api/dishes/import-docx` | multipart/form-data, field name: `file` (.docx). Parses Meez export → returns dish-shaped JSON (incl. directions[]) |
@@ -340,7 +354,7 @@ The pipeline catches lint errors and test failures before code reaches `main`.
 | PUT | `/api/menus/:id/dishes/:dishId` | Body: servings |
 | DELETE | `/api/menus/:id/dishes/:dishId` | Remove dish from menu |
 | PUT | `/api/menus/:id/dishes/reorder` | Body: `{ order: [dishId, ...] }` |
-| GET | `/api/menus/:id/kitchen-print` | Scaled print data |
+| GET | `/api/menus/:id/kitchen-print` | Scaled print data: ingredients scaled by servings (includes `base_quantity`), directions, section headers, batch info (`batch_yield`, `total_portions`) per dish |
 
 ### Todos (legacy menu-based)
 | Method | Path | Notes |
@@ -394,7 +408,7 @@ The pipeline catches lint errors and test failures before code reaches `main`.
 
 | Table | Key columns |
 |-------|-------------|
-| `dishes` | id, name, description, category, photo_path, chefs_notes, suggested_price, is_favorite, deleted_at, manual_costs (JSON `[]`), service_notes, created_at, updated_at |
+| `dishes` | id, name, description, category, photo_path, chefs_notes, suggested_price, is_favorite, deleted_at, manual_costs (JSON `[]`), service_notes, batch_yield (REAL, default 1, portions per batch), created_at, updated_at |
 | `ingredients` | id, name, unit_cost, base_unit, category, in_stock (0/1, default 0) |
 | `dish_ingredients` | dish_id, ingredient_id, quantity, unit, prep_note, sort_order — **UNIQUE(dish_id, ingredient_id)** |
 | `dish_section_headers` | id, dish_id, label, sort_order — visual dividers in the ingredient list |
@@ -484,6 +498,15 @@ All `dishes` and `menus` queries must include `WHERE deleted_at IS NULL`. Record
 
 ### Photo paths
 The stored `photo_path` is the relative URL `/uploads/dish-TIMESTAMP.ext` — not a filesystem path. Served by Express static middleware. Do not store absolute paths.
+
+### Batch yield (recipe scaling)
+`dishes.batch_yield` (REAL, default 1) represents how many portions one batch of a recipe produces. Accepts any positive number (including decimals like 2.5). Used throughout:
+- **Dish cost**: `cost_per_portion = total_cost / batch_yield` (computed in `GET /api/dishes/:id`)
+- **Menu totals**: `total_portions = servings * batch_yield` (computed in `GET /api/menus/:id`)
+- **Shopping list**: `computed_covers` uses batch_yield for accurate scaling
+- **Kitchen print**: Ingredients are multiplied by `servings` (batch count); response includes `base_quantity`, `batch_yield`, and `total_portions`
+- **Menu builder portion calculator**: User enters a target portion count → `Math.ceil(target / batchYield)` auto-calculates the required number of batches (servings)
+- **Dish form**: Input accepts step 0.5, min 0.5, parsed as float
 
 ### Food cost colour thresholds (Menu Builder UI)
 green ≤30% · yellow 30–35% · red >35%
