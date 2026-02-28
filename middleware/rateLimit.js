@@ -8,7 +8,7 @@
  *   max      — max requests per window per IP (default 20)
  *   message  — error message returned on 429 (optional)
  */
-function createRateLimit({ windowMs = 15 * 60 * 1000, max = 20, message } = {}) {
+function createRateLimit({ windowMs = 15 * 60 * 1000, max = 20, message, maxEntries = 10000 } = {}) {
   // ip -> { count, resetAt }
   const store = new Map();
 
@@ -29,6 +29,10 @@ function createRateLimit({ windowMs = 15 * 60 * 1000, max = 20, message } = {}) 
 
     let entry = store.get(ip);
     if (!entry || entry.resetAt <= now) {
+      if (!entry && store.size >= maxEntries) {
+        const oldest = store.keys().next().value;
+        store.delete(oldest);
+      }
       entry = { count: 0, resetAt: now + windowMs };
       store.set(ip, entry);
     }

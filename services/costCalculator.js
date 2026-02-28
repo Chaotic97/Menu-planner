@@ -14,6 +14,7 @@ const CONVERSIONS = {
 };
 
 function normalizeUnit(unit) {
+  if (!unit) return unit;
   const u = unit.toLowerCase().trim();
   const map = {
     'gram': 'g', 'grams': 'g', 'g': 'g',

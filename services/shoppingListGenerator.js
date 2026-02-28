@@ -24,7 +24,7 @@ function generateShoppingList(menuId) {
     JOIN dishes d ON d.id = md.dish_id
     JOIN dish_ingredients di ON di.dish_id = d.id
     JOIN ingredients i ON i.id = di.ingredient_id
-    WHERE md.menu_id = ?
+    WHERE md.menu_id = ? AND d.deleted_at IS NULL
   `).all(menuId);
 
   // Aggregate by ingredient
@@ -72,7 +72,7 @@ function generateShoppingList(menuId) {
       item.unit = 'kg';
     } else if (norm === 'ml' && item.total_quantity >= 1000) {
       item.total_quantity = round2(item.total_quantity / 1000);
-      item.unit = 'L';
+      item.unit = 'l';
     } else {
       item.total_quantity = round2(item.total_quantity);
     }

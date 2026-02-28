@@ -35,7 +35,7 @@ const UNIT_NORMALIZE = {
   'gram': 'g', 'grams': 'g', 'g': 'g',
   'kilogram': 'kg', 'kilograms': 'kg', 'kg': 'kg',
   'milliliter': 'ml', 'milliliters': 'ml', 'ml': 'ml',
-  'liter': 'L', 'liters': 'L', 'litre': 'L', 'litres': 'L', 'l': 'L',
+  'liter': 'l', 'liters': 'l', 'litre': 'l', 'litres': 'l', 'l': 'l',
   'pinch': 'pinch', 'bunch': 'bunch',
   'sprig': 'each', 'sprigs': 'each',
   'clove': 'each', 'cloves': 'each',

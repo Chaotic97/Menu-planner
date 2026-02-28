@@ -713,7 +713,7 @@ export async function renderMenuBuilder(container, menuId) {
         <div class="meta">
           Printed: ${new Date().toLocaleDateString()}
           ${data.expected_covers ? ` &nbsp;·&nbsp; <strong>Covers: ${data.expected_covers}</strong>` : ''}
-          ${data.guest_allergies.length ? ` &nbsp;·&nbsp; <span class="alert">&#9888; Guest Allergies: ${data.guest_allergies.join(', ').toUpperCase()}</span>` : ''}
+          ${data.guest_allergies.length ? ` &nbsp;·&nbsp; <span class="alert">&#9888; Guest Allergies: ${escapeHtml(data.guest_allergies.join(', ').toUpperCase())}</span>` : ''}
         </div>
       `;
 

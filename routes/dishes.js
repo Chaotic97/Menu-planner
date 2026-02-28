@@ -219,8 +219,8 @@ router.post('/:id/duplicate', (req, res) => {
   if (!source) return res.status(404).json({ error: 'Dish not found' });
 
   const result = db.prepare(`
-    INSERT INTO dishes (name, description, category, chefs_notes, service_notes, suggested_price, batch_yield)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO dishes (name, description, category, chefs_notes, service_notes, suggested_price, manual_costs, batch_yield)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     'Copy of ' + source.name,
     source.description,
@@ -228,6 +228,7 @@ router.post('/:id/duplicate', (req, res) => {
     source.chefs_notes,
     source.service_notes || '',
     source.suggested_price,
+    source.manual_costs || '[]',
     source.batch_yield || 1
   );
 
@@ -452,6 +453,9 @@ router.post('/:id/photo', upload.single('photo'), asyncHandler(async (req, res) 
   const db = getDb();
   if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
 
+  const dish = db.prepare('SELECT id FROM dishes WHERE id = ? AND deleted_at IS NULL').get(req.params.id);
+  if (!dish) return res.status(404).json({ error: 'Dish not found' });
+
   const filename = await processAndSavePhoto(req.file.buffer);
   const photoPath = `/uploads/${filename}`;
   db.prepare('UPDATE dishes SET photo_path = ?, updated_at = datetime(\'now\') WHERE id = ?').run(photoPath, req.params.id);
@@ -479,6 +483,10 @@ router.delete('/:id/photo', asyncHandler(async (req, res) => {
 // POST /api/dishes/:id/allergens - Manual allergen override
 router.post('/:id/allergens', (req, res) => {
   const db = getDb();
+
+  const dish = db.prepare('SELECT id FROM dishes WHERE id = ? AND deleted_at IS NULL').get(req.params.id);
+  if (!dish) return res.status(404).json({ error: 'Dish not found' });
+
   const { allergen, action } = req.body;
 
   const VALID_ALLERGENS = ['celery','crustaceans','eggs','fish','gluten','lupin','milk','molluscs','mustard','nuts','peanuts','sesame','soy','sulphites'];

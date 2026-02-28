@@ -242,7 +242,6 @@ export async function renderDishView(container, dishId) {
 
 function printDishSheet(dish) {
   const allergens = dish.allergens || [];
-  const ingredients = (dish.ingredients || []).filter(r => r.row_type !== 'section');
   const sections = dish.ingredients || [];
   const subs = dish.substitutions || [];
   const components = dish.components || [];

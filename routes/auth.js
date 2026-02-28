@@ -143,7 +143,9 @@ router.post('/reset', authRateLimit, asyncHandler(async (req, res) => {
     return res.status(400).json({ error: 'No reset request found. Please request a new one.' });
   }
 
-  if (storedToken.value !== token) {
+  const tokenBuf = Buffer.from(String(token));
+  const storedBuf = Buffer.from(String(storedToken.value));
+  if (tokenBuf.length !== storedBuf.length || !crypto.timingSafeEqual(tokenBuf, storedBuf)) {
     return res.status(400).json({ error: 'Invalid reset token.' });
   }
 
@@ -181,6 +183,9 @@ router.post('/change-password', authRateLimit, asyncHandler(async (req, res) => 
   }
 
   const passwordRow = getSetting(db, 'password_hash');
+  if (!passwordRow) {
+    return res.status(400).json({ error: 'Password not set up yet.' });
+  }
   const match = await bcrypt.compare(currentPassword, passwordRow.value);
   if (!match) {
     return res.status(401).json({ error: 'Current password is incorrect.' });

@@ -21,7 +21,7 @@ const TIMING_DAY_OFFSET = {
 function addDays(dateStr, days) {
   const d = new Date(dateStr + 'T12:00:00Z');
   d.setUTCDate(d.getUTCDate() + days);
-  return d.toUTCString().length ? d.toISOString().slice(0, 10) : dateStr;
+  return d.toISOString().slice(0, 10);
 }
 
 /**
@@ -37,21 +37,29 @@ function getDateForDay(weekStart, dayNum) {
 }
 
 /**
- * Transform prep tasks result into task row objects (pure function).
+ * Transform prep tasks result into task row objects.
  */
 function buildPrepTaskRows(prepResult, menuId) {
   const db = getDb();
+
+  // Batch-lookup dish names → ids to avoid N+1 queries
+  const dishNameSet = new Set();
+  for (const group of prepResult.task_groups) {
+    for (const task of group.tasks) {
+      if (task.dish) dishNameSet.add(task.dish);
+    }
+  }
+  const dishIdMap = new Map();
+  const dishStmt = db.prepare('SELECT id FROM dishes WHERE name = ? AND deleted_at IS NULL');
+  for (const name of dishNameSet) {
+    const dish = dishStmt.get(name);
+    if (dish) dishIdMap.set(name, dish.id);
+  }
+
   const rows = [];
   for (const group of prepResult.task_groups) {
     for (const task of group.tasks) {
-      // Look up dish id for source tracking
-      let dishId = null;
-      if (task.dish) {
-        const dish = db.prepare(
-          'SELECT id FROM dishes WHERE name = ? AND deleted_at IS NULL'
-        ).get(task.dish);
-        if (dish) dishId = dish.id;
-      }
+      const dishId = task.dish ? (dishIdMap.get(task.dish) || null) : null;
       rows.push({
         menu_id: menuId,
         source_dish_id: dishId,
@@ -99,18 +107,25 @@ function buildWeeklyTaskRows(prepResult, menuId, weekStart) {
   const dayOrder = { 1: 0, 2: 1, 3: 2, 4: 3, 5: 4, 6: 5, 0: 6 };
   const sortedDays = [...scheduleDays].sort((a, b) => dayOrder[a] - dayOrder[b]);
 
+  // Batch-lookup dish names → ids to avoid N+1 queries
+  const dishNameSet = new Set();
+  for (const group of prepResult.task_groups) {
+    for (const task of group.tasks) {
+      if (task.dish) dishNameSet.add(task.dish);
+    }
+  }
+  const dishIdMap = new Map();
+  const dishStmt = db.prepare('SELECT id FROM dishes WHERE name = ? AND deleted_at IS NULL');
+  for (const name of dishNameSet) {
+    const dish = dishStmt.get(name);
+    if (dish) dishIdMap.set(name, dish.id);
+  }
+
   const rows = [];
 
   for (const group of prepResult.task_groups) {
     for (const task of group.tasks) {
-      // Look up dish id
-      let dishId = null;
-      if (task.dish) {
-        const dish = db.prepare(
-          'SELECT id FROM dishes WHERE name = ? AND deleted_at IS NULL'
-        ).get(task.dish);
-        if (dish) dishId = dish.id;
-      }
+      const dishId = task.dish ? (dishIdMap.get(task.dish) || null) : null;
 
       // Determine which days this dish runs
       const activeDays = dishId && dishDays[dishId] ? dishDays[dishId] : sortedDays;

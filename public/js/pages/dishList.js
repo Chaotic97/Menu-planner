@@ -29,7 +29,7 @@ export async function renderDishList(container) {
       ${allTags.length ? `
         <select id="dish-tag-filter" class="input" style="flex:0 0 140px;">
           <option value="">All Tags</option>
-          ${allTags.map(t => `<option value="${t.name}">${t.name}</option>`).join('')}
+          ${allTags.map(t => `<option value="${escapeHtml(t.name)}">${escapeHtml(t.name)}</option>`).join('')}
         </select>
       ` : ''}
       <button id="fav-filter-btn" class="filter-favorites-btn" title="Show favorites only">&hearts; Favorites</button>
