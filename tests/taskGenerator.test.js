@@ -21,26 +21,19 @@ describe('buildPrepTaskRows', () => {
   const prepResult = {
     task_groups: [
       {
-        timing: 'day_before',
-        label: 'Day Before Service',
-        tasks: [
-          { task: 'Dice and render guanciale', dish: 'Pasta Carbonara', timing: 'day_before', source: 'directions' },
-        ],
-      },
-      {
         timing: 'during_service',
         label: 'During Service',
         tasks: [
-          { task: 'Boil spaghetti in salted water', dish: 'Pasta Carbonara', timing: 'during_service', source: 'directions' },
-          { task: 'Toss with dressing and croutons', dish: 'Caesar Salad', timing: 'during_service', source: 'directions' },
+          { task: 'Pasta Carbonara', dish: 'Pasta Carbonara', timing: 'during_service', source: 'dish' },
+          { task: 'Caesar Salad', dish: 'Caesar Salad', timing: 'during_service', source: 'dish' },
         ],
       },
     ],
   };
 
-  test('transforms prep task groups into task rows', () => {
+  test('transforms prep task groups into task rows (one per dish)', () => {
     const rows = buildPrepTaskRows(prepResult, 1);
-    expect(rows).toHaveLength(3);
+    expect(rows).toHaveLength(2);
   });
 
   test('sets type to prep and source to auto', () => {
@@ -53,14 +46,20 @@ describe('buildPrepTaskRows', () => {
 
   test('preserves timing_bucket', () => {
     const rows = buildPrepTaskRows(prepResult, 1);
-    const guanciale = rows.find(r => r.title.includes('guanciale'));
-    expect(guanciale.timing_bucket).toBe('day_before');
+    for (const row of rows) {
+      expect(row.timing_bucket).toBe('during_service');
+    }
+  });
+
+  test('uses dish name as title', () => {
+    const rows = buildPrepTaskRows(prepResult, 1);
+    expect(rows[0].title).toBe('Pasta Carbonara');
+    expect(rows[1].title).toBe('Caesar Salad');
   });
 
   test('uses dish name as description', () => {
     const rows = buildPrepTaskRows(prepResult, 1);
-    const boil = rows.find(r => r.title.includes('Boil'));
-    expect(boil.description).toBe('Pasta Carbonara');
+    expect(rows[0].description).toBe('Pasta Carbonara');
   });
 
   test('looks up dish id via DB', () => {
@@ -124,17 +123,11 @@ describe('buildWeeklyTaskRows', () => {
   const prepResult = {
     task_groups: [
       {
-        timing: 'day_before',
-        label: 'Day Before Service',
+        timing: 'during_service',
+        label: 'During Service',
         tasks: [
-          { task: 'Marinate lamb overnight', dish: 'Grilled Lamb', timing: 'day_before', source: 'directions' },
-        ],
-      },
-      {
-        timing: 'morning_of',
-        label: 'Morning of Service',
-        tasks: [
-          { task: 'Make fresh pasta dough', dish: 'Pasta Special', timing: 'morning_of', source: 'directions' },
+          { task: 'Grilled Lamb', dish: 'Grilled Lamb', timing: 'during_service', source: 'dish' },
+          { task: 'Pasta Special', dish: 'Pasta Special', timing: 'during_service', source: 'dish' },
         ],
       },
     ],
@@ -153,13 +146,14 @@ describe('buildWeeklyTaskRows', () => {
   test('assigns due_date based on timing bucket and first service day', () => {
     // Week of 2026-03-02 (Monday), schedule Wed-Sun
     // First service day = Wed 2026-03-04
+    // during_service offset = 0, so due_date = Wed 2026-03-04
     const rows = buildWeeklyTaskRows(prepResult, 1, '2026-03-02');
 
-    const lamb = rows.find(r => r.title.includes('Marinate'));
-    expect(lamb.due_date).toBe('2026-03-03'); // day_before Wed = Tue
+    const lamb = rows.find(r => r.title === 'Grilled Lamb');
+    expect(lamb.due_date).toBe('2026-03-04'); // during_service Wed = Wed
 
-    const pasta = rows.find(r => r.title.includes('pasta'));
-    expect(pasta.due_date).toBe('2026-03-04'); // morning_of Wed = Wed
+    const pasta = rows.find(r => r.title === 'Pasta Special');
+    expect(pasta.due_date).toBe('2026-03-04'); // during_service Wed = Wed
   });
 
   test('all rows have type prep and source auto', () => {
