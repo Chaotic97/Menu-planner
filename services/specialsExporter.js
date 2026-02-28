@@ -38,7 +38,7 @@ async function exportSpecialsDocx(weekStart) {
            d.category, d.suggested_price, d.service_notes
     FROM weekly_specials ws
     JOIN dishes d ON d.id = ws.dish_id
-    WHERE ws.week_start <= ? AND ws.week_end >= ? AND ws.is_active = 1
+    WHERE ws.week_start <= ? AND ws.week_end >= ? AND ws.is_active = 1 AND d.deleted_at IS NULL
     ORDER BY d.category, d.name
   `).all(weekStart, weekStart);
 

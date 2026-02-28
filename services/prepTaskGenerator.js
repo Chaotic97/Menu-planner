@@ -4,7 +4,7 @@ function extractTiming(text) {
   const lower = text.toLowerCase();
   if (/overnight|day before|24\s*h|the night before/i.test(lower)) return 'day_before';
   if (/morning|same day|4[-\s]?6\s*h|half day|hours ahead/i.test(lower)) return 'morning_of';
-  if (/[12]\s*h.*before|hour before|2 hours/i.test(lower)) return '1_2_hours_before';
+  if (/[12]\d?\s*h.*before|hour before|2 hours/i.test(lower)) return '1_2_hours_before';
   if (/30\s*min|just before|right before|last minute|à la minute/i.test(lower)) return 'last_minute';
   return 'during_service';
 }

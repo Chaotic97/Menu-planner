@@ -62,7 +62,7 @@ router.get('/:id', (req, res) => {
     SELECT d.*, md.servings, md.sort_order, md.id AS menu_dish_id, md.active_days
     FROM menu_dishes md
     JOIN dishes d ON d.id = md.dish_id
-    WHERE md.menu_id = ?
+    WHERE md.menu_id = ? AND d.deleted_at IS NULL
     ORDER BY md.sort_order, d.category, d.name
   `).all(menu.id);
 
@@ -243,8 +243,18 @@ router.put('/:id', (req, res) => {
   if (name) { updates.push('name = ?'); params.push(name); }
   if (description !== undefined) { updates.push('description = ?'); params.push(description); }
   if (is_active !== undefined) { updates.push('is_active = ?'); params.push(is_active ? 1 : 0); }
-  if (sell_price !== undefined) { updates.push('sell_price = ?'); params.push(sell_price); }
-  if (expected_covers !== undefined) { updates.push('expected_covers = ?'); params.push(expected_covers); }
+  if (sell_price !== undefined) {
+    if (typeof sell_price !== 'number' || isNaN(sell_price) || sell_price < 0) {
+      return res.status(400).json({ error: 'sell_price must be a non-negative number' });
+    }
+    updates.push('sell_price = ?'); params.push(sell_price);
+  }
+  if (expected_covers !== undefined) {
+    if (typeof expected_covers !== 'number' || isNaN(expected_covers) || expected_covers < 0 || !Number.isInteger(expected_covers)) {
+      return res.status(400).json({ error: 'expected_covers must be a non-negative integer' });
+    }
+    updates.push('expected_covers = ?'); params.push(expected_covers);
+  }
   if (guest_allergies !== undefined) { updates.push('guest_allergies = ?'); params.push(guest_allergies); }
   if (allergen_covers !== undefined) {
     updates.push('allergen_covers = ?');
@@ -347,7 +357,12 @@ router.put('/:id/dishes/:dishId', (req, res) => {
 
   const updates = [];
   const params = [];
-  if (servings !== undefined) { updates.push('servings = ?'); params.push(servings); }
+  if (servings !== undefined) {
+    if (typeof servings !== 'number' || isNaN(servings) || servings < 1) {
+      return res.status(400).json({ error: 'servings must be a positive number' });
+    }
+    updates.push('servings = ?'); params.push(servings);
+  }
   if (sort_order !== undefined) { updates.push('sort_order = ?'); params.push(sort_order); }
   if (active_days !== undefined) {
     updates.push('active_days = ?');
@@ -401,7 +416,7 @@ router.get('/specials/list', (req, res) => {
     FROM weekly_specials ws
     JOIN dishes d ON d.id = ws.dish_id
   `;
-  const conditions = [];
+  const conditions = ['d.deleted_at IS NULL'];
   const params = [];
 
   if (week) {

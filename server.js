@@ -53,6 +53,13 @@ app.use(session({
   },
 }));
 
+// Security headers
+app.use((req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  next();
+});
+
 // Auth middleware (blocks unauthenticated API requests)
 app.use(authMiddleware);
 
@@ -94,6 +101,10 @@ wss.on('connection', (ws) => {
   ws.on('close', () => {
     if (clientId) clients.delete(clientId);
   });
+
+  ws.on('error', () => {
+    if (clientId) clients.delete(clientId);
+  });
 });
 
 // Initialize database then start server
@@ -120,6 +131,7 @@ async function start() {
   // Global error handler — catches unhandled errors from async routes
   app.use((err, req, res, _next) => {
     console.error('Unhandled route error:', err);
+    if (res.headersSent) return;
     res.status(err.status || 500).json({
       error: process.env.NODE_ENV === 'production' ? 'Internal server error' : err.message,
     });

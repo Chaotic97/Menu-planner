@@ -1934,6 +1934,7 @@ textarea.input { resize: vertical; min-height: 80px; }
 .toast-success { background: #2e7d32; color: white; }
 .toast-error { background: var(--danger); color: white; }
 .toast-info { background: #1565c0; color: white; }
+.toast-warning { background: var(--warning); color: white; }
 
 /* ============================
    Utilities
