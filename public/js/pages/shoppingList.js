@@ -368,5 +368,22 @@ export async function renderShoppingList(container, menuId) {
     }
   }
 
+  // Sync event listeners — refresh when ingredients or menus change
+  const syncEvents = ['sync:ingredient_updated', 'sync:ingredient_created', 'sync:ingredients_stock_cleared', 'sync:menu_updated'];
+  const syncHandler = async () => {
+    await loadShoppingList();
+    await renderPage();
+  };
+  for (const evt of syncEvents) {
+    window.addEventListener(evt, syncHandler);
+  }
+  const cleanupOnNav = () => {
+    for (const evt of syncEvents) {
+      window.removeEventListener(evt, syncHandler);
+    }
+    window.removeEventListener('hashchange', cleanupOnNav);
+  };
+  window.addEventListener('hashchange', cleanupOnNav);
+
   await renderPage();
 }

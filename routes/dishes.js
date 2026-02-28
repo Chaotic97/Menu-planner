@@ -170,8 +170,8 @@ router.post('/', (req, res) => {
 
   if (!name) return res.status(400).json({ error: 'Name is required' });
   if (batch_yield !== undefined && batch_yield !== null) {
-    if (typeof batch_yield !== 'number' || !Number.isInteger(batch_yield) || batch_yield < 1) {
-      return res.status(400).json({ error: 'batch_yield must be a positive integer' });
+    if (typeof batch_yield !== 'number' || isNaN(batch_yield) || batch_yield <= 0) {
+      return res.status(400).json({ error: 'batch_yield must be a positive number' });
     }
   }
 
@@ -360,8 +360,8 @@ router.put('/:id', (req, res) => {
   const { name, description, category, chefs_notes, service_notes, suggested_price, ingredients, tags, substitutions, manual_costs, components, directions, batch_yield } = req.body;
 
   if (batch_yield !== undefined && batch_yield !== null) {
-    if (typeof batch_yield !== 'number' || !Number.isInteger(batch_yield) || batch_yield < 1) {
-      return res.status(400).json({ error: 'batch_yield must be a positive integer' });
+    if (typeof batch_yield !== 'number' || isNaN(batch_yield) || batch_yield <= 0) {
+      return res.status(400).json({ error: 'batch_yield must be a positive number' });
     }
   }
 
@@ -474,6 +474,7 @@ router.post('/:id/allergens', (req, res) => {
     db.prepare('DELETE FROM dish_allergens WHERE dish_id = ? AND allergen = ?').run(req.params.id, allergen);
   }
 
+  req.broadcast('dish_updated', { id: parseInt(req.params.id) }, req.headers['x-client-id']);
   res.json({ success: true });
 });
 

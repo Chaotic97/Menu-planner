@@ -224,6 +224,7 @@ async function createTestApp() {
     `ALTER TABLE tasks ADD COLUMN is_next INTEGER DEFAULT 0`,
     `CREATE INDEX IF NOT EXISTS idx_tasks_day_phase ON tasks(day_phase)`,
     `CREATE INDEX IF NOT EXISTS idx_tasks_is_next ON tasks(is_next)`,
+    `UPDATE dishes SET batch_yield = CAST(batch_yield AS REAL) WHERE typeof(batch_yield) = 'integer'`,
   ];
 
   for (const sql of MIGRATIONS) {

@@ -296,5 +296,19 @@ export async function renderSpecials(container) {
     });
   }
 
+  // Sync event listeners — refresh when specials change in another tab
+  const syncEvents = ['sync:special_created', 'sync:special_updated', 'sync:special_deleted'];
+  const syncHandler = () => loadSpecials();
+  for (const evt of syncEvents) {
+    window.addEventListener(evt, syncHandler);
+  }
+  const cleanupOnNav = () => {
+    for (const evt of syncEvents) {
+      window.removeEventListener(evt, syncHandler);
+    }
+    window.removeEventListener('hashchange', cleanupOnNav);
+  };
+  window.addEventListener('hashchange', cleanupOnNav);
+
   loadSpecials();
 }

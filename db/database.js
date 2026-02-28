@@ -237,6 +237,10 @@ async function initialize() {
     `ALTER TABLE tasks ADD COLUMN is_next INTEGER DEFAULT 0`,
     `CREATE INDEX IF NOT EXISTS idx_tasks_day_phase ON tasks(day_phase)`,
     `CREATE INDEX IF NOT EXISTS idx_tasks_is_next ON tasks(is_next)`,
+    // Allow decimal batch_yield (e.g. 2.5 portions per batch)
+    // SQLite ignores column type changes, but we can update existing integer values
+    // and the app validation now accepts any positive number
+    `UPDATE dishes SET batch_yield = CAST(batch_yield AS REAL) WHERE typeof(batch_yield) = 'integer'`,
   ];
 
   for (const sql of MIGRATIONS) {

@@ -409,10 +409,20 @@ describe('Batch yield', () => {
     expect(res.body.error).toMatch(/batch_yield/i);
   });
 
-  test('rejects non-integer batch_yield', async () => {
+  test('accepts decimal batch_yield', async () => {
     const res = await agent
       .post('/api/dishes')
       .send(createDish({ name: 'Float Yield', batch_yield: 2.5 }))
+      .expect(201);
+    const dish = await agent.get(`/api/dishes/${res.body.id}`).expect(200);
+    expect(dish.body.batch_yield).toBe(2.5);
+    expect(dish.body.cost.batchYield).toBe(2.5);
+  });
+
+  test('rejects zero batch_yield', async () => {
+    const res = await agent
+      .post('/api/dishes')
+      .send(createDish({ name: 'Zero Yield', batch_yield: 0 }))
       .expect(400);
     expect(res.body.error).toMatch(/batch_yield/i);
   });
