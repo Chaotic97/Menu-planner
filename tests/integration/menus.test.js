@@ -324,21 +324,119 @@ describe('GET /api/menus/:id/kitchen-print', () => {
   });
 });
 
+// ─── MENU TYPES ────────────────────────────────────────────────────────────
+
+describe('Menu types (standard / event)', () => {
+  test('creates an event menu by default', async () => {
+    const res = await agent
+      .post('/api/menus')
+      .send({ name: 'Default Type Menu' })
+      .expect(201);
+
+    const detail = await agent.get(`/api/menus/${res.body.id}`).expect(200);
+    expect(detail.body.menu_type).toBe('event');
+  });
+
+  test('creates a standard (house) menu', async () => {
+    const res = await agent
+      .post('/api/menus')
+      .send({ name: 'House Menu', menu_type: 'standard' })
+      .expect(201);
+
+    const detail = await agent.get(`/api/menus/${res.body.id}`).expect(200);
+    expect(detail.body.menu_type).toBe('standard');
+  });
+
+  test('setting a new standard menu demotes the previous one', async () => {
+    const first = await agent.post('/api/menus').send({ name: 'House 1', menu_type: 'standard' }).expect(201);
+    const second = await agent.post('/api/menus').send({ name: 'House 2', menu_type: 'standard' }).expect(201);
+
+    const firstDetail = await agent.get(`/api/menus/${first.body.id}`).expect(200);
+    const secondDetail = await agent.get(`/api/menus/${second.body.id}`).expect(200);
+
+    expect(firstDetail.body.menu_type).toBe('event');
+    expect(secondDetail.body.menu_type).toBe('standard');
+  });
+
+  test('promotes an event menu to standard via PUT', async () => {
+    const house = await agent.post('/api/menus').send({ name: 'Old House', menu_type: 'standard' }).expect(201);
+    const event = await agent.post('/api/menus').send({ name: 'New House' }).expect(201);
+
+    await agent.put(`/api/menus/${event.body.id}`).send({ menu_type: 'standard' }).expect(200);
+
+    const oldDetail = await agent.get(`/api/menus/${house.body.id}`).expect(200);
+    const newDetail = await agent.get(`/api/menus/${event.body.id}`).expect(200);
+
+    expect(oldDetail.body.menu_type).toBe('event');
+    expect(newDetail.body.menu_type).toBe('standard');
+  });
+
+  test('demoting to event clears schedule_days', async () => {
+    const menu = await agent.post('/api/menus').send({ name: 'Schedule House', menu_type: 'standard', schedule_days: [1, 2, 3] }).expect(201);
+    await agent.put(`/api/menus/${menu.body.id}`).send({ menu_type: 'event' }).expect(200);
+
+    const detail = await agent.get(`/api/menus/${menu.body.id}`).expect(200);
+    expect(detail.body.menu_type).toBe('event');
+    expect(JSON.parse(detail.body.schedule_days)).toEqual([]);
+  });
+
+  test('rejects invalid menu_type', async () => {
+    await agent.post('/api/menus').send({ name: 'Bad Type', menu_type: 'brunch' }).expect(400);
+  });
+
+  test('creates event menu with event_date', async () => {
+    const res = await agent
+      .post('/api/menus')
+      .send({ name: 'Wedding', event_date: '2026-06-15' })
+      .expect(201);
+
+    const detail = await agent.get(`/api/menus/${res.body.id}`).expect(200);
+    expect(detail.body.event_date).toBe('2026-06-15');
+  });
+
+  test('rejects invalid event_date format', async () => {
+    await agent.post('/api/menus').send({ name: 'Bad Date', event_date: 'June 15th' }).expect(400);
+  });
+
+  test('rejects schedule_days on event menu', async () => {
+    await agent
+      .post('/api/menus')
+      .send({ name: 'Event Schedule', menu_type: 'event', schedule_days: [1, 2] })
+      .expect(400);
+  });
+
+  test('rejects schedule_days update on event menu', async () => {
+    const menu = await agent.post('/api/menus').send({ name: 'Event Menu' }).expect(201);
+    await agent.put(`/api/menus/${menu.body.id}`).send({ schedule_days: [1, 2] }).expect(400);
+  });
+
+  test('standard menus sort first in list', async () => {
+    // Create an event menu, then a standard menu
+    await agent.post('/api/menus').send({ name: 'Event Z' }).expect(201);
+    await agent.post('/api/menus').send({ name: 'My House', menu_type: 'standard' }).expect(201);
+
+    const list = await agent.get('/api/menus').expect(200);
+    const standardIdx = list.body.findIndex(m => m.name === 'My House');
+    const eventIdx = list.body.findIndex(m => m.name === 'Event Z');
+    expect(standardIdx).toBeLessThan(eventIdx);
+  });
+});
+
 // ─── WEEKLY SCHEDULE ─────────────────────────────────────────────────────────
 
 describe('Weekly schedule (schedule_days & active_days)', () => {
-  test('creates menu with schedule_days', async () => {
+  test('creates standard menu with schedule_days', async () => {
     const res = await agent
       .post('/api/menus')
-      .send({ name: 'Weekly Menu', schedule_days: [3, 4, 5, 6, 0] })
+      .send({ name: 'Weekly Menu', menu_type: 'standard', schedule_days: [3, 4, 5, 6, 0] })
       .expect(201);
 
     const detail = await agent.get(`/api/menus/${res.body.id}`).expect(200);
     expect(JSON.parse(detail.body.schedule_days)).toEqual([3, 4, 5, 6, 0]);
   });
 
-  test('updates schedule_days on existing menu', async () => {
-    const menu = await agent.post('/api/menus').send({ name: 'Update Schedule' }).expect(201);
+  test('updates schedule_days on standard menu', async () => {
+    const menu = await agent.post('/api/menus').send({ name: 'Update Schedule', menu_type: 'standard' }).expect(201);
     await agent.put(`/api/menus/${menu.body.id}`).send({ schedule_days: [1, 2, 3] }).expect(200);
 
     const detail = await agent.get(`/api/menus/${menu.body.id}`).expect(200);
@@ -348,18 +446,18 @@ describe('Weekly schedule (schedule_days & active_days)', () => {
   test('rejects invalid schedule_days', async () => {
     await agent
       .post('/api/menus')
-      .send({ name: 'Bad Schedule', schedule_days: [7] })
+      .send({ name: 'Bad Schedule', menu_type: 'standard', schedule_days: [7] })
       .expect(400);
 
     await agent
       .post('/api/menus')
-      .send({ name: 'Bad Schedule', schedule_days: 'not-array' })
+      .send({ name: 'Bad Schedule', menu_type: 'standard', schedule_days: 'not-array' })
       .expect(400);
   });
 
   test('sets active_days on a menu dish', async () => {
     const dishId = await createDish('Schedule Dish');
-    const menu = await agent.post('/api/menus').send({ name: 'Day Menu', schedule_days: [3, 4, 5, 6, 0] }).expect(201);
+    const menu = await agent.post('/api/menus').send({ name: 'Day Menu', menu_type: 'standard', schedule_days: [3, 4, 5, 6, 0] }).expect(201);
     await agent.post(`/api/menus/${menu.body.id}/dishes`).send({ dish_id: dishId, servings: 1 }).expect(201);
 
     // Set active_days to Wed only
@@ -372,7 +470,7 @@ describe('Weekly schedule (schedule_days & active_days)', () => {
 
   test('clears active_days back to null', async () => {
     const dishId = await createDish('Clear Days Dish');
-    const menu = await agent.post('/api/menus').send({ name: 'Clear Menu', schedule_days: [3, 4, 5] }).expect(201);
+    const menu = await agent.post('/api/menus').send({ name: 'Clear Menu', menu_type: 'standard', schedule_days: [3, 4, 5] }).expect(201);
     await agent.post(`/api/menus/${menu.body.id}/dishes`).send({ dish_id: dishId, servings: 1 }).expect(201);
 
     await agent.put(`/api/menus/${menu.body.id}/dishes/${dishId}`).send({ active_days: [3] }).expect(200);

@@ -12,6 +12,17 @@ import { printSheet } from '../utils/printSheet.js';
 const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const DAY_LETTERS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
 
+function isHouseMenu(menu) { return menu.menu_type === 'standard'; }
+function isEventPast(eventDate) {
+  if (!eventDate) return false;
+  return eventDate < new Date().toISOString().slice(0, 10);
+}
+function formatEventDate(dateStr) {
+  if (!dateStr) return '';
+  const d = new Date(dateStr + 'T12:00:00Z');
+  return d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
+}
+
 function getNextMonday() {
   const d = new Date();
   const day = d.getDay();
@@ -57,13 +68,18 @@ export async function renderMenuBuilder(container, menuId) {
       grouped[cat].push(dish);
     }
 
+    const isHouse = isHouseMenu(menu);
+    const past = !isHouse && isEventPast(menu.event_date);
+
     container.innerHTML = `
       <div class="page-header">
         <a href="#/menus" class="btn btn-back">&larr; Back</a>
         <div class="menu-title-area">
           <div class="menu-title-row">
+            ${isHouse ? '<span class="ml-house-badge" style="margin-right:8px;">House Menu</span>' : ''}
+            ${!isHouse && menu.event_date ? `<span class="ml-event-date ${past ? 'ml-event-past' : ''}" style="margin-right:8px;">${escapeHtml(formatEventDate(menu.event_date))}${past ? ' <span class="ml-past-label">Past</span>' : ''}</span>` : ''}
             <h1 id="menu-title">${escapeHtml(menu.name)}</h1>
-            <button id="edit-menu-name-btn" class="btn btn-icon" title="Edit menu name">
+            <button id="edit-menu-name-btn" class="btn btn-icon" title="Edit menu details">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" width="16" height="16"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
             </button>
           </div>
@@ -75,7 +91,16 @@ export async function renderMenuBuilder(container, menuId) {
         </div>
       </div>
 
-      <!-- Weekly Schedule -->
+      ${!isHouse && menu.expected_covers ? `
+        <div class="mb-event-covers-bar">
+          <strong>${menu.expected_covers} covers</strong>
+          ${menu.sell_price ? `<span> &middot; $${Number(menu.sell_price).toFixed(2)}</span>` : ''}
+          ${menu.event_date ? `<span> &middot; ${escapeHtml(formatEventDate(menu.event_date))}</span>` : ''}
+        </div>
+      ` : ''}
+
+      ${isHouse ? `
+      <!-- Weekly Schedule (house menu only) -->
       <div class="mb-schedule-bar">
         <div class="mb-schedule-days">
           <label class="mb-schedule-label">Service Days</label>
@@ -94,6 +119,7 @@ export async function renderMenuBuilder(container, menuId) {
           <div class="mb-schedule-hint">Select the days this menu runs to enable weekly prep task generation</div>
         `}
       </div>
+      ` : ''}
 
       <!-- Guest Allergies (collapsible) -->
       <div class="collapsible-section" id="mb-allergy-section">
@@ -155,7 +181,7 @@ export async function renderMenuBuilder(container, menuId) {
                     ${renderAllergenBadges(dish.allergens, true)}
                     ${hasConflict ? `<div class="mb-allergy-warning">&#9888; Guest allergy: ${dish.allergy_conflicts.join(', ')}</div>` : ''}
                     ${dish.substitution_count > 0 ? `<span class="subs-badge" data-dish-id="${dish.id}" title="Has allergen substitutions">&#8644; ${dish.substitution_count} sub${dish.substitution_count > 1 ? 's' : ''}</span>` : ''}
-                    ${scheduleDays.length ? `
+                    ${isHouse && scheduleDays.length ? `
                       <div class="mb-dish-days" data-dish-id="${dish.id}">
                         ${scheduleDays.map(d => {
                           const isActive = dishActiveDays === null || dishActiveDays.includes(d);
@@ -198,7 +224,7 @@ export async function renderMenuBuilder(container, menuId) {
       `}
     `;
 
-    // Edit menu name / description
+    // Edit menu details
     container.querySelector('#edit-menu-name-btn').addEventListener('click', () => {
       const modal = openModal('Edit Menu', `
         <form id="edit-menu-form" class="form">
@@ -210,6 +236,22 @@ export async function renderMenuBuilder(container, menuId) {
             <label for="edit-menu-desc">Description</label>
             <textarea id="edit-menu-desc" class="input" rows="2">${escapeHtml(menu.description || '')}</textarea>
           </div>
+          ${!isHouse ? `
+            <div class="form-group">
+              <label for="edit-event-date">Event Date</label>
+              <input type="date" id="edit-event-date" class="input" value="${menu.event_date || ''}">
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label for="edit-sell-price">Sell Price ($)</label>
+                <input type="number" id="edit-sell-price" class="input" step="0.01" min="0" value="${menu.sell_price || ''}">
+              </div>
+              <div class="form-group">
+                <label for="edit-covers">Expected Covers</label>
+                <input type="number" id="edit-covers" class="input" min="0" value="${menu.expected_covers || ''}">
+              </div>
+            </div>
+          ` : ''}
           <div class="form-actions">
             <button type="submit" class="btn btn-primary">Save</button>
           </div>
@@ -221,10 +263,15 @@ export async function renderMenuBuilder(container, menuId) {
         const name = modal.querySelector('#edit-menu-name').value.trim();
         if (!name) return;
         const description = modal.querySelector('#edit-menu-desc').value.trim();
+        const updates = { name, description };
+        if (!isHouse) {
+          updates.event_date = modal.querySelector('#edit-event-date').value || null;
+          updates.sell_price = parseFloat(modal.querySelector('#edit-sell-price').value) || 0;
+          updates.expected_covers = parseInt(modal.querySelector('#edit-covers').value) || 0;
+        }
         try {
-          await updateMenu(menuId, { name, description });
-          menu.name = name;
-          menu.description = description;
+          await updateMenu(menuId, updates);
+          menu = await getMenu(menuId);
           closeModal(modal);
           showToast('Menu updated');
           render();
@@ -234,28 +281,30 @@ export async function renderMenuBuilder(container, menuId) {
       });
     });
 
-    // Wire up schedule day toggles
-    container.querySelectorAll('#schedule-day-toggles .mb-day-btn').forEach(btn => {
-      btn.addEventListener('click', async () => {
-        btn.classList.toggle('active');
-        const newDays = [];
-        container.querySelectorAll('#schedule-day-toggles .mb-day-btn.active').forEach(b => {
-          newDays.push(parseInt(b.dataset.day));
+    // Wire up schedule day toggles (house menu only)
+    if (isHouse) {
+      container.querySelectorAll('#schedule-day-toggles .mb-day-btn').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          btn.classList.toggle('active');
+          const newDays = [];
+          container.querySelectorAll('#schedule-day-toggles .mb-day-btn.active').forEach(b => {
+            newDays.push(parseInt(b.dataset.day));
+          });
+          try {
+            await updateMenu(menuId, { schedule_days: newDays });
+            menu.schedule_days = JSON.stringify(newDays);
+            menu = await getMenu(menuId);
+            render();
+            showToast('Schedule updated');
+          } catch (err) {
+            showToast('Failed to update schedule', 'error');
+          }
         });
-        try {
-          await updateMenu(menuId, { schedule_days: newDays });
-          menu.schedule_days = JSON.stringify(newDays);
-          menu = await getMenu(menuId);
-          render();
-          showToast('Schedule updated');
-        } catch (err) {
-          showToast('Failed to update schedule', 'error');
-        }
       });
-    });
+    }
 
-    // Wire up per-dish day toggles
-    container.querySelectorAll('.mb-dish-day-btn').forEach(btn => {
+    // Wire up per-dish day toggles (house menu only)
+    if (isHouse) container.querySelectorAll('.mb-dish-day-btn').forEach(btn => {
       btn.addEventListener('click', async () => {
         const dishId = btn.dataset.dish;
         const dish = menu.dishes.find(d => d.id == dishId);
@@ -315,12 +364,31 @@ export async function renderMenuBuilder(container, menuId) {
     // Header overflow menu
     const mbOverflowSlot = container.querySelector('#mb-overflow-menu');
     if (mbOverflowSlot) {
-      const menuBtn = createActionMenu([
+      const overflowItems = [
         { label: 'Print Kitchen Sheet', icon: '🖨', onClick: showKitchenPrint },
         { label: 'Scale for Event', icon: '⚖', onClick: showScaleModal },
         { label: 'View Tasks', icon: '✓', onClick: () => { window.location.hash = `#/todos`; } },
-      ]);
-      mbOverflowSlot.appendChild(menuBtn);
+      ];
+      if (isHouse) {
+        overflowItems.push({ label: 'Convert to Event Menu', icon: '📅', onClick: async () => {
+          try {
+            await updateMenu(menuId, { menu_type: 'event' });
+            menu = await getMenu(menuId);
+            showToast('Converted to event menu');
+            render();
+          } catch (err) { showToast(err.message, 'error'); }
+        }});
+      } else {
+        overflowItems.push({ label: 'Set as House Menu', icon: '⭐', onClick: async () => {
+          try {
+            await updateMenu(menuId, { menu_type: 'standard' });
+            menu = await getMenu(menuId);
+            showToast('Set as house menu');
+            render();
+          } catch (err) { showToast(err.message, 'error'); }
+        }});
+      }
+      mbOverflowSlot.appendChild(createActionMenu(overflowItems));
     }
 
     // Collapsible allergy section
