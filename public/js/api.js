@@ -23,7 +23,7 @@ async function request(path, options = {}) {
     delete config.headers['Content-Type'];
   }
 
-  const res = await fetch(url, config);
+  const res = await fetch(url, { ...config, signal: AbortSignal.timeout(15000) });
   if (res.status === 401) {
     window.location.hash = '#/login';
     window.location.reload();

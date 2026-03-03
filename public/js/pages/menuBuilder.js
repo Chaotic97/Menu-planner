@@ -878,9 +878,11 @@ export async function renderMenuBuilder(container, menuId) {
     }
   };
   window.addEventListener('sync:menu_updated', onMenuUpdate);
-  window.addEventListener('hashchange', () => {
+  const cleanup = () => {
     window.removeEventListener('sync:menu_updated', onMenuUpdate);
-  }, { once: true });
+    window.removeEventListener('hashchange', cleanup);
+  };
+  window.addEventListener('hashchange', cleanup);
 
   render();
 }

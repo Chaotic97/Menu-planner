@@ -267,6 +267,9 @@ async function initialize() {
       sort_order INTEGER DEFAULT 0
     )`,
     `CREATE INDEX IF NOT EXISTS idx_dish_service_directions_dish_id ON dish_service_directions(dish_id)`,
+    // Reverse FK indexes for common joins
+    `CREATE INDEX IF NOT EXISTS idx_menu_dishes_dish_id ON menu_dishes(dish_id)`,
+    `CREATE INDEX IF NOT EXISTS idx_dish_ingredients_ingredient_id ON dish_ingredients(ingredient_id)`,
   ];
 
   for (const sql of MIGRATIONS) {

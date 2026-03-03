@@ -394,3 +394,49 @@ describe('Weekly schedule (schedule_days & active_days)', () => {
       .expect(400);
   });
 });
+
+// ─── EXISTENCE CHECKS ──────────────────────────────────────────────────────
+
+describe('Menu dish existence checks', () => {
+  test('returns 404 when updating servings for non-existent menu dish', async () => {
+    const menu = await agent.post('/api/menus').send({ name: 'Existence Menu' }).expect(201);
+    await agent
+      .put(`/api/menus/${menu.body.id}/dishes/99999`)
+      .send({ servings: 3 })
+      .expect(404);
+  });
+
+  test('returns 404 when removing non-existent menu dish', async () => {
+    const menu = await agent.post('/api/menus').send({ name: 'Existence Menu 2' }).expect(201);
+    await agent
+      .delete(`/api/menus/${menu.body.id}/dishes/99999`)
+      .expect(404);
+  });
+
+  test('returns 404 when reordering dishes in non-existent menu', async () => {
+    await agent
+      .put('/api/menus/99999/dishes/reorder')
+      .send({ order: [{ dish_id: 1, sort_order: 0 }] })
+      .expect(404);
+  });
+
+  test('menu list excludes soft-deleted dishes from counts and costs', async () => {
+    const dishId = await createDish('Delete Dish');
+    const menu = await agent.post('/api/menus').send({ name: 'Soft Delete Menu' }).expect(201);
+    await agent.post(`/api/menus/${menu.body.id}/dishes`).send({ dish_id: dishId, servings: 1 });
+
+    // Verify dish is counted
+    let list = await agent.get('/api/menus').expect(200);
+    let m = list.body.find(x => x.id === menu.body.id);
+    expect(m.dish_count).toBe(1);
+
+    // Soft-delete the dish
+    await agent.delete(`/api/dishes/${dishId}`).expect(200);
+
+    // Dish should no longer be counted
+    list = await agent.get('/api/menus').expect(200);
+    m = list.body.find(x => x.id === menu.body.id);
+    expect(m.dish_count).toBe(0);
+    expect(m.total_food_cost).toBe(0);
+  });
+});

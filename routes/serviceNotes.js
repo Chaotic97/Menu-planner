@@ -74,7 +74,8 @@ router.put('/:id', (req, res) => {
   if (updates.length === 1) return res.status(400).json({ error: 'Nothing to update' });
 
   params.push(req.params.id);
-  db.prepare(`UPDATE service_notes SET ${updates.join(', ')} WHERE id = ?`).run(...params);
+  const result = db.prepare(`UPDATE service_notes SET ${updates.join(', ')} WHERE id = ?`).run(...params);
+  if (result.changes === 0) return res.status(404).json({ error: 'Service note not found' });
   req.broadcast('service_note_updated', { id: parseInt(req.params.id) }, req.headers['x-client-id']);
   res.json({ success: true });
 });
@@ -82,7 +83,8 @@ router.put('/:id', (req, res) => {
 // DELETE /api/service-notes/:id
 router.delete('/:id', (req, res) => {
   const db = getDb();
-  db.prepare('DELETE FROM service_notes WHERE id = ?').run(req.params.id);
+  const result = db.prepare('DELETE FROM service_notes WHERE id = ?').run(req.params.id);
+  if (result.changes === 0) return res.status(404).json({ error: 'Service note not found' });
   req.broadcast('service_note_deleted', { id: parseInt(req.params.id) }, req.headers['x-client-id']);
   res.json({ success: true });
 });

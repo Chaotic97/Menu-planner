@@ -219,10 +219,12 @@ function updateSidebarToggleBtn() {
     btn.innerHTML = _collapseIcon;
     btn.title = 'Collapse sidebar';
     btn.setAttribute('aria-label', 'Collapse sidebar');
+    btn.setAttribute('aria-expanded', 'true');
   } else {
     btn.innerHTML = _expandIcon;
     btn.title = 'Expand sidebar';
     btn.setAttribute('aria-label', 'Expand sidebar');
+    btn.setAttribute('aria-expanded', 'false');
   }
 }
 

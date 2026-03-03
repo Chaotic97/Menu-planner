@@ -289,14 +289,15 @@ router.post('/batch-complete', (req, res) => {
   const placeholders = task_ids.map(() => '?').join(',');
   const completedVal = completed ? 1 : 0;
 
+  let result;
   if (completed) {
-    db.prepare(`UPDATE tasks SET completed = ?, completed_at = datetime('now'), updated_at = datetime('now') WHERE id IN (${placeholders})`).run(completedVal, ...task_ids);
+    result = db.prepare(`UPDATE tasks SET completed = ?, completed_at = datetime('now'), updated_at = datetime('now') WHERE id IN (${placeholders})`).run(completedVal, ...task_ids);
   } else {
-    db.prepare(`UPDATE tasks SET completed = ?, completed_at = NULL, updated_at = datetime('now') WHERE id IN (${placeholders})`).run(completedVal, ...task_ids);
+    result = db.prepare(`UPDATE tasks SET completed = ?, completed_at = NULL, updated_at = datetime('now') WHERE id IN (${placeholders})`).run(completedVal, ...task_ids);
   }
 
   req.broadcast('tasks_batch_updated', { task_ids, action: 'complete' }, req.headers['x-client-id']);
-  res.json({ success: true, updated: task_ids.length });
+  res.json({ success: true, updated: result.changes });
 });
 
 module.exports = router;
