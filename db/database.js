@@ -270,6 +270,10 @@ async function initialize() {
     // Reverse FK indexes for common joins
     `CREATE INDEX IF NOT EXISTS idx_menu_dishes_dish_id ON menu_dishes(dish_id)`,
     `CREATE INDEX IF NOT EXISTS idx_dish_ingredients_ingredient_id ON dish_ingredients(ingredient_id)`,
+    // Menu type: 'standard' (one recurring house menu) vs 'event' (one-off with date/covers)
+    `ALTER TABLE menus ADD COLUMN menu_type TEXT DEFAULT 'event'`,
+    `ALTER TABLE menus ADD COLUMN event_date TEXT DEFAULT NULL`,
+    `CREATE INDEX IF NOT EXISTS idx_menus_menu_type ON menus(menu_type)`,
   ];
 
   for (const sql of MIGRATIONS) {

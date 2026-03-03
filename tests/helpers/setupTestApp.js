@@ -235,6 +235,11 @@ async function createTestApp() {
       sort_order INTEGER DEFAULT 0
     )`,
     `CREATE INDEX IF NOT EXISTS idx_dish_service_directions_dish_id ON dish_service_directions(dish_id)`,
+    `CREATE INDEX IF NOT EXISTS idx_menu_dishes_dish_id ON menu_dishes(dish_id)`,
+    `CREATE INDEX IF NOT EXISTS idx_dish_ingredients_ingredient_id ON dish_ingredients(ingredient_id)`,
+    `ALTER TABLE menus ADD COLUMN menu_type TEXT DEFAULT 'event'`,
+    `ALTER TABLE menus ADD COLUMN event_date TEXT DEFAULT NULL`,
+    `CREATE INDEX IF NOT EXISTS idx_menus_menu_type ON menus(menu_type)`,
   ];
 
   for (const sql of MIGRATIONS) {

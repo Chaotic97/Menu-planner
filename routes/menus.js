@@ -8,6 +8,8 @@ const { round2 } = require('../services/costCalculator');
 
 const router = express.Router();
 
+const VALID_MENU_TYPES = ['standard', 'event'];
+
 // Helper: compute cost for a single dish
 function getDishCost(db, dishId) {
   const ingredients = db.prepare(`
@@ -22,7 +24,13 @@ function getDishCost(db, dishId) {
 // GET /api/menus - List all menus
 router.get('/', (req, res) => {
   const db = getDb();
-  const menus = db.prepare('SELECT * FROM menus WHERE deleted_at IS NULL ORDER BY created_at DESC').all();
+  const menus = db.prepare(`
+    SELECT * FROM menus WHERE deleted_at IS NULL
+    ORDER BY
+      CASE WHEN menu_type = 'standard' THEN 0 ELSE 1 END,
+      event_date DESC,
+      created_at DESC
+  `).all();
 
   if (menus.length > 0) {
     const menuIds = menus.map(m => m.id);
@@ -235,7 +243,7 @@ router.get('/:id/kitchen-print', (req, res) => {
 // POST /api/menus - Create menu
 router.post('/', (req, res) => {
   const db = getDb();
-  const { name, description, sell_price, expected_covers, guest_allergies, allergen_covers, schedule_days } = req.body;
+  const { name, description, sell_price, expected_covers, guest_allergies, allergen_covers, schedule_days, menu_type, event_date } = req.body;
   if (!name) return res.status(400).json({ error: 'Name is required' });
   if (sell_price !== undefined && (typeof sell_price !== 'number' || sell_price < 0)) {
     return res.status(400).json({ error: 'sell_price must be a non-negative number' });
@@ -243,20 +251,43 @@ router.post('/', (req, res) => {
   if (expected_covers !== undefined && (typeof expected_covers !== 'number' || expected_covers < 0 || !Number.isInteger(expected_covers))) {
     return res.status(400).json({ error: 'expected_covers must be a non-negative integer' });
   }
+
+  // Menu type validation
+  const type = menu_type || 'event';
+  if (!VALID_MENU_TYPES.includes(type)) {
+    return res.status(400).json({ error: 'menu_type must be "standard" or "event"' });
+  }
+
+  // Event date validation
+  if (event_date !== undefined && event_date !== null) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(event_date)) {
+      return res.status(400).json({ error: 'event_date must be YYYY-MM-DD format' });
+    }
+  }
+
+  // Schedule days only allowed on standard menus
+  if (schedule_days !== undefined && type !== 'standard') {
+    return res.status(400).json({ error: 'schedule_days can only be set on the house menu' });
+  }
   if (schedule_days !== undefined) {
     if (!Array.isArray(schedule_days) || !schedule_days.every(d => Number.isInteger(d) && d >= 0 && d <= 6)) {
       return res.status(400).json({ error: 'schedule_days must be an array of day numbers (0=Sun..6=Sat)' });
     }
   }
 
+  // If setting as standard, demote any existing standard menu
+  if (type === 'standard') {
+    db.prepare("UPDATE menus SET menu_type = 'event' WHERE menu_type = 'standard' AND deleted_at IS NULL").run();
+  }
+
   const coversJson = allergen_covers
     ? (typeof allergen_covers === 'string' ? allergen_covers : JSON.stringify(allergen_covers))
     : '{}';
-  const scheduleDaysJson = schedule_days ? JSON.stringify(schedule_days) : '[]';
+  const scheduleDaysJson = (schedule_days && type === 'standard') ? JSON.stringify(schedule_days) : '[]';
 
   const result = db.prepare(
-    'INSERT INTO menus (name, description, sell_price, expected_covers, guest_allergies, allergen_covers, schedule_days) VALUES (?, ?, ?, ?, ?, ?, ?)'
-  ).run(name, description || '', sell_price || 0, expected_covers || 0, guest_allergies || '', coversJson, scheduleDaysJson);
+    'INSERT INTO menus (name, description, sell_price, expected_covers, guest_allergies, allergen_covers, schedule_days, menu_type, event_date) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
+  ).run(name, description || '', sell_price || 0, expected_covers || 0, guest_allergies || '', coversJson, scheduleDaysJson, type, event_date || null);
 
   req.broadcast('menu_created', { id: result.lastInsertRowid }, req.headers['x-client-id']);
   res.status(201).json({ id: result.lastInsertRowid });
@@ -265,12 +296,39 @@ router.post('/', (req, res) => {
 // PUT /api/menus/:id - Update menu
 router.put('/:id', (req, res) => {
   const db = getDb();
-  const { name, description, is_active, sell_price, expected_covers, guest_allergies, allergen_covers, schedule_days } = req.body;
+  const { name, description, is_active, sell_price, expected_covers, guest_allergies, allergen_covers, schedule_days, menu_type, event_date } = req.body;
 
+  // Look up current menu to know its type
+  const current = db.prepare('SELECT menu_type FROM menus WHERE id = ? AND deleted_at IS NULL').get(req.params.id);
+  if (!current) return res.status(404).json({ error: 'Menu not found' });
+
+  const effectiveType = menu_type || current.menu_type || 'event';
+
+  // Menu type validation
+  if (menu_type !== undefined && !VALID_MENU_TYPES.includes(menu_type)) {
+    return res.status(400).json({ error: 'menu_type must be "standard" or "event"' });
+  }
+
+  // Event date validation
+  if (event_date !== undefined && event_date !== null) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(event_date)) {
+      return res.status(400).json({ error: 'event_date must be YYYY-MM-DD format' });
+    }
+  }
+
+  // Schedule days only allowed on standard menus
+  if (schedule_days !== undefined && effectiveType !== 'standard') {
+    return res.status(400).json({ error: 'schedule_days can only be set on the house menu' });
+  }
   if (schedule_days !== undefined) {
     if (!Array.isArray(schedule_days) || !schedule_days.every(d => Number.isInteger(d) && d >= 0 && d <= 6)) {
       return res.status(400).json({ error: 'schedule_days must be an array of day numbers (0=Sun..6=Sat)' });
     }
+  }
+
+  // If promoting to standard, demote any existing standard menu
+  if (menu_type === 'standard' && current.menu_type !== 'standard') {
+    db.prepare("UPDATE menus SET menu_type = 'event' WHERE menu_type = 'standard' AND deleted_at IS NULL AND id != ?").run(req.params.id);
   }
 
   const updates = [];
@@ -294,6 +352,16 @@ router.put('/:id', (req, res) => {
   if (allergen_covers !== undefined) {
     updates.push('allergen_covers = ?');
     params.push(typeof allergen_covers === 'string' ? allergen_covers : JSON.stringify(allergen_covers));
+  }
+  if (menu_type !== undefined) {
+    updates.push('menu_type = ?'); params.push(menu_type);
+    // When demoting to event, clear schedule_days
+    if (menu_type === 'event') {
+      updates.push("schedule_days = '[]'");
+    }
+  }
+  if (event_date !== undefined) {
+    updates.push('event_date = ?'); params.push(event_date);
   }
   if (schedule_days !== undefined) {
     updates.push('schedule_days = ?');

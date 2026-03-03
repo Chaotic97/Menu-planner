@@ -203,7 +203,8 @@ describe('POST /api/todos/generate/:menuId', () => {
   });
 
   test('generates weekly tasks with due_dates when week_start provided', async () => {
-    // Set schedule_days on the menu (Wed-Sun = days 3,4,5,6,0)
+    // Promote to standard so schedule_days can be set, then set schedule_days (Wed-Sun = days 3,4,5,6,0)
+    await agent.put(`/api/menus/${menuId}`).send({ menu_type: 'standard' }).expect(200);
     await agent.put(`/api/menus/${menuId}`).send({ schedule_days: [3, 4, 5, 6, 0] }).expect(200);
 
     const res = await agent
