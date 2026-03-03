@@ -96,7 +96,7 @@
 [data-theme="dark"] .special-dish-option:hover { background: rgba(var(--primary-rgb),0.1); }
 
 /* --- Component-specific dark overrides (kept here so all dark-mode rules are in one place) --- */
-[data-theme="dark"] .favorite-btn { background: rgba(0,0,0,0.6); }
+[data-theme="dark"] .favorite-btn { background: transparent; }
 [data-theme="dark"] .tag-badge { background: rgba(var(--primary-rgb),0.2); }
 [data-theme="dark"] .subs-badge { background: #3a2a1a; color: #ffb74d; }
 [data-theme="dark"] .po-category-row td { background: rgba(var(--primary-rgb),0.12); }
@@ -2085,7 +2085,7 @@ textarea.input { resize: vertical; min-height: 80px; }
   position: absolute;
   top: 8px;
   right: 8px;
-  background: rgba(255,255,255,0.9);
+  background: transparent;
   border: none;
   font-size: 1.3rem;
   cursor: pointer;
@@ -2096,11 +2096,11 @@ textarea.input { resize: vertical; min-height: 80px; }
   align-items: center;
   justify-content: center;
   z-index: 5;
-  transition: transform 0.15s, background 0.15s;
-  color: #ccc;
+  transition: transform 0.15s, color 0.15s;
+  color: var(--border);
 }
 
-.favorite-btn:hover { transform: scale(1.15); }
+.favorite-btn:hover { transform: scale(1.15); color: #e57373; }
 .favorite-btn.favorited { color: #e53935; }
 
 /* ============================
