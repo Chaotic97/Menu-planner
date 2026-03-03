@@ -5300,6 +5300,43 @@ textarea.input { resize: vertical; min-height: 80px; }
 }
 
 /* ============================
+   Backup & Restore (.st-backup-)
+   ============================ */
+.st-backup-card {
+  padding: var(--space-md);
+}
+
+.st-backup-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-md);
+}
+
+.st-backup-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.st-backup-desc {
+  margin: 4px 0 0;
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+
+.st-restore-label {
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+@media (max-width: 480px) {
+  .st-backup-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}
+
+/* ============================
    Day Phases Settings (.dp-)
    ============================ */
 .dp-phases-list {
@@ -5366,6 +5403,152 @@ textarea.input { resize: vertical; min-height: 80px; }
   margin-top: var(--space-md);
   display: flex;
   gap: var(--space-sm);
+}
+
+/* ============================
+   Ingredient List (.il-)
+   ============================ */
+.il-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 0 12px;
+  flex-wrap: wrap;
+}
+
+.il-search-wrap {
+  flex: 1;
+  min-width: 180px;
+  max-width: 360px;
+}
+
+.il-search {
+  width: 100%;
+}
+
+.il-summary {
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.il-table-wrap {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.il-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-sm);
+}
+
+.il-th {
+  text-align: left;
+  padding: 8px 10px;
+  font-weight: 600;
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+  border-bottom: 2px solid var(--border);
+  white-space: nowrap;
+  user-select: none;
+}
+
+.il-th-sortable {
+  cursor: pointer;
+}
+.il-th-sortable:hover {
+  color: var(--primary);
+}
+
+.il-th-cost,
+.il-th-usage {
+  text-align: right;
+}
+
+.il-th-stock,
+.il-th-actions {
+  text-align: center;
+  width: 48px;
+}
+
+.il-td {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: middle;
+}
+
+.il-td-name {
+  font-weight: 500;
+}
+
+.il-td-cost,
+.il-td-usage {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.il-td-stock,
+.il-td-actions {
+  text-align: center;
+}
+
+.il-row-stocked {
+  opacity: 0.55;
+}
+
+.il-stock-toggle {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+  color: var(--text-muted);
+  display: inline-flex;
+}
+.il-stock-toggle:hover {
+  background: rgba(var(--primary-rgb), 0.1);
+}
+.il-stock-on {
+  color: var(--success);
+}
+
+.il-edit-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+  color: var(--text-muted);
+  display: inline-flex;
+}
+.il-edit-btn:hover {
+  color: var(--primary);
+  background: rgba(var(--primary-rgb), 0.1);
+}
+
+.il-edit-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.il-edit-row {
+  display: flex;
+  gap: var(--space-sm);
+}
+
+@media (max-width: 480px) {
+  .il-th-cat,
+  .il-td-cat {
+    display: none;
+  }
+  .il-edit-row {
+    flex-direction: column;
+  }
 }
 
 /* ============================

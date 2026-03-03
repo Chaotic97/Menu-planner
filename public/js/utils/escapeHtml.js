@@ -7,6 +7,6 @@ const ESC_MAP = {
 };
 
 export function escapeHtml(str) {
-  if (str == null) return '';
+  if (str === null || str === undefined) return '';
   return String(str).replace(/[&<>"']/g, c => ESC_MAP[c]);
 }

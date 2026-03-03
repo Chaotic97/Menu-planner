@@ -59,9 +59,12 @@ export const updateDishAllergen = (id, data) => request(`/dishes/${id}/allergens
 export const getAllTags = () => request('/dishes/tags/all');
 
 // Ingredients
-export const getIngredients = (search) => {
-  const qs = search ? `?search=${encodeURIComponent(search)}` : '';
-  return request(`/ingredients${qs}`);
+export const getIngredients = (search, opts = {}) => {
+  const params = new URLSearchParams();
+  if (search) params.set('search', search);
+  if (opts.include_usage) params.set('include_usage', '1');
+  const qs = params.toString();
+  return request(`/ingredients${qs ? '?' + qs : ''}`);
 };
 export const createIngredient = (data) => request('/ingredients', { method: 'POST', body: data });
 export const updateIngredient = (id, data) => request(`/ingredients/${id}`, { method: 'PUT', body: data });
@@ -116,6 +119,21 @@ export const clearTaskNext = () => request('/todos/next', { method: 'DELETE' });
 export const getAllergenKeywords = () => request('/dishes/allergen-keywords/all');
 export const addAllergenKeyword = (data) => request('/dishes/allergen-keywords', { method: 'POST', body: data });
 export const deleteAllergenKeyword = (id) => request(`/dishes/allergen-keywords/${id}`, { method: 'DELETE' });
+
+// Settings / Backup
+export const restoreBackup = async (file) => {
+  const buf = await file.arrayBuffer();
+  const res = await fetch(`${BASE}/settings/restore`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/octet-stream' },
+    body: buf,
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: res.statusText }));
+    throw new Error(err.error || 'Restore failed');
+  }
+  return res.json();
+};
 
 // Notifications
 export const getNotificationPreferences = () => request('/notifications/preferences');

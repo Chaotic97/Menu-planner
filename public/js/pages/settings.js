@@ -1,4 +1,4 @@
-import { getAllergenKeywords, addAllergenKeyword, deleteAllergenKeyword, changePassword, getDayPhases, updateDayPhases, getNotificationPreferences, updateNotificationPreferences } from '../api.js';
+import { getAllergenKeywords, addAllergenKeyword, deleteAllergenKeyword, changePassword, getDayPhases, updateDayPhases, getNotificationPreferences, updateNotificationPreferences, restoreBackup } from '../api.js';
 import { showToast } from '../components/toast.js';
 import { escapeHtml } from '../utils/escapeHtml.js';
 import { restartNotifications } from '../utils/notifications.js';
@@ -18,6 +18,38 @@ export async function renderSettings(container) {
       <h1>Settings</h1>
     </div>
     <div class="st-sections">
+
+      <section class="st-section">
+        <button class="st-section-toggle" aria-expanded="true">
+          <span class="st-section-title">Backup &amp; Restore</span>
+          <span class="st-chevron" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16"><polyline points="6 9 12 15 18 9"/></svg>
+          </span>
+        </button>
+        <div class="st-section-body">
+          <div class="card st-backup-card">
+            <div class="st-backup-row">
+              <div class="st-backup-info">
+                <h3 class="st-card-heading">Download Backup</h3>
+                <p class="st-backup-desc">Download a copy of your entire database. Keep this file safe.</p>
+              </div>
+              <a href="/api/settings/backup" class="btn btn-primary" id="st-backup-btn" download>Download .db</a>
+            </div>
+          </div>
+          <div class="card st-backup-card" style="margin-top: var(--space-sm);">
+            <div class="st-backup-row">
+              <div class="st-backup-info">
+                <h3 class="st-card-heading">Restore from Backup</h3>
+                <p class="st-backup-desc">Upload a previously downloaded .db file. The server will need to restart for changes to take effect.</p>
+              </div>
+              <label class="btn btn-secondary st-restore-label" for="st-restore-input">
+                Upload .db
+                <input type="file" id="st-restore-input" accept=".db" hidden>
+              </label>
+            </div>
+          </div>
+        </div>
+      </section>
 
       <section class="st-section">
         <button class="st-section-toggle" aria-expanded="true">
@@ -547,5 +579,29 @@ export async function renderSettings(container) {
     } catch {
       showToast('Failed to show notification', 'error');
     }
+  });
+
+  // --- Backup / Restore ---
+  const restoreInput = container.querySelector('#st-restore-input');
+  restoreInput.addEventListener('change', async () => {
+    const file = restoreInput.files[0];
+    if (!file) return;
+    if (!file.name.endsWith('.db')) {
+      showToast('Please select a .db backup file', 'error');
+      restoreInput.value = '';
+      return;
+    }
+    const confirmed = confirm('Are you sure you want to restore from this backup? This will replace all current data. The server will need to restart.');
+    if (!confirmed) {
+      restoreInput.value = '';
+      return;
+    }
+    try {
+      const result = await restoreBackup(file);
+      showToast(result.message || 'Backup restored successfully');
+    } catch (err) {
+      showToast(err.message || 'Failed to restore backup', 'error');
+    }
+    restoreInput.value = '';
   });
 }

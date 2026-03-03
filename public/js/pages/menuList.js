@@ -107,7 +107,7 @@ export async function renderMenuList(container) {
       // Wire up overflow menus
       sections.querySelectorAll('.menu-card-overflow').forEach(slot => {
         const menuId = slot.dataset.id;
-        const menuData = menus.find(m => m.id == menuId);
+        const menuData = menus.find(m => String(m.id) === String(menuId));
         const actions = [
           { label: 'Open', icon: '📋', onClick: () => { window.location.hash = `#/menus/${menuId}`; } },
         ];

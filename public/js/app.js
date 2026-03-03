@@ -10,6 +10,7 @@ import { renderServiceNotes } from './pages/serviceNotes.js';
 import { renderFlavorPairings } from './pages/flavorPairings.js';
 import { renderSettings } from './pages/settings.js';
 import { renderToday } from './pages/today.js';
+import { renderIngredientList } from './pages/ingredientList.js';
 import { openUnitConverter } from './components/unitConverter.js';
 import { initQuickCapture } from './components/quickCapture.js';
 import { renderLogin } from './pages/login.js';
@@ -30,6 +31,7 @@ const routes = [
   { pattern: /^#\/specials$/, handler: () => renderSpecials(appContent) },
   { pattern: /^#\/service-notes$/, handler: () => renderServiceNotes(appContent) },
   { pattern: /^#\/flavor-pairings$/, handler: () => renderFlavorPairings(appContent) },
+  { pattern: /^#\/ingredients$/, handler: () => renderIngredientList(appContent) },
   { pattern: /^#\/settings$/, handler: () => renderSettings(appContent) },
   { pattern: /^#\/todos$/, handler: () => renderTodoView(appContent, null) },
   { pattern: /^#\/shopping$/, handler: () => renderShoppingList(appContent, null) },
