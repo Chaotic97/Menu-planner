@@ -57,8 +57,9 @@ function generateShoppingList(menuId) {
     if (converted !== null) {
       entry.total_quantity += converted;
     } else {
-      // Units incompatible — just add raw (best effort)
-      entry.total_quantity += adjustedQty;
+      // Units incompatible — track separately instead of silently adding
+      if (!entry.mixed_units) entry.mixed_units = [];
+      entry.mixed_units.push({ quantity: adjustedQty, unit: row.unit, dish: row.dish_name });
     }
 
     entry.used_in.push(`${row.dish_name} (${adjustedQty}${row.unit})`);
@@ -99,7 +100,7 @@ function generateShoppingList(menuId) {
   for (const item of Object.values(aggregated)) {
     const cat = item.category;
     if (!groups[cat]) groups[cat] = [];
-    groups[cat].push({
+    const entry = {
       ingredient_id: item.ingredient_id,
       ingredient: item.ingredient,
       total_quantity: item.total_quantity,
@@ -107,7 +108,9 @@ function generateShoppingList(menuId) {
       estimated_cost: item.estimated_cost,
       in_stock: item.in_stock,
       used_in: item.used_in,
-    });
+    };
+    if (item.mixed_units) entry.mixed_units = item.mixed_units;
+    groups[cat].push(entry);
   }
 
   // Sort groups and items

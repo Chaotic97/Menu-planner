@@ -8,6 +8,8 @@ const dnsResolve = promisify(dns.resolve4);
 const MAX_RESPONSE_SIZE = 5 * 1024 * 1024;
 // Request timeout (10 seconds)
 const FETCH_TIMEOUT_MS = 10000;
+// DNS lookup timeout (5 seconds)
+const DNS_TIMEOUT_MS = 5000;
 
 /**
  * Validate a URL is safe to fetch (SSRF protection).
@@ -32,9 +34,14 @@ async function validateUrl(url) {
     throw new Error('Cannot fetch from localhost or loopback addresses.');
   }
 
-  // Resolve hostname and check for private IP ranges
+  // Resolve hostname and check for private IP ranges (with timeout)
   try {
-    const addresses = await dnsResolve(hostname);
+    const addresses = await Promise.race([
+      dnsResolve(hostname),
+      new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('DNS lookup timed out')), DNS_TIMEOUT_MS)
+      )
+    ]);
     for (const ip of addresses) {
       if (isPrivateIP(ip)) {
         throw new Error('Cannot fetch from private or internal network addresses.');

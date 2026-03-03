@@ -82,14 +82,35 @@ router.get('/', (req, res) => {
     }
   }
 
-  // Attach allergens and tags to each dish
-  const allergenStmt = db.prepare('SELECT allergen, source FROM dish_allergens WHERE dish_id = ?');
-  const tagStmt = db.prepare(`
-    SELECT t.name FROM dish_tags dt JOIN tags t ON t.id = dt.tag_id WHERE dt.dish_id = ?
-  `);
-  for (const dish of dishes) {
-    dish.allergens = allergenStmt.all(dish.id);
-    dish.tags = tagStmt.all(dish.id).map(t => t.name);
+  // Attach allergens and tags to each dish (batch queries to avoid N+1)
+  if (dishes.length > 0) {
+    const dishIds = dishes.map(d => d.id);
+    const placeholders = dishIds.map(() => '?').join(',');
+
+    // Batch fetch allergens
+    const allergenRows = db.prepare(
+      `SELECT dish_id, allergen, source FROM dish_allergens WHERE dish_id IN (${placeholders})`
+    ).all(...dishIds);
+    const allergenMap = {};
+    for (const row of allergenRows) {
+      if (!allergenMap[row.dish_id]) allergenMap[row.dish_id] = [];
+      allergenMap[row.dish_id].push({ allergen: row.allergen, source: row.source });
+    }
+
+    // Batch fetch tags
+    const tagRows = db.prepare(
+      `SELECT dt.dish_id, t.name FROM dish_tags dt JOIN tags t ON t.id = dt.tag_id WHERE dt.dish_id IN (${placeholders})`
+    ).all(...dishIds);
+    const tagMap = {};
+    for (const row of tagRows) {
+      if (!tagMap[row.dish_id]) tagMap[row.dish_id] = [];
+      tagMap[row.dish_id].push(row.name);
+    }
+
+    for (const dish of dishes) {
+      dish.allergens = allergenMap[dish.id] || [];
+      dish.tags = tagMap[dish.id] || [];
+    }
   }
 
   res.json(dishes);
@@ -180,36 +201,45 @@ router.post('/', (req, res) => {
     }
   }
 
-  const result = db.prepare(`
-    INSERT INTO dishes (name, description, category, chefs_notes, service_notes, suggested_price, manual_costs, batch_yield)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(name, description || '', category || 'main', chefs_notes || '', service_notes || '', suggested_price || 0, manual_costs ? JSON.stringify(manual_costs) : '[]', batch_yield || 1);
+  try {
+    db.exec('BEGIN');
 
-  const dishId = result.lastInsertRowid;
+    const result = db.prepare(`
+      INSERT INTO dishes (name, description, category, chefs_notes, service_notes, suggested_price, manual_costs, batch_yield)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(name, description || '', category || 'main', chefs_notes || '', service_notes || '', suggested_price || 0, manual_costs ? JSON.stringify(manual_costs) : '[]', batch_yield || 1);
 
-  // Add ingredients
-  saveIngredients(db, dishId, ingredients);
+    const dishId = result.lastInsertRowid;
 
-  // Save tags
-  saveDishTags(db, dishId, tags);
+    // Add ingredients
+    saveIngredients(db, dishId, ingredients);
 
-  // Save substitutions
-  saveDishSubstitutions(db, dishId, substitutions);
+    // Save tags
+    saveDishTags(db, dishId, tags);
 
-  // Save service components
-  saveDishComponents(db, dishId, components);
+    // Save substitutions
+    saveDishSubstitutions(db, dishId, substitutions);
 
-  // Save directions
-  saveDishDirections(db, dishId, directions);
+    // Save service components
+    saveDishComponents(db, dishId, components);
 
-  // Save service directions
-  saveDishServiceDirections(db, dishId, service_directions);
+    // Save directions
+    saveDishDirections(db, dishId, directions);
 
-  // Detect allergens
-  updateDishAllergens(dishId);
+    // Save service directions
+    saveDishServiceDirections(db, dishId, service_directions);
 
-  req.broadcast('dish_created', { id: dishId }, req.headers['x-client-id']);
-  res.status(201).json({ id: dishId });
+    // Detect allergens
+    updateDishAllergens(dishId);
+
+    db.exec('COMMIT');
+
+    req.broadcast('dish_created', { id: dishId }, req.headers['x-client-id']);
+    res.status(201).json({ id: dishId });
+  } catch (err) {
+    db.exec('ROLLBACK');
+    throw err;
+  }
 });
 
 // POST /api/dishes/:id/duplicate - Duplicate a dish
@@ -436,54 +466,63 @@ router.put('/:id', (req, res) => {
     }
   }
 
-  db.prepare(`
-    UPDATE dishes SET name = ?, description = ?, category = ?, chefs_notes = ?, service_notes = ?, suggested_price = ?, manual_costs = ?, batch_yield = ?, updated_at = datetime('now')
-    WHERE id = ?
-  `).run(
-    name || dish.name,
-    description !== undefined ? description : dish.description,
-    category || dish.category,
-    chefs_notes !== undefined ? chefs_notes : dish.chefs_notes,
-    service_notes !== undefined ? service_notes : (dish.service_notes || ''),
-    suggested_price !== undefined ? suggested_price : dish.suggested_price,
-    manual_costs !== undefined ? JSON.stringify(manual_costs) : (dish.manual_costs || '[]'),
-    batch_yield !== undefined ? batch_yield : (dish.batch_yield || 1),
-    req.params.id
-  );
+  try {
+    db.exec('BEGIN');
 
-  // Replace ingredients if provided
-  if (ingredients) {
-    db.prepare('DELETE FROM dish_ingredients WHERE dish_id = ?').run(req.params.id);
-    db.prepare('DELETE FROM dish_section_headers WHERE dish_id = ?').run(req.params.id);
-    saveIngredients(db, req.params.id, ingredients);
+    db.prepare(`
+      UPDATE dishes SET name = ?, description = ?, category = ?, chefs_notes = ?, service_notes = ?, suggested_price = ?, manual_costs = ?, batch_yield = ?, updated_at = datetime('now')
+      WHERE id = ?
+    `).run(
+      name || dish.name,
+      description !== undefined ? description : dish.description,
+      category || dish.category,
+      chefs_notes !== undefined ? chefs_notes : dish.chefs_notes,
+      service_notes !== undefined ? service_notes : (dish.service_notes || ''),
+      suggested_price !== undefined ? suggested_price : dish.suggested_price,
+      manual_costs !== undefined ? JSON.stringify(manual_costs) : (dish.manual_costs || '[]'),
+      batch_yield !== undefined ? batch_yield : (dish.batch_yield || 1),
+      req.params.id
+    );
 
-    // Re-detect allergens
-    updateDishAllergens(req.params.id);
-  }
+    // Replace ingredients if provided
+    if (ingredients) {
+      db.prepare('DELETE FROM dish_ingredients WHERE dish_id = ?').run(req.params.id);
+      db.prepare('DELETE FROM dish_section_headers WHERE dish_id = ?').run(req.params.id);
+      saveIngredients(db, req.params.id, ingredients);
 
-  // Update tags if provided
-  if (tags !== undefined) {
-    saveDishTags(db, req.params.id, tags);
-  }
+      // Re-detect allergens
+      updateDishAllergens(req.params.id);
+    }
 
-  // Update substitutions if provided
-  if (substitutions !== undefined) {
-    saveDishSubstitutions(db, req.params.id, substitutions);
-  }
+    // Update tags if provided
+    if (tags !== undefined) {
+      saveDishTags(db, req.params.id, tags);
+    }
 
-  // Update service components if provided
-  if (components !== undefined) {
-    saveDishComponents(db, req.params.id, components);
-  }
+    // Update substitutions if provided
+    if (substitutions !== undefined) {
+      saveDishSubstitutions(db, req.params.id, substitutions);
+    }
 
-  // Update directions if provided
-  if (directions !== undefined) {
-    saveDishDirections(db, req.params.id, directions);
-  }
+    // Update service components if provided
+    if (components !== undefined) {
+      saveDishComponents(db, req.params.id, components);
+    }
 
-  // Update service directions if provided
-  if (service_directions !== undefined) {
-    saveDishServiceDirections(db, req.params.id, service_directions);
+    // Update directions if provided
+    if (directions !== undefined) {
+      saveDishDirections(db, req.params.id, directions);
+    }
+
+    // Update service directions if provided
+    if (service_directions !== undefined) {
+      saveDishServiceDirections(db, req.params.id, service_directions);
+    }
+
+    db.exec('COMMIT');
+  } catch (err) {
+    db.exec('ROLLBACK');
+    throw err;
   }
 
   req.broadcast('dish_updated', { id: parseInt(req.params.id) }, req.headers['x-client-id']);

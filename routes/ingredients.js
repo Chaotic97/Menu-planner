@@ -76,7 +76,8 @@ router.put('/:id', (req, res) => {
   if (!updates.length) return res.status(400).json({ error: 'Nothing to update' });
 
   params.push(req.params.id);
-  db.prepare(`UPDATE ingredients SET ${updates.join(', ')} WHERE id = ?`).run(...params);
+  const result = db.prepare(`UPDATE ingredients SET ${updates.join(', ')} WHERE id = ?`).run(...params);
+  if (result.changes === 0) return res.status(404).json({ error: 'Ingredient not found' });
   req.broadcast('ingredient_updated', { id: parseInt(req.params.id) }, req.headers['x-client-id']);
   res.json({ success: true });
 });

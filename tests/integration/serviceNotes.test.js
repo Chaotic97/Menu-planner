@@ -153,4 +153,19 @@ describe('DELETE /api/service-notes/:id', () => {
     const notes = await agent.get('/api/service-notes?date=2026-03-04').expect(200);
     expect(notes.body.find(n => n.id === created.body.id)).toBeUndefined();
   });
+
+  test('returns 404 for non-existent note', async () => {
+    await agent.delete('/api/service-notes/99999').expect(404);
+  });
+});
+
+// ─── EXISTENCE CHECKS ──────────────────────────────────────────────────────
+
+describe('Existence checks', () => {
+  test('PUT returns 404 for non-existent note', async () => {
+    await agent
+      .put('/api/service-notes/99999')
+      .send({ content: 'nope' })
+      .expect(404);
+  });
 });

@@ -206,3 +206,14 @@ describe('GET /api/ingredients/:id/allergens', () => {
     await agent.get('/api/ingredients/99999/allergens').expect(404);
   });
 });
+
+// ─── EXISTENCE CHECKS ──────────────────────────────────────────────────────
+
+describe('PUT /api/ingredients/:id existence check', () => {
+  test('returns 404 for non-existent ingredient', async () => {
+    await agent
+      .put('/api/ingredients/99999')
+      .send({ name: 'Ghost' })
+      .expect(404);
+  });
+});

@@ -24,27 +24,62 @@ router.get('/', (req, res) => {
   const db = getDb();
   const menus = db.prepare('SELECT * FROM menus WHERE deleted_at IS NULL ORDER BY created_at DESC').all();
 
-  for (const menu of menus) {
-    const stats = db.prepare(`
-      SELECT COUNT(*) AS dish_count
-      FROM menu_dishes WHERE menu_id = ?
-    `).get(menu.id);
-    menu.dish_count = stats.dish_count;
+  if (menus.length > 0) {
+    const menuIds = menus.map(m => m.id);
+    const placeholders = menuIds.map(() => '?').join(',');
 
-    // Calculate total food cost for the menu
-    const menuDishes = db.prepare(`
-      SELECT md.dish_id, md.servings FROM menu_dishes md WHERE md.menu_id = ?
-    `).all(menu.id);
+    // Batch: dish counts and menu_dish rows per menu (excluding soft-deleted dishes)
+    const menuDishRows = db.prepare(`
+      SELECT md.menu_id, md.dish_id, md.servings
+      FROM menu_dishes md
+      JOIN dishes d ON d.id = md.dish_id
+      WHERE md.menu_id IN (${placeholders}) AND d.deleted_at IS NULL
+    `).all(...menuIds);
 
-    let totalFoodCost = 0;
-    for (const md of menuDishes) {
-      const cost = getDishCost(db, md.dish_id);
-      totalFoodCost += cost.totalCost * md.servings;
+    // Group menu_dishes by menu_id
+    const menuDishMap = {};
+    for (const row of menuDishRows) {
+      if (!menuDishMap[row.menu_id]) menuDishMap[row.menu_id] = [];
+      menuDishMap[row.menu_id].push(row);
     }
-    menu.total_food_cost = Math.round(totalFoodCost * 100) / 100;
 
-    if (menu.sell_price && menu.sell_price > 0) {
-      menu.menu_food_cost_percent = Math.round((totalFoodCost / menu.sell_price) * 10000) / 100;
+    // Batch: get all unique dish_ids across all menus, fetch their ingredients once
+    const allDishIds = [...new Set(menuDishRows.map(r => r.dish_id))];
+    const dishCostMap = {};
+    if (allDishIds.length > 0) {
+      const dishPlaceholders = allDishIds.map(() => '?').join(',');
+      const ingredientRows = db.prepare(`
+        SELECT di.dish_id, di.quantity, di.unit, i.unit_cost, i.base_unit, i.name AS ingredient_name
+        FROM dish_ingredients di
+        JOIN ingredients i ON i.id = di.ingredient_id
+        WHERE di.dish_id IN (${dishPlaceholders})
+      `).all(...allDishIds);
+
+      // Group ingredients by dish_id and compute cost
+      const dishIngrMap = {};
+      for (const row of ingredientRows) {
+        if (!dishIngrMap[row.dish_id]) dishIngrMap[row.dish_id] = [];
+        dishIngrMap[row.dish_id].push(row);
+      }
+      for (const dishId of allDishIds) {
+        dishCostMap[dishId] = calculateDishCost(dishIngrMap[dishId] || []);
+      }
+    }
+
+    for (const menu of menus) {
+      const dishes = menuDishMap[menu.id] || [];
+      menu.dish_count = dishes.length;
+
+      let totalFoodCost = 0;
+      for (const md of dishes) {
+        const cost = dishCostMap[md.dish_id] || { totalCost: 0 };
+        totalFoodCost += cost.totalCost * md.servings;
+      }
+      menu.total_food_cost = round2(totalFoodCost);
+
+      if (menu.sell_price && menu.sell_price > 0) {
+        menu.menu_food_cost_percent = round2((totalFoodCost / menu.sell_price) * 100);
+      }
     }
   }
 
@@ -98,25 +133,25 @@ router.get('/:id', (req, res) => {
     const costResult = getDishCost(db, dish.id);
     const batchYield = dish.batch_yield || 1;
     dish.cost_per_batch = costResult.totalCost;
-    dish.cost_per_portion = Math.round(costResult.totalCost / batchYield * 100) / 100;
+    dish.cost_per_portion = round2(costResult.totalCost / batchYield);
     dish.cost_per_serving = dish.cost_per_portion; // backward compat alias
     dish.batch_yield = batchYield;
     dish.total_portions = dish.servings * batchYield;
-    dish.cost_total = Math.round(costResult.totalCost * dish.servings * 100) / 100;
+    dish.cost_total = round2(costResult.totalCost * dish.servings);
     totalFoodCost += dish.cost_total;
   }
 
   menu.all_allergens = Array.from(allAllergens).sort();
-  menu.total_food_cost = Math.round(totalFoodCost * 100) / 100;
+  menu.total_food_cost = round2(totalFoodCost);
 
   // Menu-level costing
   if (menu.sell_price && menu.sell_price > 0) {
-    menu.menu_food_cost_percent = Math.round((totalFoodCost / menu.sell_price) * 10000) / 100;
+    menu.menu_food_cost_percent = round2((totalFoodCost / menu.sell_price) * 100);
 
     // Per-dish percentage of sell price
     for (const dish of menu.dishes) {
       dish.percent_of_menu_price = menu.sell_price > 0
-        ? Math.round((dish.cost_total / menu.sell_price) * 10000) / 100
+        ? round2((dish.cost_total / menu.sell_price) * 100)
         : null;
     }
   }
@@ -296,6 +331,9 @@ router.post('/:id/restore', (req, res) => {
 // PUT /api/menus/:id/dishes/reorder - Batch update sort_order
 router.put('/:id/dishes/reorder', (req, res) => {
   const db = getDb();
+  const menu = db.prepare('SELECT id FROM menus WHERE id = ? AND deleted_at IS NULL').get(req.params.id);
+  if (!menu) return res.status(404).json({ error: 'Menu not found' });
+
   const { order } = req.body;
 
   if (!order || !Array.isArray(order)) {
@@ -372,7 +410,8 @@ router.put('/:id/dishes/:dishId', (req, res) => {
   if (!updates.length) return res.status(400).json({ error: 'Nothing to update' });
 
   params.push(req.params.id, req.params.dishId);
-  db.prepare(`UPDATE menu_dishes SET ${updates.join(', ')} WHERE menu_id = ? AND dish_id = ?`).run(...params);
+  const result = db.prepare(`UPDATE menu_dishes SET ${updates.join(', ')} WHERE menu_id = ? AND dish_id = ?`).run(...params);
+  if (result.changes === 0) return res.status(404).json({ error: 'Menu dish not found' });
 
   req.broadcast('menu_updated', { id: parseInt(req.params.id) }, req.headers['x-client-id']);
   res.json({ success: true });
@@ -381,7 +420,8 @@ router.put('/:id/dishes/:dishId', (req, res) => {
 // DELETE /api/menus/:id/dishes/:dishId - Remove dish from menu
 router.delete('/:id/dishes/:dishId', (req, res) => {
   const db = getDb();
-  db.prepare('DELETE FROM menu_dishes WHERE menu_id = ? AND dish_id = ?').run(req.params.id, req.params.dishId);
+  const result = db.prepare('DELETE FROM menu_dishes WHERE menu_id = ? AND dish_id = ?').run(req.params.id, req.params.dishId);
+  if (result.changes === 0) return res.status(404).json({ error: 'Menu dish not found' });
   req.broadcast('menu_updated', { id: parseInt(req.params.id) }, req.headers['x-client-id']);
   res.json({ success: true });
 });

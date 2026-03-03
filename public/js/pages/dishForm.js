@@ -918,9 +918,11 @@ export async function renderDishForm(container, dishId) {
       }
     };
     window.addEventListener('sync:dish_updated', onUpdate);
-    window.addEventListener('hashchange', () => {
+    const cleanup = () => {
       window.removeEventListener('sync:dish_updated', onUpdate);
-    }, { once: true });
+      window.removeEventListener('hashchange', cleanup);
+    };
+    window.addEventListener('hashchange', cleanup);
   }
 }
 

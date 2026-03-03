@@ -458,4 +458,14 @@ describe('POST /api/todos/batch-complete', () => {
   test('rejects missing task_ids', async () => {
     await agent.post('/api/todos/batch-complete').send({ completed: true }).expect(400);
   });
+
+  test('returns actual count of updated rows, not input length', async () => {
+    const t1 = await agent.post('/api/todos').send({ title: 'Real Count' }).expect(201);
+    const res = await agent
+      .post('/api/todos/batch-complete')
+      .send({ task_ids: [t1.body.id, 99999], completed: true })
+      .expect(200);
+    // Only 1 real task exists, so updated should be 1, not 2
+    expect(res.body.updated).toBe(1);
+  });
 });
