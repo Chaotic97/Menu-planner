@@ -279,6 +279,25 @@ async function initialize() {
     `ALTER TABLE menus ADD COLUMN menu_type TEXT DEFAULT 'event'`,
     `ALTER TABLE menus ADD COLUMN event_date TEXT DEFAULT NULL`,
     `CREATE INDEX IF NOT EXISTS idx_menus_menu_type ON menus(menu_type)`,
+    // AI assistant: action history for undo
+    `CREATE TABLE IF NOT EXISTS ai_history (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      entity_type TEXT NOT NULL,
+      entity_id INTEGER NOT NULL,
+      action_type TEXT NOT NULL,
+      previous_data TEXT,
+      created_at TEXT DEFAULT (datetime('now'))
+    )`,
+    // AI assistant: usage tracking
+    `CREATE TABLE IF NOT EXISTS ai_usage (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      tokens_in INTEGER NOT NULL DEFAULT 0,
+      tokens_out INTEGER NOT NULL DEFAULT 0,
+      model TEXT NOT NULL,
+      tool_used TEXT,
+      created_at TEXT DEFAULT (datetime('now'))
+    )`,
+    `CREATE INDEX IF NOT EXISTS idx_ai_usage_created_at ON ai_usage(created_at)`,
   ];
 
   for (const sql of MIGRATIONS) {

@@ -1,4 +1,4 @@
-import { getAllergenKeywords, addAllergenKeyword, deleteAllergenKeyword, changePassword, getDayPhases, updateDayPhases, getNotificationPreferences, updateNotificationPreferences, restoreBackup } from '../api.js';
+import { getAllergenKeywords, addAllergenKeyword, deleteAllergenKeyword, changePassword, getDayPhases, updateDayPhases, getNotificationPreferences, updateNotificationPreferences, restoreBackup, getAiSettings, saveAiSettings, getAiUsage } from '../api.js';
 import { showToast } from '../components/toast.js';
 import { escapeHtml } from '../utils/escapeHtml.js';
 import { restartNotifications } from '../utils/notifications.js';
@@ -18,6 +18,73 @@ export async function renderSettings(container) {
       <h1>Settings</h1>
     </div>
     <div class="st-sections">
+
+      <section class="st-section">
+        <button class="st-section-toggle" aria-expanded="true">
+          <span class="st-section-title">AI Assistant</span>
+          <span class="st-chevron" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16"><polyline points="6 9 12 15 18 9"/></svg>
+          </span>
+        </button>
+        <div class="st-section-body">
+          <p class="ak-intro">
+            Connect to Claude Haiku for recipe cleanup, smart commands, and kitchen workflow assistance.
+            AI features require an Anthropic API key.
+          </p>
+          <div class="card" style="padding: var(--space-md);">
+            <h3 class="st-card-heading">API Key</h3>
+            <div class="st-form-group">
+              <label class="st-label" for="ai-api-key">Anthropic API Key</label>
+              <div class="ai-key-row">
+                <input type="password" id="ai-api-key" class="input" placeholder="sk-ant-..." autocomplete="off">
+                <button id="ai-key-toggle" class="btn btn-secondary btn-sm" type="button">Show</button>
+              </div>
+              <p id="ai-key-status" class="ai-key-status"></p>
+            </div>
+
+            <h3 class="st-card-heading" style="margin-top: var(--space-lg);">Usage Limits</h3>
+            <div class="ai-limits-row">
+              <div class="st-form-group">
+                <label class="st-label" for="ai-daily-limit">Daily limit (0 = unlimited)</label>
+                <input type="number" id="ai-daily-limit" class="input ai-limit-input" min="0" value="0">
+              </div>
+              <div class="st-form-group">
+                <label class="st-label" for="ai-monthly-limit">Monthly limit (0 = unlimited)</label>
+                <input type="number" id="ai-monthly-limit" class="input ai-limit-input" min="0" value="0">
+              </div>
+            </div>
+
+            <h3 class="st-card-heading" style="margin-top: var(--space-lg);">Features</h3>
+            <div class="ai-features-list">
+              <label class="nt-toggle-label">
+                <input type="checkbox" id="ai-feat-cleanup" class="nt-checkbox" checked>
+                <span class="nt-toggle-text">Recipe cleanup</span>
+              </label>
+              <label class="nt-toggle-label">
+                <input type="checkbox" id="ai-feat-matching" class="nt-checkbox" checked>
+                <span class="nt-toggle-text">Smart ingredient matching</span>
+              </label>
+              <label class="nt-toggle-label">
+                <input type="checkbox" id="ai-feat-allergens" class="nt-checkbox" checked>
+                <span class="nt-toggle-text">Allergen verification</span>
+              </label>
+              <label class="nt-toggle-label">
+                <input type="checkbox" id="ai-feat-scaling" class="nt-checkbox" checked>
+                <span class="nt-toggle-text">Smart recipe scaling</span>
+              </label>
+            </div>
+
+            <h3 class="st-card-heading" style="margin-top: var(--space-lg);">Usage</h3>
+            <div id="ai-usage-stats" class="ai-usage-stats">
+              <div class="loading">Loading...</div>
+            </div>
+
+            <div class="st-form-actions">
+              <button id="ai-save-btn" class="btn btn-primary">Save AI Settings</button>
+            </div>
+          </div>
+        </div>
+      </section>
 
       <section class="st-section">
         <button class="st-section-toggle" aria-expanded="true">
@@ -580,6 +647,109 @@ export async function renderSettings(container) {
       showToast('Failed to show notification', 'error');
     }
   });
+
+  // --- AI Assistant Settings ---
+  const aiKeyInput = container.querySelector('#ai-api-key');
+  const aiKeyToggle = container.querySelector('#ai-key-toggle');
+  const aiKeyStatus = container.querySelector('#ai-key-status');
+  const aiDailyLimit = container.querySelector('#ai-daily-limit');
+  const aiMonthlyLimit = container.querySelector('#ai-monthly-limit');
+  const aiSaveBtn = container.querySelector('#ai-save-btn');
+  const aiUsageStats = container.querySelector('#ai-usage-stats');
+
+  // Show/hide key toggle
+  aiKeyToggle.addEventListener('click', () => {
+    const isPassword = aiKeyInput.type === 'password';
+    aiKeyInput.type = isPassword ? 'text' : 'password';
+    aiKeyToggle.textContent = isPassword ? 'Hide' : 'Show';
+  });
+
+  // Load current AI settings
+  async function loadAiSettings() {
+    try {
+      const settings = await getAiSettings();
+      if (settings.hasApiKey) {
+        aiKeyInput.placeholder = settings.apiKey || 'Key configured';
+        aiKeyStatus.textContent = 'API key is configured';
+        aiKeyStatus.className = 'ai-key-status ai-key-status--ok';
+      } else {
+        aiKeyStatus.textContent = 'No API key set — AI features disabled';
+        aiKeyStatus.className = 'ai-key-status ai-key-status--warning';
+      }
+      aiDailyLimit.value = settings.dailyLimit || 0;
+      aiMonthlyLimit.value = settings.monthlyLimit || 0;
+
+      const feats = settings.features || {};
+      container.querySelector('#ai-feat-cleanup').checked = feats.cleanup !== false;
+      container.querySelector('#ai-feat-matching').checked = feats.matching !== false;
+      container.querySelector('#ai-feat-allergens').checked = feats.allergens !== false;
+      container.querySelector('#ai-feat-scaling').checked = feats.scaling !== false;
+    } catch {
+      aiKeyStatus.textContent = 'Failed to load AI settings';
+      aiKeyStatus.className = 'ai-key-status ai-key-status--warning';
+    }
+  }
+
+  // Load usage stats
+  async function loadAiUsage() {
+    try {
+      const usage = await getAiUsage();
+      const dailyLabel = usage.limits.daily > 0 ? ` / ${usage.limits.daily}` : '';
+      const monthlyLabel = usage.limits.monthly > 0 ? ` / ${usage.limits.monthly}` : '';
+      aiUsageStats.innerHTML = `
+        <div class="ai-usage-row">
+          <span class="ai-usage-label">Today</span>
+          <span class="ai-usage-value">${usage.today.requests}${dailyLabel} requests</span>
+          <span class="ai-usage-tokens">${(usage.today.tokens_in + usage.today.tokens_out).toLocaleString()} tokens</span>
+        </div>
+        <div class="ai-usage-row">
+          <span class="ai-usage-label">This month</span>
+          <span class="ai-usage-value">${usage.month.requests}${monthlyLabel} requests</span>
+          <span class="ai-usage-tokens">${(usage.month.tokens_in + usage.month.tokens_out).toLocaleString()} tokens</span>
+        </div>
+      `;
+    } catch {
+      aiUsageStats.innerHTML = '<p class="ai-usage-empty">No usage data yet</p>';
+    }
+  }
+
+  // Save AI settings
+  aiSaveBtn.addEventListener('click', async () => {
+    aiSaveBtn.disabled = true;
+    aiSaveBtn.textContent = 'Saving...';
+
+    const body = {
+      features: {
+        cleanup: container.querySelector('#ai-feat-cleanup').checked,
+        matching: container.querySelector('#ai-feat-matching').checked,
+        allergens: container.querySelector('#ai-feat-allergens').checked,
+        scaling: container.querySelector('#ai-feat-scaling').checked,
+      },
+      dailyLimit: parseInt(aiDailyLimit.value) || 0,
+      monthlyLimit: parseInt(aiMonthlyLimit.value) || 0,
+    };
+
+    // Only send API key if the user typed something new
+    if (aiKeyInput.value.trim()) {
+      body.apiKey = aiKeyInput.value.trim();
+    }
+
+    try {
+      await saveAiSettings(body);
+      showToast('AI settings saved');
+      aiKeyInput.value = '';
+      await loadAiSettings();
+      await loadAiUsage();
+    } catch (err) {
+      showToast(err.message || 'Failed to save AI settings', 'error');
+    } finally {
+      aiSaveBtn.disabled = false;
+      aiSaveBtn.textContent = 'Save AI Settings';
+    }
+  });
+
+  await loadAiSettings();
+  await loadAiUsage();
 
   // --- Backup / Restore ---
   const restoreInput = container.querySelector('#st-restore-input');

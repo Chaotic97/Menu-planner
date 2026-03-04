@@ -1,4 +1,4 @@
-import { getDish, createDish, updateDish, uploadDishPhoto, deleteDishPhoto, getIngredients, duplicateDish, updateDishAllergen } from '../api.js';
+import { getDish, createDish, updateDish, uploadDishPhoto, deleteDishPhoto, getIngredients, duplicateDish, updateDishAllergen, aiCleanupRecipe, aiConfirm, aiUndo } from '../api.js';
 import { renderAllergenBadges } from '../components/allergenBadges.js';
 import { showToast } from '../components/toast.js';
 import { openLightbox } from '../components/lightbox.js';
@@ -268,7 +268,12 @@ export async function renderDishForm(container, dishId) {
             <div class="ing-add-buttons">
               <button type="button" id="add-direction-step" class="btn btn-secondary">+ Add Step</button>
               <button type="button" id="add-direction-section" class="btn btn-secondary">+ Add Section</button>
+              ${dish ? `<button type="button" id="ai-cleanup-btn" class="btn btn-ghost btn-sm ai-cleanup-btn" title="Clean up directions with AI">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.5 5.5L19 10l-5.5 1.5L12 17l-1.5-5.5L5 10l5.5-1.5L12 3z"/></svg>
+                Clean up with AI
+              </button>` : ''}
             </div>
+            <div id="ai-cleanup-preview" class="ai-cleanup-preview" style="display:none;"></div>
           </div>
 
           <!-- Service Directions -->
@@ -735,6 +740,87 @@ export async function renderDishForm(container, dishId) {
       e.target.closest('.dir-section-row').remove();
     }
   });
+
+  // AI Cleanup button
+  const aiCleanupBtn = container.querySelector('#ai-cleanup-btn');
+  const aiCleanupPreview = container.querySelector('#ai-cleanup-preview');
+
+  if (aiCleanupBtn && aiCleanupPreview) {
+    aiCleanupBtn.addEventListener('click', async () => {
+      if (!dish) return;
+
+      aiCleanupBtn.disabled = true;
+      aiCleanupBtn.textContent = 'Thinking...';
+      aiCleanupPreview.style.display = 'block';
+      aiCleanupPreview.innerHTML = '<div class="cb-processing"><div class="cb-preview-spinner"></div><span>Cleaning up directions...</span></div>';
+
+      try {
+        const result = await aiCleanupRecipe(dish.id);
+
+        // Show before/after diff
+        const beforeHtml = result.before.map(line => `<div class="ai-diff-line">${escapeHtml(line)}</div>`).join('');
+        const afterHtml = result.after.map(line => `<div class="ai-diff-line">${escapeHtml(line)}</div>`).join('');
+
+        aiCleanupPreview.innerHTML = `
+          <div class="ai-diff-container">
+            <div class="ai-diff-panel">
+              <div class="ai-diff-header">Before</div>
+              <div class="ai-diff-body">${beforeHtml}</div>
+            </div>
+            <div class="ai-diff-panel ai-diff-after">
+              <div class="ai-diff-header">After</div>
+              <div class="ai-diff-body">${afterHtml}</div>
+            </div>
+          </div>
+          <div class="ai-diff-actions">
+            <button class="btn btn-primary btn-sm" id="ai-cleanup-confirm">Apply Changes</button>
+            <button class="btn btn-secondary btn-sm" id="ai-cleanup-cancel">Cancel</button>
+          </div>
+        `;
+
+        container.querySelector('#ai-cleanup-confirm').addEventListener('click', async () => {
+          try {
+            const confirmResult = await aiConfirm(result.confirmationId);
+            if (confirmResult.success) {
+              showToast('Directions cleaned up', 'success', 15000, confirmResult.undoId ? {
+                label: 'Undo',
+                onClick: async () => {
+                  try {
+                    await aiUndo(confirmResult.undoId);
+                    showToast('Directions restored', 'success');
+                    // Reload the form
+                    const { renderDishForm } = await import('./dishForm.js');
+                    renderDishForm(container.parentElement || container, dish.id);
+                  } catch (err) {
+                    showToast('Undo failed: ' + err.message, 'error');
+                  }
+                },
+              } : undefined);
+
+              // Reload the dish form to show new directions
+              const { renderDishForm } = await import('./dishForm.js');
+              renderDishForm(container.parentElement || container, dish.id);
+            } else {
+              showToast(confirmResult.response || 'Failed to apply', 'error');
+            }
+          } catch (err) {
+            showToast(err.message || 'Failed to apply changes', 'error');
+          }
+        });
+
+        container.querySelector('#ai-cleanup-cancel').addEventListener('click', () => {
+          aiCleanupPreview.style.display = 'none';
+          aiCleanupPreview.innerHTML = '';
+        });
+
+      } catch (err) {
+        aiCleanupPreview.innerHTML = `<div class="ai-cleanup-error">${escapeHtml(err.message || 'Cleanup failed')}</div>`;
+      } finally {
+        aiCleanupBtn.disabled = false;
+        aiCleanupBtn.innerHTML = `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.5 5.5L19 10l-5.5 1.5L12 17l-1.5-5.5L5 10l5.5-1.5L12 3z"/></svg> Clean up with AI`;
+      }
+    });
+  }
 
   setupDirectionDragDrop(directionsList);
 

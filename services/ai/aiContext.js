@@ -1,0 +1,140 @@
+/**
+ * AI Context Builder — hydrates page context into data Haiku can use.
+ * Takes { page, entityType, entityId } from the frontend and returns
+ * a concise string describing the current state.
+ */
+
+const { getDb } = require('../../db/database');
+
+/**
+ * Build context string from page context
+ * @param {Object} pageContext - { page, entityType, entityId }
+ * @returns {string} Context description for the system prompt
+ */
+async function buildContext(pageContext) {
+  if (!pageContext || !pageContext.page) return '';
+
+  const db = getDb();
+  const parts = [];
+  const page = pageContext.page;
+
+  parts.push(`User is on page: ${page}`);
+
+  // Dish edit/view context
+  if (pageContext.entityType === 'dish' && pageContext.entityId) {
+    const dish = db.prepare(
+      'SELECT id, name, description, category, chefs_notes, batch_yield, suggested_price FROM dishes WHERE id = ? AND deleted_at IS NULL'
+    ).get(pageContext.entityId);
+
+    if (dish) {
+      parts.push(`Current dish: "${dish.name}" (ID: ${dish.id})`);
+      if (dish.category) parts.push(`Category: ${dish.category}`);
+      if (dish.description) parts.push(`Description: ${dish.description}`);
+      if (dish.batch_yield) parts.push(`Batch yield: ${dish.batch_yield} portions`);
+
+      // Get ingredients
+      const ingredients = db.prepare(
+        `SELECT di.quantity, di.unit, i.name, di.prep_note, di.sort_order
+         FROM dish_ingredients di
+         JOIN ingredients i ON di.ingredient_id = i.id
+         WHERE di.dish_id = ?
+         ORDER BY di.sort_order`
+      ).all(pageContext.entityId);
+
+      if (ingredients.length) {
+        parts.push('Ingredients:');
+        for (const ing of ingredients) {
+          const qty = ing.quantity ? `${ing.quantity}${ing.unit ? ' ' + ing.unit : ''}` : '';
+          const prep = ing.prep_note ? `, ${ing.prep_note}` : '';
+          parts.push(`  - ${qty} ${ing.name}${prep}`);
+        }
+      }
+
+      // Get directions
+      const directions = db.prepare(
+        'SELECT type, text, sort_order FROM dish_directions WHERE dish_id = ? ORDER BY sort_order'
+      ).all(pageContext.entityId);
+
+      if (directions.length) {
+        parts.push('Current directions:');
+        let stepNum = 0;
+        for (const dir of directions) {
+          if (dir.type === 'section') {
+            parts.push(`  [${dir.text}]`);
+            stepNum = 0;
+          } else {
+            stepNum++;
+            parts.push(`  ${stepNum}. ${dir.text}`);
+          }
+        }
+      } else if (dish.chefs_notes) {
+        parts.push(`Chef's notes (legacy): ${dish.chefs_notes}`);
+      }
+
+      // Get allergens
+      const allergens = db.prepare(
+        'SELECT allergen, source FROM dish_allergens WHERE dish_id = ?'
+      ).all(pageContext.entityId);
+
+      if (allergens.length) {
+        parts.push('Current allergens: ' + allergens.map(a => `${a.allergen} (${a.source})`).join(', '));
+      }
+    }
+  }
+
+  // Menu context
+  if (pageContext.entityType === 'menu' && pageContext.entityId) {
+    const menu = db.prepare(
+      'SELECT id, name, description, sell_price, expected_covers FROM menus WHERE id = ? AND deleted_at IS NULL'
+    ).get(pageContext.entityId);
+
+    if (menu) {
+      parts.push(`Current menu: "${menu.name}" (ID: ${menu.id})`);
+      if (menu.sell_price) parts.push(`Sell price: ${menu.sell_price}`);
+      if (menu.expected_covers) parts.push(`Expected covers: ${menu.expected_covers}`);
+
+      const dishes = db.prepare(
+        `SELECT d.id, d.name, d.category, md.servings
+         FROM menu_dishes md
+         JOIN dishes d ON md.dish_id = d.id
+         WHERE md.menu_id = ? AND d.deleted_at IS NULL
+         ORDER BY md.sort_order`
+      ).all(pageContext.entityId);
+
+      if (dishes.length) {
+        parts.push('Dishes on menu:');
+        for (const d of dishes) {
+          parts.push(`  - ${d.name} (${d.category || 'uncategorized'}, ${d.servings} servings)`);
+        }
+      }
+    }
+  }
+
+  // For any page, provide a summary of available dishes and menus for fuzzy matching
+  if (!pageContext.entityType || pageContext.entityType !== 'dish') {
+    const dishCount = db.prepare('SELECT COUNT(*) as cnt FROM dishes WHERE deleted_at IS NULL').get();
+    parts.push(`Total dishes in system: ${dishCount.cnt}`);
+
+    // Provide dish names for fuzzy matching when needed
+    const dishes = db.prepare(
+      'SELECT id, name, category FROM dishes WHERE deleted_at IS NULL ORDER BY name LIMIT 50'
+    ).all();
+    if (dishes.length) {
+      parts.push('Available dishes: ' + dishes.map(d => `"${d.name}" (ID:${d.id})`).join(', '));
+    }
+  }
+
+  const menuCount = db.prepare('SELECT COUNT(*) as cnt FROM menus WHERE deleted_at IS NULL').get();
+  parts.push(`Total menus: ${menuCount.cnt}`);
+
+  const menus = db.prepare(
+    'SELECT id, name FROM menus WHERE deleted_at IS NULL ORDER BY name LIMIT 20'
+  ).all();
+  if (menus.length) {
+    parts.push('Available menus: ' + menus.map(m => `"${m.name}" (ID:${m.id})`).join(', '));
+  }
+
+  return parts.join('\n');
+}
+
+module.exports = { buildContext };

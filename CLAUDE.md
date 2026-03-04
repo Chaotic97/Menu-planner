@@ -14,6 +14,7 @@ PlateStack is a chef-focused menu planning web app. Full workflow: create dishes
 | Database | SQLite via sql.js | Loaded into memory on startup. Written to disk via 500 ms debounced save. |
 | Auth | express-session + session-file-store | Single-user bcrypt password gate. Sessions persist across restarts. |
 | Real-time | WebSocket (ws) | Server broadcasts on every CRUD mutation. Frontend listens via `sync:TYPE` custom events. |
+| AI | Claude Haiku via @anthropic-ai/sdk | Context-aware command bar with function calling. API key stored in settings table. |
 | CSS | Single stylesheet | `public/css/style.css` — CSS custom properties, no preprocessor. |
 | PWA | service-worker.js | Cache-first for static assets, network-only for /api/ (no API caching). |
 
@@ -42,6 +43,11 @@ services/
   specialsExporter.js            — exportSpecialsDocx(weekStart) — generates .docx file of active weekly specials with dish details.
   shoppingListGenerator.js       — generateShoppingList(menuId) — aggregates + unit-normalises menu ingredients. Includes in_stock flag and ingredient_id per item.
   taskGenerator.js               — generateAndPersistTasks(menuId), getTasks(filters), buildPrepTaskRows(). Generates only prep tasks into persistent `tasks` table. Shopping is handled separately by the shopping list page.
+  ai/
+    aiService.js                 — Anthropic SDK wrapper: processCommand(), executeConfirmedAction(), usage tracking, rate limit checking
+    aiTools.js                   — Tool registry with 10 function-calling tools. Adding a new AI command = adding one entry here.
+    aiContext.js                 — Builds page-aware context payloads from { page, entityType, entityId } for the system prompt
+    aiHistory.js                 — Undo/snapshot system: saveSnapshot(), restoreSnapshot(), cleanupOldSnapshots() (24h TTL)
 routes/
   auth.js                        — Login, logout, setup, forgot/reset password, change password
   dishes.js                      — Full CRUD + photo upload, duplicate, favorites, tags, allergens, directions, import from URL/docx
@@ -50,6 +56,7 @@ routes/
   todos.js                       — Legacy shopping list/prep task endpoints + persistent task CRUD (generate, list, create, update, delete, batch-complete)
   serviceNotes.js                — Daily kitchen notes CRUD
   notifications.js               — Notification preferences CRUD + pending items endpoint
+  ai.js                          — AI endpoints: command processing, confirmation flow, undo, recipe cleanup, ingredient matching, settings, usage stats
 public/
   index.html                     — SPA shell: sidebar nav (SVG icon slots + labels), mobile bottom tab bar, offline banner, SW registration. Sidebar has three states: expanded (240px), collapsed (64px icon rail), hidden (0px reveal button shown).
   manifest.json + service-worker.js — PWA assets
@@ -63,7 +70,7 @@ public/
     pages/                       — One file per page. Each exports renderXxx(container).
       dishList.js · dishForm.js · dishView.js · menuList.js · menuBuilder.js
       todoView.js · shoppingList.js · serviceNotes.js · flavorPairings.js · specials.js · login.js
-      settings.js                — Settings page: change password (Security) + notifications (Notifications) + day phases (Day Phases) + allergen keyword manager (Allergen Detection). Route: #/settings
+      settings.js                — Settings page: AI Assistant (API key, usage limits, feature toggles, usage stats) + change password (Security) + notifications (Notifications) + day phases (Day Phases) + allergen keyword manager (Allergen Detection). Route: #/settings
     components/
       actionMenu.js              — createActionMenu(items[], opts). Three-dot overflow dropdown. Click trigger toggles; click-outside/Escape closes. Items: { label, icon?, danger?, onClick }.
       collapsible.js             — makeCollapsible(sectionEl, opts) / collapsibleHeader(title, subtitle?). Toggle sections open/closed with optional localStorage persistence via `storageKey`.
@@ -72,6 +79,8 @@ public/
       allergenBadges.js          — renderAllergenBadges(allergens)
       lightbox.js                — openLightbox(src, alt)
       unitConverter.js           — openUnitConverter()
+      commandBar.js              — AI command bar (replaces quickCapture.js). Dual mode: AI (online) / plain task (offline). Ctrl/Cmd+K to focus. Shows confirmation preview cards.
+      chatDrawer.js              — (Level 2 skeleton) Slide-out conversational chat panel. Not wired up yet — structural prep for future activation.
     data/
       categories.js · units.js · allergenKeywords.js · flavorPairings.js
 eslint.config.js                 — ESLint flat config: separate rules for backend (CommonJS), frontend (ES modules), tests (Jest)
@@ -413,6 +422,18 @@ The pipeline catches lint errors and test failures before code reaches `main`.
 | POST | `/api/auth/reset` | Rate-limited (10/15min per IP) |
 | POST | `/api/auth/change-password` | Requires session. Rate-limited. Body: `{ currentPassword, newPassword }` |
 
+### AI Assistant
+| Method | Path | Notes |
+|--------|------|-------|
+| POST | `/api/ai/command` | Main entry. Body: `{ message, context: { page, entityType?, entityId? }, conversationHistory? }`. Rate-limited (30/min). Returns `{ response, confirmationId?, preview?, toolName? }` for tool calls, or `{ response }` for text-only. |
+| POST | `/api/ai/confirm/:id` | Execute a confirmed AI action. Returns `{ success, response, undoId?, entityType?, entityId?, navigateTo? }`. Pending confirmations expire after 5 minutes. |
+| POST | `/api/ai/undo/:id` | Undo an AI action by restoring from ai_history snapshot. Returns `{ success, message }`. |
+| POST | `/api/ai/cleanup-recipe/:dishId` | Two-step recipe cleanup: sends directions to Haiku, returns `{ before[], after[], dishName, confirmationId }` for diff preview. Confirm via `/api/ai/confirm/:id`. |
+| POST | `/api/ai/match-ingredients` | Smart ingredient matching. Body: `{ ingredients: [{ name }] }`. Returns `{ matches: [{ input_name, matched_id?, matched_name?, confidence }] }`. |
+| GET | `/api/ai/usage` | Usage stats: `{ today: { requests, tokens_in, tokens_out }, month: {...}, limits: { daily, monthly } }` |
+| GET | `/api/ai/settings` | AI config with masked API key: `{ apiKey (masked), hasApiKey, features, dailyLimit, monthlyLimit }` |
+| POST | `/api/ai/settings` | Save AI config. Body: `{ apiKey?, features?, dailyLimit?, monthlyLimit? }`. Key validated to start with "sk-". |
+
 ---
 
 ## Database tables
@@ -432,9 +453,11 @@ The pipeline catches lint errors and test failures before code reaches `main`.
 | `dish_tags` | dish_id, tag_id |
 | `dish_directions` | id, dish_id, type (`'step'` or `'section'`), text, sort_order — structured method steps, replacements for free-text chefs_notes |
 | `dish_substitutions` | dish_id, allergen, original_ingredient, substitute_ingredient, substitute_quantity, substitute_unit, notes |
-| `settings` | key, value — stores: password_hash, email, reset_token, reset_expires |
+| `settings` | key, value — stores: password_hash, email, reset_token, reset_expires, ai_api_key, ai_daily_limit, ai_monthly_limit, ai_features (JSON) |
 | `service_notes` | id, date (YYYY-MM-DD), shift, title, content, created_at, updated_at |
 | `tasks` | id, menu_id (nullable FK→menus ON DELETE SET NULL), source_dish_id (nullable FK→dishes ON DELETE SET NULL), type (prep/custom), title, description, category, quantity, unit, timing_bucket, priority (high/medium/low), due_date, due_time, completed, completed_at, source (auto/manual), sort_order, created_at, updated_at |
+| `ai_history` | id, entity_type, entity_id, action_type (create/update/delete), previous_data (JSON snapshot), created_at — undo system for AI actions, auto-purged after 24h |
+| `ai_usage` | id, tokens_in, tokens_out, model, tool_used, created_at — tracks every AI API call for usage stats/limits |
 
 **Shift values:** `all` · `am` · `lunch` · `pm` · `prep`
 
@@ -558,6 +581,27 @@ Client-side notification scheduling via `public/js/utils/notifications.js`. Arch
 - **Service worker**: `notificationclick` handler in `service-worker.js` focuses the app window and navigates to the relevant hash route.
 - **Settings UI**: Notifications section in `#/settings` with per-type toggles, lead time inputs, and a test notification button.
 
+### AI Assistant (Claude Haiku integration)
+Context-aware AI command bar powered by Claude Haiku with function calling. Architecture:
+
+- **Command bar** (`commandBar.js`): Fixed-bottom input replacing the old quick-capture bar. Dual mode — AI (online) / plain task (offline). Mode toggled via button or auto-detected from `navigator.onLine`. Keyboard shortcut: Ctrl/Cmd+K to focus.
+- **Confirmation flow**: Every AI tool call shows a preview card (what will happen) with Confirm/Cancel. No AI action mutates data without explicit user confirmation. Pending confirmations stored in-memory and auto-expire after 5 minutes.
+- **Undo system**: Every confirmed AI mutation saves a snapshot to `ai_history` table. Success toast includes a 15-second Undo button. Snapshots auto-purged after 24 hours on server startup.
+- **Context awareness**: The command bar sends `{ page, entityType, entityId }` with every request. `aiContext.js` hydrates this into dish/menu/ingredient data for the system prompt. When on a dish page, "clean up the directions" knows which dish you mean.
+- **Tool registry** (`aiTools.js`): Each tool is `{ name, description, input_schema, handler }`. Handler returns `{ preview, execute() }` pattern — preview for confirmation, execute for the actual mutation. Adding a new AI command = adding one entry to the registry array.
+- **Available tools**: `create_menu`, `create_dish`, `create_task`, `add_dish_to_menu` (fuzzy name matching), `cleanup_recipe`, `check_allergens`, `scale_recipe`, `convert_units`, `add_service_note`, `search_dishes`.
+- **Recipe cleanup**: Dedicated endpoint `POST /api/ai/cleanup-recipe/:dishId` sends directions to Haiku with a structured prompt, returns cleaned JSON array, and shows a before/after diff in the dish form. "Clean up with AI" button appears in the Prep Directions section.
+- **Smart ingredient matching**: `POST /api/ai/match-ingredients` matches imported ingredient names to existing DB entries with confidence scores.
+- **Usage tracking**: Every AI API call logged to `ai_usage` table (tokens in/out, model, tool used). Configurable daily/monthly request limits in Settings.
+- **Settings**: AI Assistant section in `#/settings` — API key input (stored in `settings` table, masked on GET), usage limits, per-feature toggles, usage stats display.
+- **Offline degradation**: When offline, command bar falls back to plain task creation (same as old quick-capture). AI buttons disabled.
+- **Chat drawer** (`chatDrawer.js`): Level 2 structural skeleton — slide-out panel with multi-turn conversation support. Not wired up in v1. Same backend, adds `conversationHistory` parameter to track multi-turn context.
+
+**Adding a new AI tool:**
+1. Add tool definition to `TOOL_REGISTRY` array in `services/ai/aiTools.js` (name, description, input_schema)
+2. Add handler function in the `handlers` object (same file) — implement both `preview` and `execute` paths
+3. Everything else (command parsing, confirmation flow, undo) is automatic
+
 ---
 
 ## CSS conventions
@@ -588,6 +632,9 @@ Sub-sections (responsive overrides, etc.):
 | `.sl-` | Shopping List page |
 | `.st-` | Settings page |
 | `.nt-` | Notification settings |
+| `.cb-` | Command Bar (AI input) |
+| `.ai-` | AI cleanup/diff, AI settings |
+| `.chat-` | Chat Drawer (Level 2) |
 
 Global components (`.btn`, `.btn-ghost`, `.card`, `.modal`, `.toast`, `.input`, `.drag-handle`, `.action-menu-*`, `.collapsible-section*`, `.no-print`) are unprefixed. New features with more than ~3 classes get a prefix; add it to this table.
 
