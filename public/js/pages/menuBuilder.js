@@ -179,7 +179,7 @@ export async function renderMenuBuilder(container, menuId) {
                   <div class="mb-dish-info">
                     <a href="#/dishes/${dish.id}" class="dish-name-link"><strong>${escapeHtml(dish.name)}</strong></a>
                     ${renderAllergenBadges(dish.allergens, true)}
-                    ${hasConflict ? `<div class="mb-allergy-warning">&#9888; Guest allergy: ${dish.allergy_conflicts.join(', ')}</div>` : ''}
+                    ${hasConflict ? `<div class="mb-allergy-warning">&#9888; Guest allergy: ${escapeHtml(dish.allergy_conflicts.join(', '))}</div>` : ''}
                     ${dish.substitution_count > 0 ? `<span class="subs-badge" data-dish-id="${dish.id}" title="Has allergen substitutions">&#8644; ${dish.substitution_count} sub${dish.substitution_count > 1 ? 's' : ''}</span>` : ''}
                     ${isHouse && scheduleDays.length ? `
                       <div class="mb-dish-days" data-dish-id="${dish.id}">
@@ -307,7 +307,7 @@ export async function renderMenuBuilder(container, menuId) {
     if (isHouse) container.querySelectorAll('.mb-dish-day-btn').forEach(btn => {
       btn.addEventListener('click', async () => {
         const dishId = btn.dataset.dish;
-        const dish = menu.dishes.find(d => d.id == dishId);
+        const dish = menu.dishes.find(d => String(d.id) === String(dishId));
         if (!dish) return;
 
         btn.classList.toggle('active');
@@ -407,7 +407,7 @@ export async function renderMenuBuilder(container, menuId) {
     container.querySelectorAll('.servings-inc').forEach(btn => {
       btn.addEventListener('click', async () => {
         const dishId = btn.dataset.dish;
-        const dish = menu.dishes.find(d => d.id == dishId);
+        const dish = menu.dishes.find(d => String(d.id) === String(dishId));
         if (dish) {
           btn.disabled = true;
           try {
@@ -425,7 +425,7 @@ export async function renderMenuBuilder(container, menuId) {
     container.querySelectorAll('.servings-dec').forEach(btn => {
       btn.addEventListener('click', async () => {
         const dishId = btn.dataset.dish;
-        const dish = menu.dishes.find(d => d.id == dishId);
+        const dish = menu.dishes.find(d => String(d.id) === String(dishId));
         if (dish && dish.servings > 1) {
           btn.disabled = true;
           try {
@@ -525,8 +525,8 @@ export async function renderMenuBuilder(container, menuId) {
         if (draggedId === targetId) return;
 
         // Reorder dishes array
-        const fromIndex = menu.dishes.findIndex(d => d.id == draggedId);
-        const toIndex = menu.dishes.findIndex(d => d.id == targetId);
+        const fromIndex = menu.dishes.findIndex(d => String(d.id) === String(draggedId));
+        const toIndex = menu.dishes.findIndex(d => String(d.id) === String(targetId));
         if (fromIndex === -1 || toIndex === -1) return;
 
         const [moved] = menu.dishes.splice(fromIndex, 1);
@@ -567,7 +567,7 @@ export async function renderMenuBuilder(container, menuId) {
 
         const touchEndY = e.changedTouches[0].clientY;
         const diff = touchEndY - touchStartY;
-        const fromIndex = menu.dishes.findIndex(d => d.id == touchDragId);
+        const fromIndex = menu.dishes.findIndex(d => String(d.id) === String(touchDragId));
 
         let toIndex = fromIndex;
         if (diff > 40 && fromIndex < menu.dishes.length - 1) toIndex = fromIndex + 1;
@@ -938,7 +938,7 @@ export async function renderMenuBuilder(container, menuId) {
 
   // Real-time sync listeners
   const onMenuUpdate = async (e) => {
-    if (e.detail && e.detail.id == menuId) {
+    if (e.detail && String(e.detail.id) === String(menuId)) {
       try {
         menu = await getMenu(menuId);
         render();

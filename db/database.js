@@ -40,6 +40,11 @@ class DbWrapper {
     save(this._db);
   }
 
+  cancelPendingSave() {
+    if (this._saveTimer) { clearTimeout(this._saveTimer); this._saveTimer = null; }
+    if (this._maxTimer) { clearTimeout(this._maxTimer); this._maxTimer = null; }
+  }
+
   prepare(sql) {
     return new StmtWrapper(this._db, sql, () => this._scheduleSave());
   }

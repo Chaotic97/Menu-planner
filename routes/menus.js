@@ -582,7 +582,8 @@ router.put('/specials/:id', (req, res) => {
   if (!updates.length) return res.status(400).json({ error: 'Nothing to update' });
 
   params.push(req.params.id);
-  db.prepare(`UPDATE weekly_specials SET ${updates.join(', ')} WHERE id = ?`).run(...params);
+  const result = db.prepare(`UPDATE weekly_specials SET ${updates.join(', ')} WHERE id = ?`).run(...params);
+  if (result.changes === 0) return res.status(404).json({ error: 'Special not found' });
   req.broadcast('special_updated', { id: parseInt(req.params.id) }, req.headers['x-client-id']);
   res.json({ success: true });
 });
@@ -590,7 +591,8 @@ router.put('/specials/:id', (req, res) => {
 // DELETE /api/menus/specials/:id
 router.delete('/specials/:id', (req, res) => {
   const db = getDb();
-  db.prepare('DELETE FROM weekly_specials WHERE id = ?').run(req.params.id);
+  const result = db.prepare('DELETE FROM weekly_specials WHERE id = ?').run(req.params.id);
+  if (result.changes === 0) return res.status(404).json({ error: 'Special not found' });
   req.broadcast('special_deleted', { id: parseInt(req.params.id) }, req.headers['x-client-id']);
   res.json({ success: true });
 });

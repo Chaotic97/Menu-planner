@@ -7,16 +7,28 @@ const router = express.Router();
 // GET /api/ingredients - List/search ingredients
 router.get('/', (req, res) => {
   const db = getDb();
-  const { search } = req.query;
+  const { search, include_usage } = req.query;
 
-  let sql = 'SELECT * FROM ingredients';
+  let sql;
+  if (include_usage) {
+    sql = `SELECT i.*, COUNT(di.dish_id) AS dish_count
+           FROM ingredients i
+           LEFT JOIN dish_ingredients di ON di.ingredient_id = i.id
+           LEFT JOIN dishes d ON d.id = di.dish_id AND d.deleted_at IS NULL`;
+  } else {
+    sql = 'SELECT * FROM ingredients i';
+  }
+
   const params = [];
-
   if (search) {
-    sql += ' WHERE name LIKE ?';
+    sql += ' WHERE i.name LIKE ?';
     params.push(`%${search}%`);
   }
-  sql += ' ORDER BY name';
+
+  if (include_usage) {
+    sql += ' GROUP BY i.id';
+  }
+  sql += ' ORDER BY i.name';
 
   const ingredients = db.prepare(sql).all(...params);
   res.json(ingredients);

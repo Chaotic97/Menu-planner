@@ -99,15 +99,24 @@ export function initQuickCapture() {
   });
 }
 
+function syncAppContentPadding(show) {
+  const appContent = document.getElementById('app-content');
+  if (appContent) {
+    appContent.classList.toggle('qc-bar-active', show);
+  }
+}
+
 export function updateVisibility(hash) {
   if (!barEl) return;
   const show = shouldShow(hash);
   if (show && !isVisible) {
     barEl.classList.add('qc-bar-visible');
     isVisible = true;
+    syncAppContentPadding(true);
   } else if (!show && isVisible) {
     barEl.classList.remove('qc-bar-visible');
     isVisible = false;
+    syncAppContentPadding(false);
   }
 }
 
@@ -115,6 +124,7 @@ export function showQuickCapture() {
   if (barEl) {
     barEl.classList.add('qc-bar-visible');
     isVisible = true;
+    syncAppContentPadding(true);
   }
 }
 
@@ -122,5 +132,6 @@ export function hideQuickCapture() {
   if (barEl) {
     barEl.classList.remove('qc-bar-visible');
     isVisible = false;
+    syncAppContentPadding(false);
   }
 }

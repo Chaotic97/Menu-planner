@@ -910,7 +910,7 @@ export async function renderDishForm(container, dishId) {
   // Sync listener (edit mode)
   if (isEdit) {
     const onUpdate = (e) => {
-      if (e.detail && e.detail.id == dishId) {
+      if (e.detail && String(e.detail.id) === String(dishId)) {
         showToast('This dish was updated on another device', 'info', 5000, {
           label: 'Reload',
           onClick: () => { window.location.reload(); }

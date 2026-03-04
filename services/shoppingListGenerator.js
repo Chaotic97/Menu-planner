@@ -4,7 +4,7 @@ const { convertUnits, normalizeUnit, round2 } = require('./costCalculator');
 function generateShoppingList(menuId) {
   const db = getDb();
 
-  const menu = db.prepare('SELECT * FROM menus WHERE id = ?').get(menuId);
+  const menu = db.prepare('SELECT * FROM menus WHERE id = ? AND deleted_at IS NULL').get(menuId);
   if (!menu) return null;
 
   // Get all dish-ingredients for this menu, multiplied by servings

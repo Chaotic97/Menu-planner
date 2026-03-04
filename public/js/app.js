@@ -10,6 +10,7 @@ import { renderServiceNotes } from './pages/serviceNotes.js';
 import { renderFlavorPairings } from './pages/flavorPairings.js';
 import { renderSettings } from './pages/settings.js';
 import { renderToday } from './pages/today.js';
+import { renderIngredientList } from './pages/ingredientList.js';
 import { openUnitConverter } from './components/unitConverter.js';
 import { initQuickCapture } from './components/quickCapture.js';
 import { renderLogin } from './pages/login.js';
@@ -30,6 +31,7 @@ const routes = [
   { pattern: /^#\/specials$/, handler: () => renderSpecials(appContent) },
   { pattern: /^#\/service-notes$/, handler: () => renderServiceNotes(appContent) },
   { pattern: /^#\/flavor-pairings$/, handler: () => renderFlavorPairings(appContent) },
+  { pattern: /^#\/ingredients$/, handler: () => renderIngredientList(appContent) },
   { pattern: /^#\/settings$/, handler: () => renderSettings(appContent) },
   { pattern: /^#\/todos$/, handler: () => renderTodoView(appContent, null) },
   { pattern: /^#\/shopping$/, handler: () => renderShoppingList(appContent, null) },
@@ -111,7 +113,7 @@ function updateActiveNav(hash) {
   });
 
   // More menu — highlight "More" button when on a sub-page
-  const moreRoutes = ['/todos', '/specials', '/service-notes', '/flavor-pairings', '/settings'];
+  const moreRoutes = ['/todos', '/specials', '/ingredients', '/service-notes', '/flavor-pairings', '/settings'];
   const moreBtn = document.getElementById('bottom-more-btn');
   if (moreBtn) {
     const onMorePage = moreRoutes.some(r => hash === `#${r}` || hash.startsWith(`#${r}/`));

@@ -227,7 +227,7 @@ export async function renderDishView(container, dishId) {
 
   // Sync listener — nudge if updated elsewhere
   const onUpdate = (e) => {
-    if (e.detail && e.detail.id == dishId) {
+    if (e.detail && String(e.detail.id) === String(dishId)) {
       showToast('Dish updated on another device', 'info', 5000, {
         label: 'Reload',
         onClick: () => window.location.reload(),

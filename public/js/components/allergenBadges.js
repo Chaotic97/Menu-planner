@@ -1,4 +1,5 @@
 import { ALLERGEN_INFO } from '../data/allergenKeywords.js';
+import { escapeHtml } from '../utils/escapeHtml.js';
 
 export function renderAllergenBadges(allergens, compact = false) {
   if (!allergens || !allergens.length) return '';
@@ -8,7 +9,8 @@ export function renderAllergenBadges(allergens, compact = false) {
     const info = ALLERGEN_INFO[name] || { label: name, color: '#999' };
     const isManual = typeof a === 'object' && a.source === 'manual';
     const cls = compact ? 'allergen-badge compact' : 'allergen-badge';
-    return `<span class="${cls}" style="background:${info.color}" title="${info.label}${isManual ? ' (manual)' : ''}">${info.label}</span>`;
+    const label = escapeHtml(info.label);
+    return `<span class="${cls}" style="background:${info.color}" title="${label}${isManual ? ' (manual)' : ''}">${label}</span>`;
   });
 
   return `<div class="allergen-badges">${items.join('')}</div>`;
