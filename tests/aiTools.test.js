@@ -120,6 +120,14 @@ describe('create_menu handler', () => {
     expect(result.message).toBeDefined();
   });
 
+  test('preview includes event date when provided', () => {
+    const { executeToolHandler } = getTools();
+    const result = executeToolHandler('create_menu', { name: 'Wedding', event_date: '2026-06-15' }, { preview: true });
+    expect(result.description).toContain('Wedding');
+    expect(result.description).toContain('2026-06-15');
+    expect(result.message).toContain('2026-06-15');
+  });
+
   test('execute creates a menu in the database', () => {
     const { executeToolHandler } = getTools();
     const broadcasts = [];
@@ -133,7 +141,48 @@ describe('create_menu handler', () => {
 
     const menu = db.prepare('SELECT * FROM menus WHERE id = ?').get(result.entityId);
     expect(menu.name).toBe('AI Menu');
+    expect(menu.menu_type).toBe('event');
     expect(broadcasts.some(b => b.type === 'menu_created')).toBe(true);
+  });
+
+  test('execute creates a menu with event_date', () => {
+    const { executeToolHandler } = getTools();
+    const result = executeToolHandler('create_menu',
+      { name: 'Gala Dinner', event_date: '2026-04-20', description: 'Annual gala' },
+      { preview: false, broadcast: () => {} }
+    );
+
+    expect(result.success).toBe(true);
+    expect(result.message).toContain('2026-04-20');
+
+    const menu = db.prepare('SELECT * FROM menus WHERE id = ?').get(result.entityId);
+    expect(menu.name).toBe('Gala Dinner');
+    expect(menu.event_date).toBe('2026-04-20');
+    expect(menu.menu_type).toBe('event');
+  });
+
+  test('execute creates a standard (house) menu', () => {
+    const { executeToolHandler } = getTools();
+    const result = executeToolHandler('create_menu',
+      { name: 'House Menu', menu_type: 'standard' },
+      { preview: false, broadcast: () => {} }
+    );
+
+    expect(result.success).toBe(true);
+    const menu = db.prepare('SELECT * FROM menus WHERE id = ?').get(result.entityId);
+    expect(menu.menu_type).toBe('standard');
+    expect(menu.event_date).toBeNull();
+  });
+
+  test('rejects invalid event_date format', () => {
+    const { executeToolHandler } = getTools();
+    const result = executeToolHandler('create_menu',
+      { name: 'Bad Date', event_date: 'March 15' },
+      { preview: false, broadcast: () => {} }
+    );
+
+    expect(result.message).toContain('YYYY-MM-DD');
+    expect(result.success).toBeUndefined();
   });
 });
 
@@ -323,6 +372,17 @@ describe('lookup_menu handler', () => {
     const { executeToolHandler } = getTools();
     const result = executeToolHandler('lookup_menu', { menu_id: menu.lastInsertRowid }, { preview: false });
     expect(result.message).toContain('Lookup Menu Test');
+  });
+
+  test('includes event_date and menu_type in output', () => {
+    const menu = db.prepare(
+      "INSERT INTO menus (name, description, menu_type, event_date) VALUES (?, ?, ?, ?)"
+    ).run('Dated Event', 'With date', 'event', '2026-05-01');
+    const { executeToolHandler } = getTools();
+    const result = executeToolHandler('lookup_menu', { menu_id: menu.lastInsertRowid }, { preview: false });
+    expect(result.message).toContain('Dated Event');
+    expect(result.message).toContain('event');
+    expect(result.message).toContain('2026-05-01');
   });
 });
 
