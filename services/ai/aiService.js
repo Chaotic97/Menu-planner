@@ -136,7 +136,7 @@ async function processCommand(message, pageContext, conversationHistory) {
     return { response: limitCheck.reason, rateLimited: true };
   }
 
-  const client = new Anthropic({ apiKey });
+  const client = new Anthropic({ apiKey, timeout: 45 * 1000 });
   const context = await buildContext(pageContext);
   const systemPrompt = buildSystemPrompt(context);
   const tools = getToolDefinitions();
@@ -159,7 +159,9 @@ async function processCommand(message, pageContext, conversationHistory) {
       });
       break;
     } catch (err) {
-      if (attempt === MAX_RETRIES - 1) throw err;
+      // Don't retry on timeout or client errors — only on 5xx / transient failures
+      const isRetryable = err.status >= 500 || err.status === 429;
+      if (attempt === MAX_RETRIES - 1 || !isRetryable) throw err;
       // Exponential backoff: 1s, 2s, 4s
       await new Promise(r => setTimeout(r, 1000 * Math.pow(2, attempt)));
     }

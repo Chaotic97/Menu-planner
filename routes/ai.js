@@ -86,6 +86,9 @@ router.post('/command', aiRateLimit, asyncHandler(async (req, res) => {
     if (err.status === 400) {
       return res.status(400).json({ error: 'AI request failed: ' + (err.message || 'Bad request') });
     }
+    if (err.name === 'APIConnectionTimeoutError' || err.code === 'ETIMEDOUT') {
+      return res.status(504).json({ error: 'AI request timed out. The API may be slow — please try again.' });
+    }
 
     return res.status(500).json({ error: 'AI request failed. Please try again.' });
   }
@@ -199,7 +202,7 @@ router.post('/cleanup-recipe/:dishId', aiRateLimit, asyncHandler(async (req, res
 
   // Send to Haiku for cleanup
   const Anthropic = require('@anthropic-ai/sdk');
-  const client = new Anthropic({ apiKey });
+  const client = new Anthropic({ apiKey, timeout: 45 * 1000 });
 
   try {
     const response = await client.messages.create({
@@ -333,7 +336,7 @@ router.post('/match-ingredients', aiRateLimit, asyncHandler(async (req, res) => 
   const inputNames = ingredients.map(i => i.name).join('\n');
 
   const Anthropic = require('@anthropic-ai/sdk');
-  const client = new Anthropic({ apiKey });
+  const client = new Anthropic({ apiKey, timeout: 45 * 1000 });
 
   try {
     const response = await client.messages.create({
