@@ -1,4 +1,4 @@
-import { getMenus, getMenuKitchenPrint, getTasks, generateTasks, createTask, updateTask, deleteTask } from '../api.js';
+import { getMenus, getMenuKitchenPrint, getTasks, generateTasks, createTask, updateTask, deleteTask, aiGenerateTasks, getAiSettings } from '../api.js';
 import { escapeHtml } from '../utils/escapeHtml.js';
 import { showToast } from '../components/toast.js';
 import { openModal, closeModal } from '../components/modal.js';
@@ -65,10 +65,19 @@ export async function renderTodoView(container, menuId) {
   let filterMenuId = '';
   let tasks = [];
 
-  // Auto-generate if coming from menu builder
+  // Auto-generate if coming from menu builder — prefer AI if available
   if (fromMenuBuilder && activeMenuId) {
     try {
-      await generateTasks(activeMenuId);
+      let aiAvailable = false;
+      try {
+        const settings = await getAiSettings();
+        aiAvailable = !!settings.hasApiKey;
+      } catch {}
+      if (aiAvailable) {
+        await aiGenerateTasks(activeMenuId);
+      } else {
+        await generateTasks(activeMenuId);
+      }
     } catch (err) {
       showToast('Failed to generate tasks: ' + err.message, 'error');
     }
@@ -506,16 +515,34 @@ export async function renderTodoView(container, menuId) {
       await renderPage();
     });
 
-    // Regenerate button
+    // Regenerate button — prefer AI if available
     container.querySelector('#td-regenerate-btn')?.addEventListener('click', async () => {
       if (!activeMenuId) return;
+      const btn = container.querySelector('#td-regenerate-btn');
+      const origText = btn.textContent;
       try {
-        const result = await generateTasks(activeMenuId);
-        showToast(`Generated ${result.total} tasks`, 'success');
+        let aiAvailable = false;
+        try {
+          const settings = await getAiSettings();
+          aiAvailable = !!settings.hasApiKey;
+        } catch {}
+        let result;
+        if (aiAvailable) {
+          btn.textContent = 'AI generating...';
+          btn.disabled = true;
+          result = await aiGenerateTasks(activeMenuId);
+          showToast(`AI generated ${result.total} tasks`, 'success');
+        } else {
+          result = await generateTasks(activeMenuId);
+          showToast(`Generated ${result.total} tasks`, 'success');
+        }
         await loadTasks();
         renderContent();
       } catch (err) {
         showToast('Failed to regenerate: ' + err.message, 'error');
+      } finally {
+        btn.textContent = origText;
+        btn.disabled = false;
       }
     });
 

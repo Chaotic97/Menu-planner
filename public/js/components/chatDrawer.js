@@ -1,17 +1,20 @@
 /**
  * Chat Drawer — conversational AI panel.
  * Slides out from the right with multi-turn conversation support.
- * Sessions persist across navigations but auto-clear after 1 hour of inactivity.
+ * Conversations are saved to the database and persist across sessions.
+ * Auto-clears after 1 hour of inactivity. Session viewer for past conversations.
  */
 
-import { aiCommand } from '../api.js';
+import { aiCommand, getConversations, createConversation, getConversationMessages, addConversationMessage, deleteConversation } from '../api.js';
 import { escapeHtml } from '../utils/escapeHtml.js';
 
 let drawerEl = null;
 let isOpen = false;
 let conversationHistory = [];
+let currentConversationId = null;
 let lastActivityTime = Date.now();
 let isSending = false;
+let showingHistory = false;
 
 const SESSION_TIMEOUT_MS = 60 * 60 * 1000; // 1 hour
 
@@ -68,6 +71,9 @@ function createDrawer() {
       <div class="chat-drawer-header">
         <h3 class="chat-drawer-title">AI Assistant</h3>
         <div class="chat-drawer-header-actions">
+          <button class="chat-drawer-history-btn" title="Chat history" aria-label="View chat history">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+          </button>
           <button class="chat-drawer-new-chat" title="New conversation" aria-label="Start new conversation">
             <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
             <span>New Chat</span>
@@ -102,6 +108,7 @@ function createDrawer() {
   const backdrop = drawerEl.querySelector('.chat-drawer-backdrop');
   const closeBtn = drawerEl.querySelector('.chat-drawer-close');
   const newChatBtn = drawerEl.querySelector('.chat-drawer-new-chat');
+  const historyBtn = drawerEl.querySelector('.chat-drawer-history-btn');
   const input = drawerEl.querySelector('.chat-drawer-input');
   const sendBtn = drawerEl.querySelector('.chat-drawer-send');
   const fileInput = drawerEl.querySelector('.chat-drawer-file-input');
@@ -112,6 +119,13 @@ function createDrawer() {
   newChatBtn.addEventListener('click', () => {
     clearChat();
     input.focus();
+  });
+  historyBtn.addEventListener('click', () => {
+    if (showingHistory) {
+      hideHistoryView();
+    } else {
+      showHistoryView();
+    }
   });
 
   // File attachment
@@ -127,9 +141,27 @@ function createDrawer() {
     const text = input.value.trim();
     if (!text || isSending) return;
 
+    // Hide history view if showing
+    if (showingHistory) hideHistoryView();
+
     input.value = '';
     appendMessage('user', text);
     touchSession();
+
+    // Ensure we have a conversation ID
+    if (!currentConversationId) {
+      try {
+        const conv = await createConversation('');
+        currentConversationId = conv.id;
+      } catch {
+        // Continue without persistence
+      }
+    }
+
+    // Save user message to DB
+    if (currentConversationId) {
+      try { await addConversationMessage(currentConversationId, 'user', text); } catch {}
+    }
 
     isSending = true;
     sendBtn.disabled = true;
@@ -149,6 +181,11 @@ function createDrawer() {
       conversationHistory.push({ role: 'assistant', content: result.response });
 
       appendMessage('assistant', result.response);
+
+      // Save assistant message to DB
+      if (currentConversationId) {
+        try { await addConversationMessage(currentConversationId, 'assistant', result.response); } catch {}
+      }
 
       // Handle auto-executed tool side effects
       if (result.autoExecuted && result.navigateTo) {
@@ -209,6 +246,18 @@ async function handleFileAttachment(file, input, sendBtn) {
 
     const prompt = `The user attached a file: "${file.name}" (${file.type || 'unknown type'}).\n\nFile contents:\n${text.slice(0, 8000)}\n\nAnalyze this document and tell me what you found. If it contains recipes, menus, ingredient lists, or pricing — extract the key information.`;
 
+    // Ensure we have a conversation ID
+    if (!currentConversationId) {
+      try {
+        const conv = await createConversation('');
+        currentConversationId = conv.id;
+      } catch {}
+    }
+
+    if (currentConversationId) {
+      try { await addConversationMessage(currentConversationId, 'user', `[Attached: ${file.name}]`); } catch {}
+    }
+
     const context = getPageContext();
     const result = await aiCommand({
       message: prompt,
@@ -221,6 +270,10 @@ async function handleFileAttachment(file, input, sendBtn) {
     conversationHistory.push({ role: 'assistant', content: result.response });
 
     appendMessage('assistant', result.response);
+
+    if (currentConversationId) {
+      try { await addConversationMessage(currentConversationId, 'assistant', result.response); } catch {}
+    }
   } catch (err) {
     removeTypingIndicator();
     appendMessage('error', err.message || 'Failed to process file');
@@ -269,6 +322,170 @@ async function extractFileText(file) {
   }
 
   return null;
+}
+
+/**
+ * Show the history view (list of past conversations)
+ */
+async function showHistoryView() {
+  const messagesEl = document.getElementById('chat-messages');
+  if (!messagesEl) return;
+
+  showingHistory = true;
+  const historyBtn = drawerEl.querySelector('.chat-drawer-history-btn');
+  if (historyBtn) historyBtn.classList.add('active');
+
+  messagesEl.innerHTML = '<div class="chat-history-loading">Loading conversations...</div>';
+
+  try {
+    const conversations = await getConversations();
+
+    if (!conversations.length) {
+      messagesEl.innerHTML = `
+        <div class="chat-history-empty">
+          <p>No past conversations.</p>
+          <p class="chat-drawer-welcome-hint">Start a new chat to begin.</p>
+        </div>`;
+      return;
+    }
+
+    messagesEl.innerHTML = `
+      <div class="chat-history-list">
+        <div class="chat-history-header">Past Conversations</div>
+        ${conversations.map(c => `
+          <div class="chat-history-item" data-id="${c.id}">
+            <div class="chat-history-item-content">
+              <div class="chat-history-item-title">${escapeHtml(c.title || 'Untitled')}</div>
+              <div class="chat-history-item-date">${formatDate(c.updated_at)}</div>
+            </div>
+            <button class="chat-history-item-delete" data-id="${c.id}" title="Delete conversation" aria-label="Delete conversation">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+          </div>
+        `).join('')}
+      </div>`;
+
+    // Click to load a conversation
+    messagesEl.querySelectorAll('.chat-history-item').forEach(item => {
+      item.addEventListener('click', (e) => {
+        if (e.target.closest('.chat-history-item-delete')) return;
+        const id = parseInt(item.dataset.id);
+        loadConversation(id);
+      });
+    });
+
+    // Delete buttons
+    messagesEl.querySelectorAll('.chat-history-item-delete').forEach(btn => {
+      btn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        const id = parseInt(btn.dataset.id);
+        try {
+          await deleteConversation(id);
+          btn.closest('.chat-history-item').remove();
+          if (currentConversationId === id) {
+            clearChat();
+          }
+          // Check if list is now empty
+          if (!messagesEl.querySelector('.chat-history-item')) {
+            messagesEl.innerHTML = `
+              <div class="chat-history-empty">
+                <p>No past conversations.</p>
+                <p class="chat-drawer-welcome-hint">Start a new chat to begin.</p>
+              </div>`;
+          }
+        } catch {}
+      });
+    });
+  } catch {
+    messagesEl.innerHTML = '<div class="chat-history-empty"><p>Failed to load conversations.</p></div>';
+  }
+}
+
+/**
+ * Hide history view and restore chat
+ */
+function hideHistoryView() {
+  showingHistory = false;
+  const historyBtn = drawerEl.querySelector('.chat-drawer-history-btn');
+  if (historyBtn) historyBtn.classList.remove('active');
+  restoreMessages();
+}
+
+/**
+ * Load a past conversation into the chat
+ */
+async function loadConversation(convId) {
+  showingHistory = false;
+  const historyBtn = drawerEl.querySelector('.chat-drawer-history-btn');
+  if (historyBtn) historyBtn.classList.remove('active');
+
+  const messagesEl = document.getElementById('chat-messages');
+  if (!messagesEl) return;
+
+  messagesEl.innerHTML = '<div class="chat-history-loading">Loading...</div>';
+
+  try {
+    const messages = await getConversationMessages(convId);
+    currentConversationId = convId;
+    conversationHistory = messages.map(m => ({ role: m.role, content: m.content }));
+    lastActivityTime = Date.now();
+
+    messagesEl.innerHTML = '';
+    for (const msg of messages) {
+      const el = document.createElement('div');
+      el.className = `chat-msg chat-msg-${msg.role}`;
+      el.innerHTML = `<div class="chat-msg-text">${escapeHtml(msg.content)}</div>`;
+      messagesEl.appendChild(el);
+    }
+    messagesEl.scrollTop = messagesEl.scrollHeight;
+  } catch {
+    messagesEl.innerHTML = '<div class="chat-history-empty"><p>Failed to load conversation.</p></div>';
+  }
+}
+
+/**
+ * Restore the current conversation messages to the UI
+ */
+function restoreMessages() {
+  const messagesEl = document.getElementById('chat-messages');
+  if (!messagesEl) return;
+
+  if (!conversationHistory.length) {
+    messagesEl.innerHTML = `
+      <div class="chat-drawer-welcome">
+        <p>Ask me anything about your dishes, menus, ingredients, tasks, or kitchen workflow.</p>
+        <p class="chat-drawer-welcome-hint">I can search your data, look up details, create tasks, and more.</p>
+      </div>`;
+    return;
+  }
+
+  messagesEl.innerHTML = '';
+  for (const msg of conversationHistory) {
+    const el = document.createElement('div');
+    el.className = `chat-msg chat-msg-${msg.role}`;
+    el.innerHTML = `<div class="chat-msg-text">${escapeHtml(msg.content)}</div>`;
+    messagesEl.appendChild(el);
+  }
+  messagesEl.scrollTop = messagesEl.scrollHeight;
+}
+
+/**
+ * Format a date string for display
+ */
+function formatDate(dateStr) {
+  if (!dateStr) return '';
+  const d = new Date(dateStr + 'Z');
+  const now = new Date();
+  const diffMs = now - d;
+  const diffMins = Math.floor(diffMs / 60000);
+
+  if (diffMins < 1) return 'Just now';
+  if (diffMins < 60) return `${diffMins}m ago`;
+  const diffHours = Math.floor(diffMins / 60);
+  if (diffHours < 24) return `${diffHours}h ago`;
+  const diffDays = Math.floor(diffHours / 24);
+  if (diffDays < 7) return `${diffDays}d ago`;
+  return d.toLocaleDateString();
 }
 
 /**
@@ -349,7 +566,11 @@ export function toggleDrawer() {
  */
 export function clearChat() {
   conversationHistory = [];
+  currentConversationId = null;
   lastActivityTime = Date.now();
+  showingHistory = false;
+  const historyBtn = drawerEl ? drawerEl.querySelector('.chat-drawer-history-btn') : null;
+  if (historyBtn) historyBtn.classList.remove('active');
   const messagesEl = document.getElementById('chat-messages');
   if (messagesEl) {
     messagesEl.innerHTML = `

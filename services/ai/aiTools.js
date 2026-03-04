@@ -703,8 +703,15 @@ const handlers = {
 
   search_ingredients(input, opts) {
     const db = getDb();
+    // Single query with LEFT JOIN to count dish usage — avoids N+1
     const ingredients = db.prepare(
-      "SELECT id, name, unit_cost, base_unit, category, in_stock FROM ingredients WHERE name LIKE ? ORDER BY name LIMIT 20"
+      `SELECT i.id, i.name, i.unit_cost, i.base_unit, i.category, i.in_stock,
+              COUNT(di.ingredient_id) as dish_count
+       FROM ingredients i
+       LEFT JOIN dish_ingredients di ON di.ingredient_id = i.id
+       WHERE i.name LIKE ?
+       GROUP BY i.id
+       ORDER BY i.name LIMIT 20`
     ).all(`%${input.query}%`);
 
     if (!ingredients.length) {
@@ -716,8 +723,7 @@ const handlers = {
     const parts = [`Found ${ingredients.length} ingredient(s) matching "${input.query}":`];
     for (const ing of ingredients) {
       const stock = ing.in_stock ? ' [IN STOCK]' : '';
-      const dishCount = db.prepare('SELECT COUNT(*) as cnt FROM dish_ingredients WHERE ingredient_id = ?').get(ing.id);
-      parts.push(`  - "${ing.name}" (ID:${ing.id}) — cost: ${ing.unit_cost || '?'}/${ing.base_unit || '?'}, used in ${dishCount.cnt} dish(es)${stock}`);
+      parts.push(`  - "${ing.name}" (ID:${ing.id}) — cost: ${ing.unit_cost || '?'}/${ing.base_unit || '?'}, used in ${ing.dish_count} dish(es)${stock}`);
     }
 
     const message = parts.join('\n');

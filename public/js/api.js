@@ -152,6 +152,16 @@ export const aiMatchIngredients = (ingredients) => request('/ai/match-ingredient
 export const getAiSettings = () => request('/ai/settings');
 export const saveAiSettings = (data) => request('/ai/settings', { method: 'POST', body: data });
 
+// AI Chat Conversations
+export const getConversations = () => request('/ai/conversations');
+export const createConversation = (title) => request('/ai/conversations', { method: 'POST', body: { title } });
+export const getConversationMessages = (id) => request(`/ai/conversations/${id}/messages`);
+export const addConversationMessage = (id, role, content) => request(`/ai/conversations/${id}/messages`, { method: 'POST', body: { role, content } });
+export const deleteConversation = (id) => request(`/ai/conversations/${id}`, { method: 'DELETE' });
+
+// AI Task Generation
+export const aiGenerateTasks = (menuId) => request(`/ai/generate-tasks/${menuId}`, { method: 'POST', timeout: AI_TIMEOUT });
+
 // Auth — public endpoints (no 401 redirect)
 async function authRequest(path, options = {}) {
   const url = `${BASE}${path}`;

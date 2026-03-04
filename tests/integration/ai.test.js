@@ -63,6 +63,26 @@ beforeAll(async () => {
   try {
     db.exec('CREATE INDEX IF NOT EXISTS idx_ai_usage_created_at ON ai_usage(created_at)');
   } catch {}
+  try {
+    db.exec(`CREATE TABLE IF NOT EXISTS ai_conversations (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      title TEXT DEFAULT '',
+      created_at TEXT DEFAULT (datetime('now')),
+      updated_at TEXT DEFAULT (datetime('now'))
+    )`);
+  } catch {}
+  try {
+    db.exec(`CREATE TABLE IF NOT EXISTS ai_messages (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      conversation_id INTEGER NOT NULL REFERENCES ai_conversations(id) ON DELETE CASCADE,
+      role TEXT NOT NULL,
+      content TEXT NOT NULL,
+      created_at TEXT DEFAULT (datetime('now'))
+    )`);
+  } catch {}
+  try {
+    db.exec('CREATE INDEX IF NOT EXISTS idx_ai_messages_conversation_id ON ai_messages(conversation_id)');
+  } catch {}
 
   // Mount AI routes on the test app (before the error handler)
   const aiRoutes = require('../../routes/ai');
@@ -1052,6 +1072,193 @@ describe('POST /api/ai/extract-text', () => {
       .expect(400);
 
     expect(res.body.error).toMatch(/unsupported/i);
+  });
+});
+
+// ─── CHAT CONVERSATIONS ────────────────────────────────────────────────────
+
+describe('chat conversations CRUD', () => {
+  test('creates a conversation and lists it', async () => {
+    const createRes = await agent
+      .post('/api/ai/conversations')
+      .send({ title: 'Test Chat' })
+      .expect(201);
+
+    expect(createRes.body.id).toBeDefined();
+
+    const listRes = await agent.get('/api/ai/conversations').expect(200);
+    const found = listRes.body.find(c => c.id === createRes.body.id);
+    expect(found).toBeDefined();
+    expect(found.title).toBe('Test Chat');
+  });
+
+  test('adds messages and retrieves them', async () => {
+    const conv = await agent.post('/api/ai/conversations').send({}).expect(201);
+
+    await agent
+      .post(`/api/ai/conversations/${conv.body.id}/messages`)
+      .send({ role: 'user', content: 'Hello AI' })
+      .expect(201);
+
+    await agent
+      .post(`/api/ai/conversations/${conv.body.id}/messages`)
+      .send({ role: 'assistant', content: 'Hello! How can I help?' })
+      .expect(201);
+
+    const msgs = await agent
+      .get(`/api/ai/conversations/${conv.body.id}/messages`)
+      .expect(200);
+
+    expect(msgs.body).toHaveLength(2);
+    expect(msgs.body[0].role).toBe('user');
+    expect(msgs.body[0].content).toBe('Hello AI');
+    expect(msgs.body[1].role).toBe('assistant');
+  });
+
+  test('auto-titles conversation from first user message', async () => {
+    const conv = await agent.post('/api/ai/conversations').send({}).expect(201);
+
+    await agent
+      .post(`/api/ai/conversations/${conv.body.id}/messages`)
+      .send({ role: 'user', content: 'What allergens are in the salmon dish?' })
+      .expect(201);
+
+    const listRes = await agent.get('/api/ai/conversations').expect(200);
+    const found = listRes.body.find(c => c.id === conv.body.id);
+    expect(found.title).toContain('allergens');
+  });
+
+  test('deletes a conversation', async () => {
+    const conv = await agent.post('/api/ai/conversations').send({ title: 'To Delete' }).expect(201);
+
+    await agent.delete(`/api/ai/conversations/${conv.body.id}`).expect(200);
+
+    const listRes = await agent.get('/api/ai/conversations').expect(200);
+    const found = listRes.body.find(c => c.id === conv.body.id);
+    expect(found).toBeUndefined();
+  });
+
+  test('returns 404 for non-existent conversation messages', async () => {
+    await agent.get('/api/ai/conversations/99999/messages').expect(404);
+  });
+
+  test('returns 400 for missing role/content on add message', async () => {
+    const conv = await agent.post('/api/ai/conversations').send({}).expect(201);
+
+    await agent
+      .post(`/api/ai/conversations/${conv.body.id}/messages`)
+      .send({ role: 'user' })
+      .expect(400);
+  });
+});
+
+// ─── AI TASK GENERATION ────────────────────────────────────────────────────
+
+describe('POST /api/ai/generate-tasks/:menuId', () => {
+  test('returns 400 when no API key', async () => {
+    clearApiKey();
+    const menuId = createTestMenu('No Key Menu');
+    await agent.post(`/api/ai/generate-tasks/${menuId}`).expect(400);
+  });
+
+  test('returns 404 for non-existent menu', async () => {
+    setApiKey();
+    await agent.post('/api/ai/generate-tasks/99999').expect(404);
+  });
+
+  test('returns 400 for empty menu', async () => {
+    setApiKey();
+    const menuId = createTestMenu('Empty AI Menu');
+    await agent.post(`/api/ai/generate-tasks/${menuId}`).expect(400);
+  });
+
+  test('generates AI-powered tasks from a menu', async () => {
+    setApiKey();
+    const menuId = createTestMenu('AI Task Menu');
+    const dishId = createTestDish('Beurre Blanc Fish');
+    db.prepare('INSERT INTO menu_dishes (menu_id, dish_id, servings, sort_order) VALUES (?, ?, ?, ?)').run(menuId, dishId, 2, 0);
+    addDirections(dishId, [
+      { type: 'step', text: 'Make beurre blanc sauce' },
+      { type: 'step', text: 'Season and portion fish' },
+    ]);
+
+    mockMessagesCreate.mockResolvedValueOnce({
+      content: [{
+        type: 'text',
+        text: JSON.stringify([
+          { title: 'Make beurre blanc (2L)', priority: 'medium', dish: 'Beurre Blanc Fish' },
+          { title: 'Portion and season fish x40', priority: 'high', dish: 'Beurre Blanc Fish' },
+        ]),
+      }],
+      usage: { input_tokens: 300, output_tokens: 100 },
+    });
+
+    const res = await agent
+      .post(`/api/ai/generate-tasks/${menuId}`)
+      .expect(201);
+
+    expect(res.body.ai_generated).toBe(true);
+    expect(res.body.total).toBe(2);
+
+    // Verify tasks in DB
+    const tasks = db.prepare('SELECT * FROM tasks WHERE menu_id = ? ORDER BY sort_order').all(menuId);
+    expect(tasks).toHaveLength(2);
+    expect(tasks[0].title).toBe('Make beurre blanc (2L)');
+    expect(tasks[0].source).toBe('auto');
+    expect(tasks[1].title).toBe('Portion and season fish x40');
+    expect(tasks[1].priority).toBe('high');
+    expect(tasks[1].source_dish_id).toBe(dishId);
+  });
+
+  test('replaces auto tasks but preserves manual tasks', async () => {
+    setApiKey();
+    const menuId = createTestMenu('Replace Test Menu');
+    const dishId = createTestDish('Replace Dish');
+    db.prepare('INSERT INTO menu_dishes (menu_id, dish_id, servings, sort_order) VALUES (?, ?, ?, ?)').run(menuId, dishId, 1, 0);
+
+    // Create a manual task
+    db.prepare("INSERT INTO tasks (menu_id, title, type, priority, source) VALUES (?, ?, ?, ?, 'manual')").run(menuId, 'Custom task', 'custom', 'medium');
+    // Create an auto task that should be replaced
+    db.prepare("INSERT INTO tasks (menu_id, title, type, priority, source) VALUES (?, ?, ?, ?, 'auto')").run(menuId, 'Old auto task', 'prep', 'medium');
+
+    mockMessagesCreate.mockResolvedValueOnce({
+      content: [{
+        type: 'text',
+        text: JSON.stringify([
+          { title: 'New AI task', priority: 'medium', dish: null },
+        ]),
+      }],
+      usage: { input_tokens: 200, output_tokens: 50 },
+    });
+
+    await agent.post(`/api/ai/generate-tasks/${menuId}`).expect(201);
+
+    const tasks = db.prepare('SELECT * FROM tasks WHERE menu_id = ?').all(menuId);
+    expect(tasks.find(t => t.title === 'Custom task')).toBeDefined();
+    expect(tasks.find(t => t.title === 'Old auto task')).toBeUndefined();
+    expect(tasks.find(t => t.title === 'New AI task')).toBeDefined();
+  });
+
+  test('broadcasts tasks_generated event', async () => {
+    setApiKey();
+    const menuId = createTestMenu('Broadcast Test Menu');
+    const dishId = createTestDish('Broadcast Dish');
+    db.prepare('INSERT INTO menu_dishes (menu_id, dish_id, servings, sort_order) VALUES (?, ?, ?, ?)').run(menuId, dishId, 1, 0);
+
+    mockMessagesCreate.mockResolvedValueOnce({
+      content: [{
+        type: 'text',
+        text: JSON.stringify([{ title: 'Test task', priority: 'medium', dish: null }]),
+      }],
+      usage: { input_tokens: 100, output_tokens: 50 },
+    });
+
+    broadcasts.length = 0;
+    await agent.post(`/api/ai/generate-tasks/${menuId}`).expect(201);
+
+    const generated = broadcasts.find(b => b.type === 'tasks_generated');
+    expect(generated).toBeDefined();
+    expect(generated.payload.menu_id).toBe(menuId);
   });
 });
 

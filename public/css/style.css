@@ -4640,6 +4640,85 @@ textarea.input { resize: vertical; min-height: 80px; }
   font-size: var(--text-xs);
 }
 
+/* --- Chat Drawer: history view --- */
+.chat-drawer-history-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text-light);
+  padding: 4px;
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+}
+.chat-drawer-history-btn:hover,
+.chat-drawer-history-btn.active {
+  color: var(--primary);
+  background: rgba(var(--primary-rgb), 0.1);
+}
+.chat-history-loading,
+.chat-history-empty {
+  padding: var(--space-lg);
+  text-align: center;
+  color: var(--text-light);
+  font-size: var(--text-sm);
+}
+.chat-history-list {
+  padding: var(--space-sm);
+}
+.chat-history-header {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--text-light);
+  padding: var(--space-xs) var(--space-sm);
+  margin-bottom: var(--space-xs);
+}
+.chat-history-item {
+  display: flex;
+  align-items: center;
+  padding: var(--space-sm);
+  border-radius: var(--radius);
+  cursor: pointer;
+  gap: var(--space-sm);
+  transition: background 0.15s;
+}
+.chat-history-item:hover {
+  background: rgba(var(--primary-rgb), 0.06);
+}
+.chat-history-item-content {
+  flex: 1;
+  min-width: 0;
+}
+.chat-history-item-title {
+  font-size: var(--text-sm);
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.chat-history-item-date {
+  font-size: var(--text-xs);
+  color: var(--text-light);
+  margin-top: 2px;
+}
+.chat-history-item-delete {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text-light);
+  padding: 4px;
+  border-radius: var(--radius-sm);
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.chat-history-item:hover .chat-history-item-delete {
+  opacity: 1;
+}
+.chat-history-item-delete:hover {
+  color: var(--danger);
+  background: rgba(var(--danger-rgb), 0.1);
+}
+
 /* ============================
    AI Cleanup & Diff (.ai-)
    ============================ */

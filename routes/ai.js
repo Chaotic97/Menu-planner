@@ -579,6 +579,255 @@ router.post('/extract-text', upload.single('file'), asyncHandler(async (req, res
   }
 }));
 
+// ─── Chat Conversations ──────────────────────────────────────────
+
+/**
+ * GET /api/ai/conversations — list all conversations (newest first)
+ */
+router.get('/conversations', (req, res) => {
+  const db = getDb();
+  const conversations = db.prepare(
+    'SELECT id, title, created_at, updated_at FROM ai_conversations ORDER BY updated_at DESC'
+  ).all();
+  res.json(conversations);
+});
+
+/**
+ * POST /api/ai/conversations — create a new conversation
+ */
+router.post('/conversations', (req, res) => {
+  const db = getDb();
+  const { title } = req.body || {};
+  const result = db.prepare('INSERT INTO ai_conversations (title) VALUES (?)').run(title || '');
+  res.status(201).json({ id: result.lastInsertRowid });
+});
+
+/**
+ * GET /api/ai/conversations/:id/messages — get messages for a conversation
+ */
+router.get('/conversations/:id/messages', (req, res) => {
+  const db = getDb();
+  const conv = db.prepare('SELECT id FROM ai_conversations WHERE id = ?').get(req.params.id);
+  if (!conv) return res.status(404).json({ error: 'Conversation not found' });
+
+  const messages = db.prepare(
+    'SELECT id, role, content, created_at FROM ai_messages WHERE conversation_id = ? ORDER BY created_at ASC'
+  ).all(req.params.id);
+  res.json(messages);
+});
+
+/**
+ * POST /api/ai/conversations/:id/messages — add a message to a conversation
+ */
+router.post('/conversations/:id/messages', (req, res) => {
+  const db = getDb();
+  const conv = db.prepare('SELECT id FROM ai_conversations WHERE id = ?').get(req.params.id);
+  if (!conv) return res.status(404).json({ error: 'Conversation not found' });
+
+  const { role, content } = req.body;
+  if (!role || !content) {
+    return res.status(400).json({ error: 'role and content are required' });
+  }
+
+  const result = db.prepare(
+    'INSERT INTO ai_messages (conversation_id, role, content) VALUES (?, ?, ?)'
+  ).run(req.params.id, role, content);
+
+  // Update conversation timestamp and auto-title from first user message
+  db.prepare("UPDATE ai_conversations SET updated_at = datetime('now') WHERE id = ?").run(req.params.id);
+  if (role === 'user') {
+    const existing = db.prepare('SELECT title FROM ai_conversations WHERE id = ?').get(req.params.id);
+    if (!existing.title) {
+      const shortTitle = content.slice(0, 60) + (content.length > 60 ? '...' : '');
+      db.prepare('UPDATE ai_conversations SET title = ? WHERE id = ?').run(shortTitle, req.params.id);
+    }
+  }
+
+  res.status(201).json({ id: result.lastInsertRowid });
+});
+
+/**
+ * DELETE /api/ai/conversations/:id — delete a conversation
+ */
+router.delete('/conversations/:id', (req, res) => {
+  const db = getDb();
+  const result = db.prepare('DELETE FROM ai_conversations WHERE id = ?').run(req.params.id);
+  if (result.changes === 0) return res.status(404).json({ error: 'Conversation not found' });
+  res.json({ success: true });
+});
+
+// ─── AI Task Generation ─────────────────────────────────────────
+
+/**
+ * POST /api/ai/generate-tasks/:menuId — AI-powered task generation
+ * Uses Haiku to analyze menu dishes and create practical, grouped task lists.
+ * Replaces the existing basic auto-generate.
+ */
+router.post('/generate-tasks/:menuId', aiRateLimit, asyncHandler(async (req, res) => {
+  const menuId = parseInt(req.params.menuId);
+  if (isNaN(menuId)) {
+    return res.status(400).json({ error: 'Invalid menu ID' });
+  }
+
+  const apiKey = getApiKey();
+  if (!apiKey) {
+    return res.status(400).json({ error: 'AI features require an API key.' });
+  }
+
+  const limitCheck = checkUsageLimits();
+  if (!limitCheck.allowed) {
+    return res.status(429).json({ error: limitCheck.reason });
+  }
+
+  const db = getDb();
+  const menu = db.prepare('SELECT id, name FROM menus WHERE id = ? AND deleted_at IS NULL').get(menuId);
+  if (!menu) {
+    return res.status(404).json({ error: 'Menu not found' });
+  }
+
+  // Gather all dish data for the menu
+  const dishes = db.prepare(`
+    SELECT d.id, d.name, d.category, d.chefs_notes, d.batch_yield, md.servings
+    FROM menu_dishes md
+    JOIN dishes d ON d.id = md.dish_id
+    WHERE md.menu_id = ? AND d.deleted_at IS NULL
+    ORDER BY md.sort_order
+  `).all(menuId);
+
+  if (!dishes.length) {
+    return res.status(400).json({ error: 'Menu has no dishes.' });
+  }
+
+  // For each dish, get ingredients and directions
+  const dishDetails = dishes.map(dish => {
+    const ingredients = db.prepare(
+      `SELECT di.quantity, di.unit, i.name, di.prep_note
+       FROM dish_ingredients di JOIN ingredients i ON di.ingredient_id = i.id
+       WHERE di.dish_id = ? ORDER BY di.sort_order`
+    ).all(dish.id);
+
+    const directions = db.prepare(
+      'SELECT type, text FROM dish_directions WHERE dish_id = ? ORDER BY sort_order'
+    ).all(dish.id);
+
+    return {
+      name: dish.name,
+      category: dish.category,
+      servings: dish.servings,
+      batch_yield: dish.batch_yield,
+      ingredients: ingredients.map(i => {
+        const qty = i.quantity ? `${i.quantity}${i.unit ? ' ' + i.unit : ''}` : '';
+        return `${qty} ${i.name}${i.prep_note ? ' (' + i.prep_note + ')' : ''}`.trim();
+      }),
+      directions: directions.map(d => d.type === 'section' ? `[${d.text}]` : d.text),
+      chefs_notes: dish.chefs_notes || '',
+    };
+  });
+
+  const menuSummary = dishDetails.map(d => {
+    let detail = `## ${d.name} (${d.category || 'other'}, ${d.servings} batch${d.servings !== 1 ? 'es' : ''})`;
+    if (d.ingredients.length) detail += '\nIngredients: ' + d.ingredients.join(', ');
+    if (d.directions.length) detail += '\nDirections:\n' + d.directions.join('\n');
+    else if (d.chefs_notes) detail += '\nChef notes: ' + d.chefs_notes;
+    return detail;
+  }).join('\n\n');
+
+  try {
+    const Anthropic = require('@anthropic-ai/sdk');
+    const client = new Anthropic({ apiKey, timeout: 45 * 1000 });
+
+    const response = await client.messages.create({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 2048,
+      system: `You are a head chef creating a practical prep task list for your kitchen team. You take a full menu with recipes and create realistic, actionable tasks that a cook would actually check off during their shift.
+
+RULES:
+- Group related prep into single tasks. "Make beurre blanc" NOT "Dice shallots", "Reduce wine", "Mount butter" separately.
+- Use practical kitchen language: "Prep all salad components", "Butcher and portion fish", "Make and chill dessert base"
+- Each task should be something a cook would check off as DONE — a complete unit of work
+- Include quantities/batch info when useful: "Make beurre blanc (2L)" or "Portion salmon x20"
+- Order tasks by when they need to start (long braises/marinades first, last-minute items last)
+- Combine small related items: "Prep garnishes (microgreens, lemon zest, herb oil)" rather than 3 separate tasks
+- For simple dishes with few steps, one task per dish is fine: "Make vinaigrette"
+- For complex dishes, break into 2-3 logical stages: "Braise short ribs (start early)", "Make jus from braising liquid", "Prep garnish for short ribs"
+
+Return a JSON array of task objects. Each has:
+- "title": the task description (concise, practical)
+- "priority": "high" (must start early/critical path), "medium" (standard), "low" (can wait)
+- "dish": name of the primary dish this task is for (or null if it spans multiple dishes)
+
+ONLY output the JSON array, nothing else.`,
+      messages: [{
+        role: 'user',
+        content: `Create a prep task list for the "${menu.name}" menu:\n\n${menuSummary}`,
+      }],
+    });
+
+    const tokensIn = response.usage?.input_tokens || 0;
+    const tokensOut = response.usage?.output_tokens || 0;
+    db.prepare(
+      'INSERT INTO ai_usage (tokens_in, tokens_out, model, tool_used) VALUES (?, ?, ?, ?)'
+    ).run(tokensIn, tokensOut, 'claude-haiku-4-5-20251001', 'generate_tasks');
+
+    const text = response.content[0]?.text || '';
+    const jsonMatch = text.match(/\[[\s\S]*\]/);
+    if (!jsonMatch) {
+      return res.status(500).json({ error: 'AI returned invalid response. Please try again.' });
+    }
+
+    let aiTasks;
+    try {
+      aiTasks = JSON.parse(jsonMatch[0]);
+    } catch {
+      return res.status(500).json({ error: 'AI returned invalid JSON. Please try again.' });
+    }
+
+    if (!Array.isArray(aiTasks) || !aiTasks.length) {
+      return res.status(500).json({ error: 'AI returned empty task list.' });
+    }
+
+    // Build a dish name → id map
+    const dishIdMap = new Map();
+    for (const d of dishes) {
+      dishIdMap.set(d.name.toLowerCase(), d.id);
+    }
+
+    // Delete existing auto-generated tasks for this menu
+    db.prepare('DELETE FROM tasks WHERE menu_id = ? AND source = ?').run(menuId, 'auto');
+
+    // Insert AI-generated tasks
+    const VALID_PRIORITIES = ['high', 'medium', 'low'];
+    const insertStmt = db.prepare(
+      'INSERT INTO tasks (menu_id, source_dish_id, type, title, priority, source, sort_order) VALUES (?, ?, ?, ?, ?, ?, ?)'
+    );
+
+    for (let i = 0; i < aiTasks.length; i++) {
+      const t = aiTasks[i];
+      if (!t.title || typeof t.title !== 'string') continue;
+
+      const priority = VALID_PRIORITIES.includes(t.priority) ? t.priority : 'medium';
+      let dishId = null;
+      if (t.dish) {
+        dishId = dishIdMap.get(t.dish.toLowerCase()) || null;
+      }
+
+      insertStmt.run(menuId, dishId, 'prep', t.title.trim(), priority, 'auto', i);
+    }
+
+    const inserted = aiTasks.filter(t => t.title && typeof t.title === 'string').length;
+
+    req.broadcast('tasks_generated', { menu_id: menuId, total: inserted }, req.headers['x-client-id']);
+    res.status(201).json({ menu_id: menuId, prep_count: inserted, total: inserted, ai_generated: true });
+
+  } catch (err) {
+    console.error('AI task generation error:', err);
+    if (err.status === 401) {
+      return res.status(400).json({ error: 'Invalid API key.' });
+    }
+    return res.status(500).json({ error: 'AI task generation failed. Please try again.' });
+  }
+}));
+
 // Clean up old snapshots on startup
 try { cleanupOldSnapshots(); } catch {}
 
