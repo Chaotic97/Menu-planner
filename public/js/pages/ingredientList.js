@@ -201,19 +201,19 @@ export async function renderIngredientList(container) {
       </form>
     `;
 
-    openModal(`Edit ${ing.name}`, html);
+    const overlay = openModal(`Edit ${ing.name}`, html);
 
-    const form = document.querySelector('#il-edit-form');
-    const cancelBtn = document.querySelector('#il-edit-cancel');
+    const form = overlay.querySelector('#il-edit-form');
+    const cancelBtn = overlay.querySelector('#il-edit-cancel');
 
     cancelBtn.addEventListener('click', closeModal);
 
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
-      const name = document.querySelector('#il-edit-name').value.trim();
-      const unit_cost = parseFloat(document.querySelector('#il-edit-cost').value) || 0;
-      const base_unit = document.querySelector('#il-edit-unit').value.trim();
-      const category = document.querySelector('#il-edit-cat').value;
+      const name = overlay.querySelector('#il-edit-name').value.trim();
+      const unit_cost = parseFloat(overlay.querySelector('#il-edit-cost').value) || 0;
+      const base_unit = overlay.querySelector('#il-edit-unit').value.trim();
+      const category = overlay.querySelector('#il-edit-cat').value;
 
       if (!name) {
         showToast('Name is required', 'error');

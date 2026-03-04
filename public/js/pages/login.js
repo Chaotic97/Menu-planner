@@ -38,6 +38,7 @@ export function renderLogin(container, mode = 'login') {
   function renderMode(m) {
     mode = m;
     showError('');
+    submitBtn.disabled = false;
 
     if (mode === 'setup') {
       subtitle.textContent = 'Set up your password to get started';

@@ -186,7 +186,7 @@ export async function renderMenuList(container) {
             try { covers = JSON.parse(menu.allergen_covers || '{}'); } catch {}
             return `<div class="allergen-cover-badges" style="margin-top:4px;">
               ${guestAllergies.map(a => `
-                <span class="allergen-badge">${capitalize(a)}${covers[a] ? ` <span class="allergen-cover-num">&times;${covers[a]}</span>` : ''}</span>
+                <span class="allergen-badge">${escapeHtml(capitalize(a))}${covers[a] ? ` <span class="allergen-cover-num">&times;${escapeHtml(String(covers[a]))}</span>` : ''}</span>
               `).join('')}
             </div>`;
           })() : ''}
