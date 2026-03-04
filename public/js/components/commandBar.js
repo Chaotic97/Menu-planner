@@ -228,7 +228,23 @@ async function submitAiCommand(text, input, sendBtn) {
       return;
     }
 
-    if (result.confirmationId) {
+    if (result.autoExecuted) {
+      // Auto-executed tool — show result directly
+      dismissPreview();
+      if (result.undoId) {
+        showToast(result.response || 'Done', 'success', 15000, {
+          label: 'Undo',
+          onClick: () => handleUndo(result.undoId),
+        });
+      } else {
+        showPreviewMessage(result.response, 'info');
+      }
+      input.value = '';
+      if (result.navigateTo) {
+        window.location.hash = result.navigateTo;
+      }
+      window.dispatchEvent(new CustomEvent('quickcapture:created'));
+    } else if (result.confirmationId) {
       // Show confirmation preview
       currentConfirmationId = result.confirmationId;
       _currentToolName = result.toolName;

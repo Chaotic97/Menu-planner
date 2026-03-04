@@ -97,6 +97,11 @@ function createDrawer() {
       conversationHistory.push({ role: 'assistant', content: result.response });
 
       appendMessage('assistant', result.response);
+
+      // Handle auto-executed tool side effects
+      if (result.autoExecuted && result.navigateTo) {
+        window.location.hash = result.navigateTo;
+      }
     } catch (err) {
       appendMessage('error', err.message || 'Failed to get response');
     } finally {

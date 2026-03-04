@@ -45,10 +45,10 @@ function getTools() {
 // ─── Tool Definitions ───────────────────────────────────────────────────────
 
 describe('getToolDefinitions', () => {
-  test('returns all 10 tools', () => {
+  test('returns all 17 tools', () => {
     const { getToolDefinitions } = getTools();
     const tools = getToolDefinitions();
-    expect(tools).toHaveLength(10);
+    expect(tools).toHaveLength(17);
   });
 
   test('each tool has name, description, and input_schema', () => {
@@ -74,6 +74,39 @@ describe('getToolDefinitions', () => {
     expect(names).toContain('convert_units');
     expect(names).toContain('add_service_note');
     expect(names).toContain('search_dishes');
+    expect(names).toContain('lookup_dish');
+    expect(names).toContain('lookup_menu');
+    expect(names).toContain('search_ingredients');
+    expect(names).toContain('search_tasks');
+    expect(names).toContain('search_service_notes');
+    expect(names).toContain('get_shopping_list');
+    expect(names).toContain('get_system_summary');
+  });
+});
+
+// ─── isAutoApproved ─────────────────────────────────────────────────────────
+
+describe('isAutoApproved', () => {
+  test('returns true for auto-approved tools', () => {
+    const { isAutoApproved } = getTools();
+    expect(isAutoApproved('search_dishes')).toBe(true);
+    expect(isAutoApproved('create_task')).toBe(true);
+    expect(isAutoApproved('add_service_note')).toBe(true);
+    expect(isAutoApproved('lookup_dish')).toBe(true);
+    expect(isAutoApproved('get_system_summary')).toBe(true);
+  });
+
+  test('returns false for tools requiring confirmation', () => {
+    const { isAutoApproved } = getTools();
+    expect(isAutoApproved('create_menu')).toBe(false);
+    expect(isAutoApproved('create_dish')).toBe(false);
+    expect(isAutoApproved('add_dish_to_menu')).toBe(false);
+    expect(isAutoApproved('cleanup_recipe')).toBe(false);
+  });
+
+  test('returns false for unknown tools', () => {
+    const { isAutoApproved } = getTools();
+    expect(isAutoApproved('nonexistent')).toBe(false);
   });
 });
 
@@ -254,6 +287,83 @@ describe('add_service_note handler', () => {
     const note = db.prepare('SELECT * FROM service_notes WHERE id = ?').get(result.entityId);
     expect(note.title).toBe('Staff Note');
     expect(note.shift).toBe('am');
+  });
+});
+
+// ─── Handler: lookup_dish ────────────────────────────────────────────────────
+
+describe('lookup_dish handler', () => {
+  test('returns dish details by ID', () => {
+    const dish = db.prepare('INSERT INTO dishes (name, description, category) VALUES (?, ?, ?)').run('Lookup Test', 'desc', 'main');
+    const { executeToolHandler } = getTools();
+    const result = executeToolHandler('lookup_dish', { dish_id: dish.lastInsertRowid }, { preview: false });
+    expect(result.message).toContain('Lookup Test');
+    expect(result.message).toContain('main');
+  });
+
+  test('returns dish details by fuzzy name', () => {
+    db.prepare('INSERT INTO dishes (name, description, category) VALUES (?, ?, ?)').run('Fuzzy Lookup Dish', '', 'dessert');
+    const { executeToolHandler } = getTools();
+    const result = executeToolHandler('lookup_dish', { dish_name: 'Fuzzy Lookup' }, { preview: false });
+    expect(result.message).toContain('Fuzzy Lookup Dish');
+  });
+
+  test('returns not found for missing dish', () => {
+    const { executeToolHandler } = getTools();
+    const result = executeToolHandler('lookup_dish', { dish_id: 99999 }, { preview: false });
+    expect(result.message).toMatch(/not found/i);
+  });
+});
+
+// ─── Handler: lookup_menu ────────────────────────────────────────────────────
+
+describe('lookup_menu handler', () => {
+  test('returns menu details by ID', () => {
+    const menu = db.prepare('INSERT INTO menus (name, description) VALUES (?, ?)').run('Lookup Menu Test', 'A test');
+    const { executeToolHandler } = getTools();
+    const result = executeToolHandler('lookup_menu', { menu_id: menu.lastInsertRowid }, { preview: false });
+    expect(result.message).toContain('Lookup Menu Test');
+  });
+});
+
+// ─── Handler: search_ingredients ─────────────────────────────────────────────
+
+describe('search_ingredients handler', () => {
+  test('finds matching ingredients', () => {
+    db.prepare('INSERT OR IGNORE INTO ingredients (name, unit_cost, base_unit) VALUES (?, ?, ?)').run('Paprika', 2.50, 'kg');
+    const { executeToolHandler } = getTools();
+    const result = executeToolHandler('search_ingredients', { query: 'Paprika' }, { preview: false });
+    expect(result.message).toContain('Paprika');
+  });
+
+  test('returns no results for unmatched', () => {
+    const { executeToolHandler } = getTools();
+    const result = executeToolHandler('search_ingredients', { query: 'zzz_no_ingredient_zzz' }, { preview: false });
+    expect(result.message).toMatch(/no ingredients/i);
+  });
+});
+
+// ─── Handler: search_tasks ───────────────────────────────────────────────────
+
+describe('search_tasks handler', () => {
+  test('finds matching tasks', () => {
+    db.prepare('INSERT INTO tasks (title, type, priority, source) VALUES (?, ?, ?, ?)').run('Dice onions', 'prep', 'high', 'manual');
+    const { executeToolHandler } = getTools();
+    const result = executeToolHandler('search_tasks', { query: 'onions' }, { preview: false });
+    expect(result.message).toContain('Dice onions');
+  });
+});
+
+// ─── Handler: get_system_summary ─────────────────────────────────────────────
+
+describe('get_system_summary handler', () => {
+  test('returns summary stats', () => {
+    const { executeToolHandler } = getTools();
+    const result = executeToolHandler('get_system_summary', {}, { preview: false });
+    expect(result.message).toContain('Dishes:');
+    expect(result.message).toContain('Menus:');
+    expect(result.message).toContain('Ingredients:');
+    expect(result.message).toContain('Tasks:');
   });
 });
 

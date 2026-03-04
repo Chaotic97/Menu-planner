@@ -290,49 +290,240 @@ The command bar always knows what page you're on:
 
 ---
 
-## Long-Term Roadmap (Post-V1)
+## V1 Status: COMPLETE
 
-### Level 2: Chat Drawer
-- Slide-out conversational panel with multi-turn context
-- Haiku maintains conversation history per session
-- Can reference previous messages: "actually make that menu for Saturday instead"
-- Same tool definitions, same confirmation flow, just with memory
-- Trigger: expand button on command bar or keyboard shortcut
+All V1 features are implemented and tested:
+- Command bar with dual mode (AI/plain task)
+- 10 function-calling tools with confirmation flow
+- Recipe cleanup with before/after diff
+- Smart ingredient matching during import
+- Undo system with 24h snapshot retention
+- Settings UI (API key, usage limits, feature toggles)
+- Chat drawer wired up with keyboard shortcut (Ctrl/Cmd+Shift+K)
+- 69 tests covering AI routes, tools, and history
 
-### Future Tool Additions
-- **Menu description generator** — select dishes → generate customer-facing descriptions
-- **Prep schedule optimizer** — "I have 3 hours of prep, what's the most efficient order?"
-- **Cost optimizer** — "suggest substitutions to get food cost under 30%"
+---
+
+## V2 Roadmap
+
+### Design Decisions (from stakeholder interview)
+
+**Chat drawer direction:** Keep it as Q&A but make it deeply context-aware. It should be able to load and search any data in the system — not just the current page. Use on-demand tool calls to fetch data (not full DB preload) to keep costs low and latency fast. Haiku's 200K context window could fit ~15-25K tokens of full DB summary, but that wastes tokens on most queries.
+
+**AI autonomy:** Auto-approve read-only actions (search, allergen check, scaling advice, unit conversion) and simple creates (tasks, service notes). Keep confirmation for mutations that are harder to undo (dish/menu creates, recipe cleanup, adding dishes to menus). Add this as a configurable setting.
+
+**Top priorities (in order):**
+1. Smart chat with DB search tools
+2. Document upload & AI parsing
+3. Auto prep timeline with dependency ordering
+4. Price point & yield advisor
+5. Menu generation from existing dishes
+
+**Offline:** Not a priority. Current plain-task fallback is sufficient.
+
+---
+
+### Phase 7: Smart Chat with Search Tools (NEXT)
+
+**Goal:** The chat drawer becomes a powerful Q&A assistant that can look up any information in the system on demand.
+
+**New chat-specific tools** (added to `aiTools.js`):
+
+| Tool | Description | Returns |
+|------|-------------|---------|
+| `lookup_dish` | Get full details of a dish by ID or name | Dish with ingredients, allergens, directions, cost |
+| `lookup_menu` | Get full details of a menu by ID or name | Menu with dishes, costs, allergens |
+| `lookup_ingredient` | Get ingredient details + which dishes use it | Ingredient with usage list |
+| `search_ingredients` | Search ingredients by name | List of matching ingredients |
+| `search_tasks` | Search tasks by title, type, or status | List of matching tasks |
+| `search_service_notes` | Search service notes by date or content | List of matching notes |
+| `get_shopping_list` | Get shopping list for a menu | Aggregated ingredient list |
+| `get_system_summary` | Get high-level stats about the system | Dish count, menu count, task counts, recent activity |
+
+**Implementation:**
+- These tools are read-only — they return data as text for Haiku to synthesize into answers
+- No confirmation needed (auto-approved since they don't mutate data)
+- Chat drawer sends `conversationHistory` for multi-turn context
+- Page context still auto-loaded, but now Haiku can also actively search
+
+**Example interactions:**
+- "What dishes use truffle?" → `search_ingredients` + `lookup_dish` for each
+- "What's the food cost on the Friday menu?" → `lookup_menu` with cost breakdown
+- "How many tasks are overdue?" → `search_tasks` with overdue filter
+- "Show me all gluten-free starters" → `search_dishes` with allergen filter
+
+### Phase 8: Document Upload & AI Parsing
+
+**Goal:** Users can upload PDFs, text files, or images of event briefs, supplier lists, or menu specs. AI extracts structured data and helps create dishes/menus/tasks from it.
+
+**New endpoint:**
+```
+POST /api/ai/parse-document
+  Body: multipart/form-data { file, intent }
+  - file: PDF, .txt, .docx, or image
+  - intent: 'event_brief' | 'supplier_list' | 'menu_spec' | 'general'
+  Returns: { parsed_data, suggestions[] }
+```
+
+**How it works:**
+1. Backend extracts text from the uploaded file (PDF → text, docx → text, image → describe to Haiku)
+2. Text is sent to Haiku with a structured prompt based on `intent`
+3. Haiku returns structured JSON: extracted dishes, ingredient lists, event details, cover counts, etc.
+4. Frontend shows a preview of what was extracted with Confirm/Edit/Cancel
+5. On confirm, relevant entities are created (menus, tasks, notes)
+
+**Use cases:**
+- Upload an event brief PDF → AI extracts date, covers, dietary requirements, creates menu + tasks
+- Upload a supplier price list → AI updates ingredient costs
+- Upload a competitor's menu → AI creates comparable dish entries
+- Paste any text → AI figures out what it is and suggests next steps
+
+**File handling:**
+- Max file size: 5MB
+- Text extraction: `pdf-parse` for PDFs, `mammoth` for docx (already have docx support)
+- Images: sent directly to Haiku as base64 (Haiku is multimodal)
+- Extracted text truncated to ~50K tokens to stay within budget
+
+### Phase 9: Auto-Approve for Low-Risk Actions
+
+**Goal:** Skip the confirmation step for actions that don't modify data or are easily undone.
+
+**Auto-approved tools:**
+- `search_dishes` — read-only
+- `check_allergens` — read-only (returns analysis text)
+- `scale_recipe` — read-only (returns advice text)
+- `convert_units` — read-only (returns conversion text)
+- `create_task` — low-risk create with easy undo
+- `add_service_note` — low-risk create with easy undo
+- All new chat search tools (Phase 7)
+
+**Still requires confirmation:**
+- `create_menu` — moderate impact
+- `create_dish` — moderate impact
+- `add_dish_to_menu` — modifies existing menu
+- `cleanup_recipe` — replaces directions (high impact)
+
+**Implementation:**
+- Add `autoApprove: true` flag to tool definitions in `aiTools.js`
+- In `processCommand()`, if the tool has `autoApprove: true`, execute immediately and return result (no `confirmationId`)
+- Add a "Trust Mode" toggle in AI Settings to let users disable all confirmations
+- Auto-approved actions still create undo snapshots
+
+### Phase 10: Auto Prep Timeline
+
+**Goal:** Given a menu and service time, AI generates a backwards-planned prep schedule with dependency ordering.
+
+**New tool: `generate_prep_schedule`**
+```
+Parameters:
+  - menu_id: number (required)
+  - service_time: string (HH:MM, required)
+  - available_hours: number (optional, total prep hours available)
+```
+
+**How it works:**
+1. Loads all dishes on the menu with full directions
+2. Sends to Haiku with a chef-specific prompt about prep scheduling
+3. Haiku analyzes dependencies (stock before sauce, dough rest before baking, etc.)
+4. Returns a time-bucketed schedule: `[{ time: "08:00", tasks: [...], dependencies: [...] }]`
+5. Creates persistent tasks in the `tasks` table with `due_time` and `timing_bucket`
+
+**Key intelligence:**
+- Dependency ordering: "make stock" must come before "make sauce"
+- Parallel tasks: "while the stock simmers, prep the veg"
+- Rest/cooling time: "dough needs 1h rest — start at 09:00 for 10:00 shaping"
+- Equipment conflicts: don't schedule two oven dishes at the same time
+- Service time countdown: everything works backwards from the target time
+
+### Phase 11: Price Point & Yield Advisor
+
+**Goal:** AI suggests optimal sell prices and estimates ingredient waste/yield.
+
+**New tools:**
+
+| Tool | Description |
+|------|-------------|
+| `suggest_price` | Analyzes dish cost, market positioning, and existing pricing patterns to suggest a sell price |
+| `estimate_yield` | For a given ingredient, estimates trim waste and usable yield percentage |
+| `optimize_food_cost` | Suggests ingredient swaps or portion adjustments to hit a target food cost % |
+
+**Data sources for pricing:**
+- Current dish food cost
+- Existing dish pricing patterns (what similar dishes sell for)
+- Category benchmarks (starters typically priced X, mains Y)
+- Target food cost % (configurable, default 30%)
+
+**Yield estimation:**
+- Built-in knowledge of common ingredients (e.g., whole chicken = ~65% usable yield)
+- Factors in prep method from directions (peeled vs unpeeled, trimmed vs untrimmed)
+- Suggests adjusting recipe quantities to account for waste
+
+### Phase 12: Menu Generation from Existing Dishes
+
+**Goal:** AI assembles menus from the dish library based on constraints.
+
+**New tool: `generate_menu`**
+```
+Parameters:
+  - constraints: {
+      budget_per_cover?: number,
+      allergen_free?: string[],
+      courses?: { starter: number, main: number, dessert: number },
+      style?: string (e.g., "casual", "fine dining", "family"),
+      season?: string
+    }
+  - base_menu_id?: number (optional, start from existing menu and modify)
+```
+
+**How it works:**
+1. Loads all available dishes with costs and allergens
+2. Haiku selects dishes that fit constraints (budget, allergens, balance)
+3. Returns a proposed menu with reasoning for each choice
+4. User reviews, swaps dishes, then confirms
+5. Menu is created with selected dishes
+
+**AI also helps with:**
+- Menu descriptions (customer-facing copy)
+- Cover count recommendations based on event docs
+- Identifying gaps ("you have no vegetarian main option")
+
+---
+
+## Future Ideas (Post-V2)
+
+### Level 3: Proactive Suggestions
+- Haiku monitors actions and offers contextual suggestion chips (non-blocking)
+- "This dish has no allergens flagged but contains flour — should I add gluten?"
+- "Food cost is 38% — want me to suggest alternatives?"
+- "You have 5 dishes with truffle — consider a truffle-themed special?"
+
+### Infrastructure Evolution
+- **Conversation persistence** — store chat history in DB for cross-session context
+- **Model flexibility** — Sonnet for complex tasks (recipe generation, menu analysis), Haiku for quick commands
+- **Prompt caching** — cache system prompts with tool definitions to reduce token costs
+- **Streaming responses** — SSE for longer outputs (recipe generation, menu analysis)
+- **Custom tool builder** — settings UI to define custom tools ("when I say X, do Y")
+- **Voice input** — Web Speech API for hands-free kitchen use
+
+### Additional Tool Ideas
 - **Inventory-aware suggestions** — "what can I make with what's in stock?"
 - **Supplier order drafting** — generate order emails from shopping list
 - **Weekly specials copywriting** — generate specials descriptions for customers
 - **Recipe generation** — "create a dish using seasonal ingredients for spring"
 - **Menu analysis** — "is this menu balanced? any gaps?"
-
-### Level 3: Proactive Suggestions
-- Haiku monitors actions and offers contextual suggestions (non-blocking)
-- "This dish has no allergens flagged but contains flour — should I add gluten?"
-- "Food cost is 38% — want me to suggest alternatives?"
-- Appears as subtle suggestion chips, not interruptions
-
-### Infrastructure Evolution
-- **Conversation persistence** — store chat history in DB for cross-session context
-- **Model flexibility** — allow switching between Haiku/Sonnet for different tasks (Sonnet for complex recipe generation, Haiku for quick commands)
-- **Prompt caching** — cache system prompts with tool definitions to reduce token costs
-- **Streaming responses** — for longer outputs (recipe generation, menu analysis), stream via SSE
-- **Custom tool builder** — settings UI to define custom tools ("when I say X, do Y")
+- **Training assistant** — "explain how to make a beurre blanc to a commis chef"
 
 ---
 
 ## Key Design Principles
 
-1. **Confirmation before every action** — Haiku never mutates data without explicit user approval
+1. **Smart confirmation** — Read-only and low-risk actions auto-approve; high-impact mutations require explicit confirmation. Configurable via "Trust Mode" setting.
 2. **Always undoable** — Every AI action creates a snapshot; undo available for 15 seconds via toast, restorable for 24 hours via history
-3. **Context-aware by default** — The command bar always knows what page you're on and what you're looking at
+3. **Context-aware by default** — The command bar and chat drawer always know what page you're on. Chat can also actively search the entire DB via tool calls.
 4. **Graceful degradation** — Offline = plain task bar. No API key = plain task bar. Rate limited = plain task bar with message.
 5. **Expandable** — New tool = new object in the registry. No other changes needed.
 6. **Minimal footprint** — AI code is isolated in `services/ai/` and `routes/ai.js`. If you rip it out, nothing else breaks.
-7. **Cost-conscious** — Usage tracked per request, configurable limits, Haiku chosen for speed and cost efficiency
+7. **Cost-conscious** — Usage tracked per request, configurable limits. On-demand search tools (not full DB preload) keep input tokens low. Haiku for speed and cost.
 
 ---
 

@@ -6,7 +6,7 @@
 
 const Anthropic = require('@anthropic-ai/sdk');
 const { getDb } = require('../../db/database');
-const { getToolDefinitions, executeToolHandler } = require('./aiTools');
+const { getToolDefinitions, executeToolHandler, isAutoApproved } = require('./aiTools');
 const { buildContext } = require('./aiContext');
 
 const MODEL = 'claude-haiku-4-5-20251001';
@@ -125,7 +125,7 @@ IMPORTANT RULES:
  * Main entry point: process a user command through Haiku
  * Returns: { response, toolCall?, preview?, confirmationData? }
  */
-async function processCommand(message, pageContext, conversationHistory) {
+async function processCommand(message, pageContext, conversationHistory, broadcast) {
   const apiKey = getApiKey();
   if (!apiKey) {
     return { response: 'Please set up your Anthropic API key in Settings to use AI features.', needsSetup: true };
@@ -188,9 +188,21 @@ async function processCommand(message, pageContext, conversationHistory) {
   }
 
   if (toolCall) {
-    // Generate preview without executing
-    const preview = executeToolHandler(toolCall.name, toolCall.input, { preview: true, pageContext });
     trackUsage(tokensIn, tokensOut, toolCall.name);
+
+    // Auto-approved tools execute immediately without confirmation
+    if (isAutoApproved(toolCall.name)) {
+      const result = executeToolHandler(toolCall.name, toolCall.input, { preview: false, pageContext, broadcast });
+      return {
+        response: textResponse || result.message,
+        autoExecuted: true,
+        toolName: toolCall.name,
+        toolResult: result,
+      };
+    }
+
+    // Tools requiring confirmation: generate preview only
+    const preview = executeToolHandler(toolCall.name, toolCall.input, { preview: true, pageContext });
 
     return {
       response: textResponse || preview.message,

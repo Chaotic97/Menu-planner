@@ -401,17 +401,18 @@ describe('POST /api/ai/confirm/:id', () => {
       usage: { input_tokens: 80, output_tokens: 40 },
     });
 
-    const cmdRes = await agent
+    // create_task is auto-approved — no confirmation needed
+    const res = await agent
       .post('/api/ai/command')
       .send({ message: 'remind me to call the fish supplier', context: { page: '#/todos' } })
       .expect(200);
 
-    const confirmRes = await agent
-      .post(`/api/ai/confirm/${cmdRes.body.confirmationId}`)
-      .expect(200);
+    expect(res.body.autoExecuted).toBe(true);
+    expect(res.body.toolName).toBe('create_task');
+    expect(res.body.entityId).toBeDefined();
+    expect(res.body.undoId).toBeDefined();
 
-    expect(confirmRes.body.success).toBe(true);
-    const task = db.prepare('SELECT * FROM tasks WHERE id = ?').get(confirmRes.body.entityId);
+    const task = db.prepare('SELECT * FROM tasks WHERE id = ?').get(res.body.entityId);
     expect(task.title).toBe('Call fish supplier');
     expect(task.priority).toBe('high');
   });
@@ -428,17 +429,17 @@ describe('POST /api/ai/confirm/:id', () => {
       usage: { input_tokens: 80, output_tokens: 40 },
     });
 
-    const cmdRes = await agent
+    // add_service_note is auto-approved — no confirmation needed
+    const res = await agent
       .post('/api/ai/command')
       .send({ message: 'add a note about VIP table', context: { page: '#/service-notes' } })
       .expect(200);
 
-    const confirmRes = await agent
-      .post(`/api/ai/confirm/${cmdRes.body.confirmationId}`)
-      .expect(200);
+    expect(res.body.autoExecuted).toBe(true);
+    expect(res.body.toolName).toBe('add_service_note');
+    expect(res.body.entityId).toBeDefined();
 
-    expect(confirmRes.body.success).toBe(true);
-    const note = db.prepare('SELECT * FROM service_notes WHERE id = ?').get(confirmRes.body.entityId);
+    const note = db.prepare('SELECT * FROM service_notes WHERE id = ?').get(res.body.entityId);
     expect(note.title).toBe('VIP table tonight');
     expect(note.shift).toBe('pm');
   });
@@ -554,18 +555,17 @@ describe('POST /api/ai/undo/:id', () => {
       usage: { input_tokens: 50, output_tokens: 20 },
     });
 
+    // create_task is auto-approved — no confirm needed
     const cmdRes = await agent
       .post('/api/ai/command')
       .send({ message: 'create task for undo', context: { page: '#/todos' } })
       .expect(200);
 
-    const confirmRes = await agent
-      .post(`/api/ai/confirm/${cmdRes.body.confirmationId}`)
-      .expect(200);
+    expect(cmdRes.body.autoExecuted).toBe(true);
+    const taskId = cmdRes.body.entityId;
+    const undoId = cmdRes.body.undoId;
 
-    const taskId = confirmRes.body.entityId;
-
-    await agent.post(`/api/ai/undo/${confirmRes.body.undoId}`).expect(200);
+    await agent.post(`/api/ai/undo/${undoId}`).expect(200);
 
     const task = db.prepare('SELECT * FROM tasks WHERE id = ?').get(taskId);
     expect(task).toBeUndefined();
@@ -678,7 +678,7 @@ describe('POST /api/ai/match-ingredients', () => {
 // ─── SEARCH DISHES TOOL ─────────────────────────────────────────────────────
 
 describe('search_dishes tool (via command)', () => {
-  test('returns matching dishes', async () => {
+  test('returns matching dishes (auto-executed)', async () => {
     setApiKey();
     createTestDish('Pasta Carbonara');
 
@@ -694,8 +694,9 @@ describe('search_dishes tool (via command)', () => {
       .send({ message: 'search for pasta', context: { page: '#/dishes' } })
       .expect(200);
 
-    // search_dishes returns a preview with the results
-    expect(res.body.preview).toContain('Pasta');
+    // search_dishes is auto-approved — results returned directly
+    expect(res.body.autoExecuted).toBe(true);
+    expect(res.body.response).toContain('Pasta');
   });
 });
 
@@ -737,6 +738,196 @@ describe('add_dish_to_menu tool (via command + confirm)', () => {
     const link = db.prepare('SELECT * FROM menu_dishes WHERE menu_id = ? AND dish_id = ?').get(menuId, dishId);
     expect(link).toBeDefined();
     expect(link.servings).toBe(2);
+  });
+});
+
+// ─── AUTO-APPROVED READ-ONLY TOOLS ──────────────────────────────────────────
+
+describe('auto-approved read-only tools (via command)', () => {
+  test('lookup_dish returns dish details without confirmation', async () => {
+    setApiKey();
+    const dishId = createTestDish('Lookup Test Dish');
+
+    mockMessagesCreate.mockResolvedValueOnce({
+      content: [
+        { type: 'tool_use', id: 'call_20', name: 'lookup_dish', input: { dish_id: dishId } },
+      ],
+      usage: { input_tokens: 80, output_tokens: 40 },
+    });
+
+    const res = await agent
+      .post('/api/ai/command')
+      .send({ message: 'tell me about lookup test dish', context: { page: '#/dishes' } })
+      .expect(200);
+
+    expect(res.body.autoExecuted).toBe(true);
+    expect(res.body.toolName).toBe('lookup_dish');
+    expect(res.body.response).toContain('Lookup Test Dish');
+  });
+
+  test('lookup_menu returns menu details without confirmation', async () => {
+    setApiKey();
+    const menuId = createTestMenu('Lookup Test Menu');
+
+    mockMessagesCreate.mockResolvedValueOnce({
+      content: [
+        { type: 'tool_use', id: 'call_21', name: 'lookup_menu', input: { menu_id: menuId } },
+      ],
+      usage: { input_tokens: 80, output_tokens: 40 },
+    });
+
+    const res = await agent
+      .post('/api/ai/command')
+      .send({ message: 'what dishes are on lookup test menu', context: { page: '#/menus' } })
+      .expect(200);
+
+    expect(res.body.autoExecuted).toBe(true);
+    expect(res.body.response).toContain('Lookup Test Menu');
+  });
+
+  test('search_ingredients returns matches without confirmation', async () => {
+    setApiKey();
+    db.prepare('INSERT OR IGNORE INTO ingredients (name, unit_cost, base_unit) VALUES (?, ?, ?)').run('Olive Oil', 1.50, 'L');
+
+    mockMessagesCreate.mockResolvedValueOnce({
+      content: [
+        { type: 'tool_use', id: 'call_22', name: 'search_ingredients', input: { query: 'Olive' } },
+      ],
+      usage: { input_tokens: 80, output_tokens: 40 },
+    });
+
+    const res = await agent
+      .post('/api/ai/command')
+      .send({ message: 'do we have olive oil', context: { page: '#/ingredients' } })
+      .expect(200);
+
+    expect(res.body.autoExecuted).toBe(true);
+    expect(res.body.response).toContain('Olive');
+  });
+
+  test('search_tasks returns matches without confirmation', async () => {
+    setApiKey();
+    db.prepare('INSERT INTO tasks (title, type, priority, source) VALUES (?, ?, ?, ?)').run('Prep garlic', 'prep', 'medium', 'manual');
+
+    mockMessagesCreate.mockResolvedValueOnce({
+      content: [
+        { type: 'tool_use', id: 'call_23', name: 'search_tasks', input: { query: 'garlic' } },
+      ],
+      usage: { input_tokens: 80, output_tokens: 40 },
+    });
+
+    const res = await agent
+      .post('/api/ai/command')
+      .send({ message: 'any garlic tasks', context: { page: '#/todos' } })
+      .expect(200);
+
+    expect(res.body.autoExecuted).toBe(true);
+    expect(res.body.response).toContain('garlic');
+  });
+
+  test('get_system_summary returns stats without confirmation', async () => {
+    setApiKey();
+    mockMessagesCreate.mockResolvedValueOnce({
+      content: [
+        { type: 'tool_use', id: 'call_24', name: 'get_system_summary', input: {} },
+      ],
+      usage: { input_tokens: 80, output_tokens: 40 },
+    });
+
+    const res = await agent
+      .post('/api/ai/command')
+      .send({ message: 'give me an overview', context: { page: '#/today' } })
+      .expect(200);
+
+    expect(res.body.autoExecuted).toBe(true);
+    expect(res.body.response).toContain('Dishes:');
+    expect(res.body.response).toContain('Menus:');
+  });
+
+  test('get_shopping_list returns list without confirmation', async () => {
+    setApiKey();
+    const menuId = createTestMenu('Shopping List Menu');
+    const dishId = createTestDish('SL Test Dish');
+    db.prepare('INSERT OR IGNORE INTO ingredients (name, unit_cost, base_unit) VALUES (?, ?, ?)').run('Flour', 0.80, 'kg');
+    const ing = db.prepare("SELECT id FROM ingredients WHERE name = 'Flour'").get();
+    db.prepare('INSERT INTO dish_ingredients (dish_id, ingredient_id, quantity, unit, sort_order) VALUES (?, ?, ?, ?, ?)').run(dishId, ing.id, 2, 'kg', 0);
+    db.prepare('INSERT INTO menu_dishes (menu_id, dish_id, servings, sort_order) VALUES (?, ?, ?, ?)').run(menuId, dishId, 1, 0);
+
+    mockMessagesCreate.mockResolvedValueOnce({
+      content: [
+        { type: 'tool_use', id: 'call_25', name: 'get_shopping_list', input: { menu_id: menuId } },
+      ],
+      usage: { input_tokens: 80, output_tokens: 40 },
+    });
+
+    const res = await agent
+      .post('/api/ai/command')
+      .send({ message: 'shopping list for menu', context: { page: '#/shopping' } })
+      .expect(200);
+
+    expect(res.body.autoExecuted).toBe(true);
+    expect(res.body.response).toContain('Flour');
+  });
+
+  test('search_service_notes returns notes without confirmation', async () => {
+    setApiKey();
+    const today = new Date().toISOString().slice(0, 10);
+    db.prepare('INSERT INTO service_notes (date, shift, title, content) VALUES (?, ?, ?, ?)').run(today, 'am', 'AM briefing', 'Staff meeting at 8am');
+
+    mockMessagesCreate.mockResolvedValueOnce({
+      content: [
+        { type: 'tool_use', id: 'call_26', name: 'search_service_notes', input: { date: today } },
+      ],
+      usage: { input_tokens: 80, output_tokens: 40 },
+    });
+
+    const res = await agent
+      .post('/api/ai/command')
+      .send({ message: 'any notes for today', context: { page: '#/service-notes' } })
+      .expect(200);
+
+    expect(res.body.autoExecuted).toBe(true);
+    expect(res.body.response).toContain('AM briefing');
+  });
+});
+
+// ─── NON-AUTO-APPROVED TOOLS STILL NEED CONFIRMATION ────────────────────────
+
+describe('non-auto-approved tools require confirmation', () => {
+  test('create_menu requires confirmation', async () => {
+    setApiKey();
+    mockMessagesCreate.mockResolvedValueOnce({
+      content: [
+        { type: 'tool_use', id: 'call_30', name: 'create_menu', input: { name: 'Confirm Test' } },
+      ],
+      usage: { input_tokens: 80, output_tokens: 40 },
+    });
+
+    const res = await agent
+      .post('/api/ai/command')
+      .send({ message: 'create a menu called Confirm Test', context: { page: '#/menus' } })
+      .expect(200);
+
+    expect(res.body.confirmationId).toBeDefined();
+    expect(res.body.autoExecuted).toBeUndefined();
+  });
+
+  test('create_dish requires confirmation', async () => {
+    setApiKey();
+    mockMessagesCreate.mockResolvedValueOnce({
+      content: [
+        { type: 'tool_use', id: 'call_31', name: 'create_dish', input: { name: 'Confirm Dish', category: 'starter' } },
+      ],
+      usage: { input_tokens: 80, output_tokens: 40 },
+    });
+
+    const res = await agent
+      .post('/api/ai/command')
+      .send({ message: 'create a dish called Confirm Dish', context: { page: '#/dishes' } })
+      .expect(200);
+
+    expect(res.body.confirmationId).toBeDefined();
+    expect(res.body.autoExecuted).toBeUndefined();
   });
 });
 

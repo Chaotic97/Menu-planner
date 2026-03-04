@@ -133,9 +133,32 @@ router.post('/command', aiRateLimit, asyncHandler(async (req, res) => {
   }
 
   try {
-    const result = await processCommand(message.trim(), context, conversationHistory);
+    const result = await processCommand(message.trim(), context, conversationHistory, req.broadcast);
 
-    // If there's a tool call that needs confirmation, store it
+    // If needs setup or rate limited
+    if (result.needsSetup || result.rateLimited) {
+      return res.json({
+        response: result.response,
+        needsSetup: result.needsSetup || false,
+        rateLimited: result.rateLimited || false,
+      });
+    }
+
+    // Auto-executed tool (no confirmation needed)
+    if (result.autoExecuted) {
+      const toolResult = result.toolResult || {};
+      return res.json({
+        response: result.response,
+        autoExecuted: true,
+        toolName: result.toolName,
+        undoId: toolResult.undoId || null,
+        entityType: toolResult.entityType,
+        entityId: toolResult.entityId,
+        navigateTo: toolResult.navigateTo || null,
+      });
+    }
+
+    // Tool call that needs confirmation — store it
     if (result.confirmationData) {
       const confirmationId = generateConfirmationId();
       pendingActions.set(confirmationId, {
@@ -148,15 +171,6 @@ router.post('/command', aiRateLimit, asyncHandler(async (req, res) => {
         preview: result.preview,
         confirmationId,
         toolName: result.toolCall.name,
-      });
-    }
-
-    // If needs setup or rate limited
-    if (result.needsSetup || result.rateLimited) {
-      return res.json({
-        response: result.response,
-        needsSetup: result.needsSetup || false,
-        rateLimited: result.rateLimited || false,
       });
     }
 
