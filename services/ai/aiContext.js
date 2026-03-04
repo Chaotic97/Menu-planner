@@ -18,6 +18,10 @@ async function buildContext(pageContext) {
   const parts = [];
   const page = pageContext.page;
 
+  // Inject current date/time so the model knows "today"
+  const now = new Date();
+  parts.push(`Current date and time: ${now.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}, ${now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}`);
+
   parts.push(`User is on page: ${page}`);
 
   // Dish edit/view context

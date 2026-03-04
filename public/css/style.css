@@ -1998,14 +1998,36 @@ textarea.input { resize: vertical; min-height: 80px; }
 }
 
 .toast {
-  padding: 12px 20px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 12px 12px 20px;
   border-radius: var(--radius-sm);
   font-size: 0.9rem;
   font-weight: 500;
   box-shadow: var(--shadow-lg);
   transform: translateX(120%);
   transition: transform 0.3s ease;
-  max-width: 320px;
+  max-width: 360px;
+}
+
+.toast-close {
+  flex-shrink: 0;
+  margin-left: auto;
+  background: none;
+  border: none;
+  color: rgba(255,255,255,0.7);
+  font-size: 1rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: var(--radius-sm);
+  transition: color 0.15s, background 0.15s;
+}
+
+.toast-close:hover {
+  color: white;
+  background: rgba(255,255,255,0.2);
 }
 
 .toast.show { transform: translateX(0); }
@@ -2473,13 +2495,61 @@ textarea.input { resize: vertical; min-height: 80px; }
   .toast {
     max-width: 100%;
     transform: translateY(120%);
-    text-align: center;
   }
   .toast.show { transform: translateY(0); }
 
   /* Menu builder rows: cleaner on small screens */
   .mb-summary-bar { font-size: 0.8rem; gap: 8px; }
   .mb-cost-info { display: none; } /* hide cost column, shown in summary bar */
+
+  .mb-dish-row {
+    flex-wrap: wrap;
+    padding: 10px 12px;
+    gap: 8px;
+  }
+
+  .mb-dish-thumb {
+    width: 40px;
+    height: 40px;
+  }
+
+  .mb-dish-info {
+    flex: 1 1 0;
+    min-width: 0;
+  }
+
+  .mb-servings {
+    flex: 0 0 100%;
+    flex-wrap: wrap;
+    justify-content: flex-start;
+    padding: 8px 0 0;
+    border-top: 1px solid var(--border);
+    margin-top: 2px;
+    gap: 6px;
+  }
+
+  .mb-servings .btn-icon {
+    min-width: 40px;
+    min-height: 40px;
+    font-size: 1.3rem;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .mb-servings-count {
+    min-width: 32px;
+    font-size: 1.2rem;
+  }
+
+  .mb-portions-label {
+    flex-basis: 100%;
+  }
+
+  .mb-portion-target {
+    width: 80px !important;
+    min-height: 36px;
+    font-size: 16px !important; /* prevent iOS auto-zoom on focus */
+    margin-left: 0 !important;
+  }
 
   /* Filter bar: tighter */
   .filter-bar { gap: 8px; }

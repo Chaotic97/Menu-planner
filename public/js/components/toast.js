@@ -40,6 +40,17 @@ export function showToast(message, type = 'success', duration = 3000, action = n
     if (duration < 8000) duration = 8000;
   }
 
+  const closeBtn = document.createElement('button');
+  closeBtn.className = 'toast-close';
+  closeBtn.setAttribute('aria-label', 'Dismiss');
+  closeBtn.innerHTML = '&#x2715;';
+  closeBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    toast.classList.remove('show');
+    setTimeout(() => toast.remove(), 300);
+  });
+  toast.appendChild(closeBtn);
+
   c.appendChild(toast);
 
   // Trigger animation
