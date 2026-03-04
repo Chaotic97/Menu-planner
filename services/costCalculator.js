@@ -7,6 +7,12 @@ const CONVERSIONS = {
   g_to_oz: v => v / 28.3495,
   lb_to_kg: v => v * 0.453592,
   kg_to_lb: v => v / 0.453592,
+  oz_to_kg: v => v * 0.0283495,
+  kg_to_oz: v => v / 0.0283495,
+  oz_to_lb: v => v / 16,
+  lb_to_oz: v => v * 16,
+  lb_to_g: v => v * 453.592,
+  g_to_lb: v => v / 453.592,
   ml_to_g: v => v,   // approximate for water-like liquids
   g_to_ml: v => v,
   l_to_kg: v => v,
@@ -100,6 +106,7 @@ function calculateFoodCostPercent(dishCost, sellingPrice) {
 
 function suggestPrice(dishCost, targetPercent = 30) {
   if (!dishCost || dishCost <= 0) return null;
+  if (!targetPercent || targetPercent <= 0) return null;
   return round2(dishCost / (targetPercent / 100));
 }
 

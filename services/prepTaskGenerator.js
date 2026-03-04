@@ -36,7 +36,7 @@ function extractPrepTasks(chefNotes, dishName) {
 function generatePrepTasks(menuId) {
   const db = getDb();
 
-  const menu = db.prepare('SELECT * FROM menus WHERE id = ?').get(menuId);
+  const menu = db.prepare('SELECT * FROM menus WHERE id = ? AND deleted_at IS NULL').get(menuId);
   if (!menu) return null;
 
   const dishes = db.prepare(`

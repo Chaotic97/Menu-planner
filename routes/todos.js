@@ -65,7 +65,7 @@ router.get('/menu/:id/scaled-shopping-list', (req, res) => {
         item.unit = 'kg';
       } else if (item.unit === 'ml' && item.total_quantity >= 1000) {
         item.total_quantity = Math.round(item.total_quantity / 1000 * 100) / 100;
-        item.unit = 'L';
+        item.unit = 'l';
       }
     }
   }

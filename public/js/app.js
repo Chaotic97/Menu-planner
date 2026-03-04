@@ -113,7 +113,7 @@ function updateActiveNav(hash) {
   });
 
   // More menu — highlight "More" button when on a sub-page
-  const moreRoutes = ['/todos', '/specials', '/service-notes', '/flavor-pairings', '/settings'];
+  const moreRoutes = ['/todos', '/specials', '/ingredients', '/service-notes', '/flavor-pairings', '/settings'];
   const moreBtn = document.getElementById('bottom-more-btn');
   if (moreBtn) {
     const onMorePage = moreRoutes.some(r => hash === `#${r}` || hash.startsWith(`#${r}/`));

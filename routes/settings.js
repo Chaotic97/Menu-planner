@@ -37,6 +37,10 @@ router.post('/restore', express.raw({ type: 'application/octet-stream', limit: '
   }
 
   try {
+    // Cancel any pending debounced save so it doesn't overwrite the restored file
+    const db = getDb();
+    db.cancelPendingSave();
+
     // Write the uploaded DB to disk, replacing the existing one
     const tmpPath = DB_PATH + '.restore.tmp';
     fs.writeFileSync(tmpPath, req.body);

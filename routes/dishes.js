@@ -248,97 +248,104 @@ router.post('/:id/duplicate', (req, res) => {
   const source = db.prepare('SELECT * FROM dishes WHERE id = ? AND deleted_at IS NULL').get(req.params.id);
   if (!source) return res.status(404).json({ error: 'Dish not found' });
 
-  const result = db.prepare(`
-    INSERT INTO dishes (name, description, category, chefs_notes, service_notes, suggested_price, manual_costs, batch_yield)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(
-    'Copy of ' + source.name,
-    source.description,
-    source.category,
-    source.chefs_notes,
-    source.service_notes || '',
-    source.suggested_price,
-    source.manual_costs || '[]',
-    source.batch_yield || 1
-  );
+  db.exec('BEGIN');
+  try {
+    const result = db.prepare(`
+      INSERT INTO dishes (name, description, category, chefs_notes, service_notes, suggested_price, manual_costs, batch_yield)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      'Copy of ' + source.name,
+      source.description,
+      source.category,
+      source.chefs_notes,
+      source.service_notes || '',
+      source.suggested_price,
+      source.manual_costs || '[]',
+      source.batch_yield || 1
+    );
 
-  const newId = result.lastInsertRowid;
+    const newId = result.lastInsertRowid;
 
-  // Copy all dish_ingredients (including sort_order)
-  const ingredients = db.prepare(`
-    SELECT ingredient_id, quantity, unit, prep_note, sort_order
-    FROM dish_ingredients WHERE dish_id = ?
-    ORDER BY sort_order, id
-  `).all(req.params.id);
+    // Copy all dish_ingredients (including sort_order)
+    const ingredients = db.prepare(`
+      SELECT ingredient_id, quantity, unit, prep_note, sort_order
+      FROM dish_ingredients WHERE dish_id = ?
+      ORDER BY sort_order, id
+    `).all(req.params.id);
 
-  const insertDI = db.prepare(`
-    INSERT INTO dish_ingredients (dish_id, ingredient_id, quantity, unit, prep_note, sort_order)
-    VALUES (?, ?, ?, ?, ?, ?)
-  `);
+    const insertDI = db.prepare(`
+      INSERT INTO dish_ingredients (dish_id, ingredient_id, quantity, unit, prep_note, sort_order)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `);
 
-  for (const ing of ingredients) {
-    insertDI.run(newId, ing.ingredient_id, ing.quantity, ing.unit, ing.prep_note, ing.sort_order || 0);
+    for (const ing of ingredients) {
+      insertDI.run(newId, ing.ingredient_id, ing.quantity, ing.unit, ing.prep_note, ing.sort_order || 0);
+    }
+
+    // Copy section headers
+    const sectionHeaders = db.prepare(
+      'SELECT label, sort_order FROM dish_section_headers WHERE dish_id = ? ORDER BY sort_order'
+    ).all(req.params.id);
+    const insertHeader = db.prepare(
+      'INSERT INTO dish_section_headers (dish_id, label, sort_order) VALUES (?, ?, ?)'
+    );
+    for (const h of sectionHeaders) {
+      insertHeader.run(newId, h.label, h.sort_order);
+    }
+
+    // Copy substitutions
+    const subs = db.prepare('SELECT * FROM dish_substitutions WHERE dish_id = ?').all(req.params.id);
+    const insertSub = db.prepare(`
+      INSERT INTO dish_substitutions (dish_id, allergen, original_ingredient, substitute_ingredient, substitute_quantity, substitute_unit, notes)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `);
+    for (const s of subs) {
+      insertSub.run(newId, s.allergen, s.original_ingredient, s.substitute_ingredient, s.substitute_quantity, s.substitute_unit, s.notes);
+    }
+
+    // Copy tags
+    const tagIds = db.prepare('SELECT tag_id FROM dish_tags WHERE dish_id = ?').all(req.params.id);
+    const insertTag = db.prepare('INSERT OR IGNORE INTO dish_tags (dish_id, tag_id) VALUES (?, ?)');
+    for (const t of tagIds) {
+      insertTag.run(newId, t.tag_id);
+    }
+
+    // Copy service components
+    const comps = db.prepare(
+      'SELECT name, sort_order FROM dish_components WHERE dish_id = ? ORDER BY sort_order, id'
+    ).all(req.params.id);
+    const insertComp = db.prepare('INSERT INTO dish_components (dish_id, name, sort_order) VALUES (?, ?, ?)');
+    for (const c of comps) {
+      insertComp.run(newId, c.name, c.sort_order);
+    }
+
+    // Copy directions
+    const dirs = db.prepare(
+      'SELECT type, text, sort_order FROM dish_directions WHERE dish_id = ? ORDER BY sort_order, id'
+    ).all(req.params.id);
+    const insertDir = db.prepare('INSERT INTO dish_directions (dish_id, type, text, sort_order) VALUES (?, ?, ?, ?)');
+    for (const d of dirs) {
+      insertDir.run(newId, d.type, d.text, d.sort_order);
+    }
+
+    // Copy service directions
+    const svcDirs = db.prepare(
+      'SELECT type, text, sort_order FROM dish_service_directions WHERE dish_id = ? ORDER BY sort_order, id'
+    ).all(req.params.id);
+    const insertSvcDir = db.prepare('INSERT INTO dish_service_directions (dish_id, type, text, sort_order) VALUES (?, ?, ?, ?)');
+    for (const d of svcDirs) {
+      insertSvcDir.run(newId, d.type, d.text, d.sort_order);
+    }
+
+    updateDishAllergens(newId);
+
+    db.exec('COMMIT');
+    req.broadcast('dish_created', { id: newId }, req.headers['x-client-id']);
+    res.status(201).json({ id: newId });
+  } catch (err) {
+    db.exec('ROLLBACK');
+    throw err;
   }
-
-  // Copy section headers
-  const sectionHeaders = db.prepare(
-    'SELECT label, sort_order FROM dish_section_headers WHERE dish_id = ? ORDER BY sort_order'
-  ).all(req.params.id);
-  const insertHeader = db.prepare(
-    'INSERT INTO dish_section_headers (dish_id, label, sort_order) VALUES (?, ?, ?)'
-  );
-  for (const h of sectionHeaders) {
-    insertHeader.run(newId, h.label, h.sort_order);
-  }
-
-  // Copy substitutions
-  const subs = db.prepare('SELECT * FROM dish_substitutions WHERE dish_id = ?').all(req.params.id);
-  const insertSub = db.prepare(`
-    INSERT INTO dish_substitutions (dish_id, allergen, original_ingredient, substitute_ingredient, substitute_quantity, substitute_unit, notes)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
-  `);
-  for (const s of subs) {
-    insertSub.run(newId, s.allergen, s.original_ingredient, s.substitute_ingredient, s.substitute_quantity, s.substitute_unit, s.notes);
-  }
-
-  // Copy tags
-  const tagIds = db.prepare('SELECT tag_id FROM dish_tags WHERE dish_id = ?').all(req.params.id);
-  const insertTag = db.prepare('INSERT OR IGNORE INTO dish_tags (dish_id, tag_id) VALUES (?, ?)');
-  for (const t of tagIds) {
-    insertTag.run(newId, t.tag_id);
-  }
-
-  // Copy service components
-  const comps = db.prepare(
-    'SELECT name, sort_order FROM dish_components WHERE dish_id = ? ORDER BY sort_order, id'
-  ).all(req.params.id);
-  const insertComp = db.prepare('INSERT INTO dish_components (dish_id, name, sort_order) VALUES (?, ?, ?)');
-  for (const c of comps) {
-    insertComp.run(newId, c.name, c.sort_order);
-  }
-
-  // Copy directions
-  const dirs = db.prepare(
-    'SELECT type, text, sort_order FROM dish_directions WHERE dish_id = ? ORDER BY sort_order, id'
-  ).all(req.params.id);
-  const insertDir = db.prepare('INSERT INTO dish_directions (dish_id, type, text, sort_order) VALUES (?, ?, ?, ?)');
-  for (const d of dirs) {
-    insertDir.run(newId, d.type, d.text, d.sort_order);
-  }
-
-  // Copy service directions
-  const svcDirs = db.prepare(
-    'SELECT type, text, sort_order FROM dish_service_directions WHERE dish_id = ? ORDER BY sort_order, id'
-  ).all(req.params.id);
-  const insertSvcDir = db.prepare('INSERT INTO dish_service_directions (dish_id, type, text, sort_order) VALUES (?, ?, ?, ?)');
-  for (const d of svcDirs) {
-    insertSvcDir.run(newId, d.type, d.text, d.sort_order);
-  }
-
-  updateDishAllergens(newId);
-
-  req.broadcast('dish_created', { id: newId }, req.headers['x-client-id']);
-  res.status(201).json({ id: newId });
 });
 
 // POST /api/dishes/import-url - Import recipe from URL
@@ -618,7 +625,8 @@ router.post('/allergen-keywords', (req, res) => {
 });
 
 router.delete('/allergen-keywords/:id', (req, res) => {
-  deleteAllergenKeyword(req.params.id);
+  const result = deleteAllergenKeyword(req.params.id);
+  if (result.changes === 0) return res.status(404).json({ error: 'Keyword not found' });
   res.json({ success: true });
 });
 
