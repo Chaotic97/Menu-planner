@@ -5580,6 +5580,25 @@ textarea.input { resize: vertical; min-height: 80px; }
   opacity: 0.5;
   cursor: not-allowed;
 }
+.cb-chat-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-muted, var(--text));
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 0.15s, color 0.15s;
+}
+.cb-chat-toggle:hover {
+  background: var(--primary);
+  color: white;
+  border-color: var(--primary);
+}
 
 /* --- Command Bar: Preview card --- */
 .cb-preview {

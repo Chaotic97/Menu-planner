@@ -195,7 +195,7 @@ const handlers = {
 
     const db = getDb();
     const result = db.prepare('INSERT INTO dishes (name, description, category) VALUES (?, ?, ?)').run(
-      input.name, input.description || '', input.category || ''
+      input.name, input.description || '', input.category || 'other'
     );
     const id = result.lastInsertRowid;
     const undoId = saveSnapshot('dish', id, 'create', null);

@@ -1,10 +1,35 @@
-import { getDishes, deleteDish, restoreDish, duplicateDish, importRecipeFromUrl, importRecipeFromDocx, bulkImportDocx, toggleFavorite, getAllTags } from '../api.js';
+import { getDishes, deleteDish, restoreDish, duplicateDish, importRecipeFromUrl, importRecipeFromDocx, bulkImportDocx, toggleFavorite, getAllTags, aiMatchIngredients } from '../api.js';
 import { renderAllergenBadges } from '../components/allergenBadges.js';
 import { showToast } from '../components/toast.js';
 import { openModal, closeModal } from '../components/modal.js';
 import { createActionMenu } from '../components/actionMenu.js';
 import { CATEGORIES } from '../data/categories.js';
 import { escapeHtml } from '../utils/escapeHtml.js';
+
+/**
+ * Try to match imported ingredients against existing DB ingredients via AI.
+ * Enriches recipe.ingredients with matched_id and matched_name on success.
+ * Fails silently — matching is optional and should not block import.
+ */
+async function tryMatchIngredients(recipe) {
+  if (!recipe.ingredients || !recipe.ingredients.length) return;
+  try {
+    const result = await aiMatchIngredients({ ingredients: recipe.ingredients.map(i => ({ name: i.name })) });
+    if (result.matches && result.matches.length) {
+      for (const match of result.matches) {
+        if (match.matched_id && (match.confidence === 'high' || match.confidence === 'medium')) {
+          const ing = recipe.ingredients.find(i => i.name === match.input_name);
+          if (ing) {
+            ing.matched_id = match.matched_id;
+            ing.matched_name = match.matched_name;
+          }
+        }
+      }
+    }
+  } catch {
+    // AI matching is optional — continue without it
+  }
+}
 
 export async function renderDishList(container) {
   // Load tags for filter
@@ -200,6 +225,8 @@ export async function renderDishList(container) {
 
       try {
         const recipe = await importRecipeFromUrl(url);
+        statusDiv.innerHTML = '<div class="loading" style="padding:12px;">Matching ingredients...</div>';
+        await tryMatchIngredients(recipe);
         sessionStorage.setItem('importedRecipe', JSON.stringify(recipe));
         closeModal(modal);
         showToast('Recipe imported! Review and save below.');
@@ -251,6 +278,8 @@ export async function renderDishList(container) {
         const formData = new FormData();
         formData.append('file', file);
         const recipe = await importRecipeFromDocx(formData);
+        statusDiv.innerHTML = '<div class="loading" style="padding:12px;">Matching ingredients...</div>';
+        await tryMatchIngredients(recipe);
         sessionStorage.setItem('importedRecipe', JSON.stringify(recipe));
         closeModal(modal);
         showToast('Recipe imported! Review and save below.');

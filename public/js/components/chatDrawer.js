@@ -9,7 +9,6 @@
  */
 
 import { aiCommand } from '../api.js';
-import { showToast } from './toast.js';
 import { escapeHtml } from '../utils/escapeHtml.js';
 
 let drawerEl = null;
@@ -183,5 +182,12 @@ export function clearChat() {
  */
 export function initChatDrawer() {
   createDrawer();
-  showToast('Chat drawer initialized', 'success');
+
+  // Keyboard shortcut: Ctrl/Cmd+Shift+K to toggle drawer
+  document.addEventListener('keydown', (e) => {
+    if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'K') {
+      e.preventDefault();
+      toggleDrawer();
+    }
+  });
 }

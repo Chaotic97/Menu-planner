@@ -1,0 +1,268 @@
+'use strict';
+
+/**
+ * Unit tests for services/ai/aiTools.js
+ * Tests tool definitions and handler preview/execute paths.
+ */
+
+jest.mock('../middleware/rateLimit', () => ({
+  createRateLimit: () => (_req, _res, next) => next(),
+}));
+
+const { createTestApp } = require('./helpers/setupTestApp');
+
+let db, cleanup;
+
+beforeAll(async () => {
+  try { delete require.cache[require.resolve('../services/ai/aiTools')]; } catch {}
+  try { delete require.cache[require.resolve('../services/ai/aiHistory')]; } catch {}
+
+  const ctx = await createTestApp();
+  db = ctx.db;
+  cleanup = ctx.cleanup;
+
+  // Ensure required tables
+  try {
+    db.exec(`CREATE TABLE IF NOT EXISTS ai_history (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      entity_type TEXT NOT NULL,
+      entity_id INTEGER NOT NULL,
+      action_type TEXT NOT NULL,
+      previous_data TEXT,
+      created_at TEXT DEFAULT (datetime('now'))
+    )`);
+  } catch {}
+});
+
+afterAll(() => cleanup());
+
+function getTools() {
+  delete require.cache[require.resolve('../services/ai/aiTools')];
+  delete require.cache[require.resolve('../services/ai/aiHistory')];
+  return require('../services/ai/aiTools');
+}
+
+// ─── Tool Definitions ───────────────────────────────────────────────────────
+
+describe('getToolDefinitions', () => {
+  test('returns all 10 tools', () => {
+    const { getToolDefinitions } = getTools();
+    const tools = getToolDefinitions();
+    expect(tools).toHaveLength(10);
+  });
+
+  test('each tool has name, description, and input_schema', () => {
+    const { getToolDefinitions } = getTools();
+    for (const tool of getToolDefinitions()) {
+      expect(tool.name).toBeDefined();
+      expect(typeof tool.description).toBe('string');
+      expect(tool.input_schema).toBeDefined();
+      expect(tool.input_schema.type).toBe('object');
+    }
+  });
+
+  test('includes expected tool names', () => {
+    const { getToolDefinitions } = getTools();
+    const names = getToolDefinitions().map(t => t.name);
+    expect(names).toContain('create_menu');
+    expect(names).toContain('create_dish');
+    expect(names).toContain('create_task');
+    expect(names).toContain('add_dish_to_menu');
+    expect(names).toContain('cleanup_recipe');
+    expect(names).toContain('check_allergens');
+    expect(names).toContain('scale_recipe');
+    expect(names).toContain('convert_units');
+    expect(names).toContain('add_service_note');
+    expect(names).toContain('search_dishes');
+  });
+});
+
+// ─── Handler: create_menu ───────────────────────────────────────────────────
+
+describe('create_menu handler', () => {
+  test('preview returns description with menu name', () => {
+    const { executeToolHandler } = getTools();
+    const result = executeToolHandler('create_menu', { name: 'Lunch Special' }, { preview: true });
+    expect(result.description).toContain('Lunch Special');
+    expect(result.message).toBeDefined();
+  });
+
+  test('execute creates a menu in the database', () => {
+    const { executeToolHandler } = getTools();
+    const broadcasts = [];
+    const broadcast = (type, payload) => broadcasts.push({ type, payload });
+
+    const result = executeToolHandler('create_menu', { name: 'AI Menu', description: 'Created by AI' }, { preview: false, broadcast });
+
+    expect(result.success).toBe(true);
+    expect(result.entityType).toBe('menu');
+    expect(result.undoId).toBeDefined();
+
+    const menu = db.prepare('SELECT * FROM menus WHERE id = ?').get(result.entityId);
+    expect(menu.name).toBe('AI Menu');
+    expect(broadcasts.some(b => b.type === 'menu_created')).toBe(true);
+  });
+});
+
+// ─── Handler: create_dish ───────────────────────────────────────────────────
+
+describe('create_dish handler', () => {
+  test('preview includes dish name and category', () => {
+    const { executeToolHandler } = getTools();
+    const result = executeToolHandler('create_dish', { name: 'Risotto', category: 'main' }, { preview: true });
+    expect(result.description).toContain('Risotto');
+    expect(result.description).toContain('main');
+  });
+
+  test('execute creates a dish', () => {
+    const { executeToolHandler } = getTools();
+    const result = executeToolHandler('create_dish', { name: 'AI Risotto', category: 'starter' }, { preview: false });
+
+    expect(result.success).toBe(true);
+    const dish = db.prepare('SELECT * FROM dishes WHERE id = ?').get(result.entityId);
+    expect(dish.name).toBe('AI Risotto');
+    expect(dish.category).toBe('starter');
+  });
+});
+
+// ─── Handler: create_task ───────────────────────────────────────────────────
+
+describe('create_task handler', () => {
+  test('preview shows task title', () => {
+    const { executeToolHandler } = getTools();
+    const result = executeToolHandler('create_task', { title: 'Order supplies' }, { preview: true });
+    expect(result.description).toContain('Order supplies');
+  });
+
+  test('preview shows priority when non-default', () => {
+    const { executeToolHandler } = getTools();
+    const result = executeToolHandler('create_task', { title: 'Urgent thing', priority: 'high' }, { preview: true });
+    expect(result.description).toContain('high');
+  });
+
+  test('execute creates a task with defaults', () => {
+    const { executeToolHandler } = getTools();
+    const result = executeToolHandler('create_task', { title: 'Test Task' }, { preview: false });
+
+    expect(result.success).toBe(true);
+    const task = db.prepare('SELECT * FROM tasks WHERE id = ?').get(result.entityId);
+    expect(task.title).toBe('Test Task');
+    expect(task.priority).toBe('medium');
+    expect(task.type).toBe('custom');
+    expect(task.source).toBe('manual');
+  });
+});
+
+// ─── Handler: add_dish_to_menu ──────────────────────────────────────────────
+
+describe('add_dish_to_menu handler', () => {
+  let testDishId, testMenuId;
+
+  beforeAll(() => {
+    const dishResult = db.prepare('INSERT INTO dishes (name, description, category) VALUES (?, ?, ?)').run('Fuzzy Match Dish', '', 'main');
+    testDishId = dishResult.lastInsertRowid;
+    const menuResult = db.prepare('INSERT INTO menus (name, description) VALUES (?, ?)').run('Fuzzy Match Menu', '');
+    testMenuId = menuResult.lastInsertRowid;
+  });
+
+  test('resolves dish and menu by fuzzy name match', () => {
+    const { executeToolHandler } = getTools();
+    const result = executeToolHandler('add_dish_to_menu', { dish_name: 'Fuzzy Match', menu_name: 'Fuzzy Match' }, { preview: true });
+    expect(result.description).toContain('Fuzzy Match Dish');
+    expect(result.description).toContain('Fuzzy Match Menu');
+  });
+
+  test('returns error when dish not found', () => {
+    const { executeToolHandler } = getTools();
+    const result = executeToolHandler('add_dish_to_menu', { dish_name: 'Nonexistent Dish XYZ' }, { preview: true });
+    expect(result.message).toMatch(/couldn.*find/i);
+  });
+
+  test('execute adds dish to menu', () => {
+    const { executeToolHandler } = getTools();
+    const result = executeToolHandler('add_dish_to_menu',
+      { dish_id: testDishId, menu_id: testMenuId, servings: 3 },
+      { preview: false, broadcast: () => {} }
+    );
+
+    expect(result.success).toBe(true);
+    const link = db.prepare('SELECT * FROM menu_dishes WHERE menu_id = ? AND dish_id = ?').get(testMenuId, testDishId);
+    expect(link).toBeDefined();
+    expect(link.servings).toBe(3);
+  });
+
+  test('rejects adding duplicate dish to menu', () => {
+    const { executeToolHandler } = getTools();
+    // Already added above
+    const result = executeToolHandler('add_dish_to_menu',
+      { dish_id: testDishId, menu_id: testMenuId },
+      { preview: false, broadcast: () => {} }
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.message).toMatch(/already/i);
+  });
+});
+
+// ─── Handler: search_dishes ─────────────────────────────────────────────────
+
+describe('search_dishes handler', () => {
+  test('finds matching dishes', () => {
+    db.prepare('INSERT INTO dishes (name, description, category) VALUES (?, ?, ?)').run('Chocolate Cake', 'Rich dark chocolate', 'dessert');
+
+    const { executeToolHandler } = getTools();
+    const result = executeToolHandler('search_dishes', { query: 'Chocolate' }, { preview: true });
+    expect(result.message).toContain('Chocolate Cake');
+  });
+
+  test('returns no results message for unmatched query', () => {
+    const { executeToolHandler } = getTools();
+    const result = executeToolHandler('search_dishes', { query: 'zzz_nonexistent_zzz' }, { preview: true });
+    expect(result.message).toMatch(/no dishes found/i);
+  });
+});
+
+// ─── Handler: convert_units ─────────────────────────────────────────────────
+
+describe('convert_units handler', () => {
+  test('preview shows conversion description', () => {
+    const { executeToolHandler } = getTools();
+    const result = executeToolHandler('convert_units', { from_quantity: 250, from_unit: 'ml', to_unit: 'cups', ingredient_name: 'milk' }, { preview: true });
+    expect(result.description).toContain('250');
+    expect(result.description).toContain('ml');
+    expect(result.description).toContain('milk');
+  });
+});
+
+// ─── Handler: add_service_note ──────────────────────────────────────────────
+
+describe('add_service_note handler', () => {
+  test('preview shows note title', () => {
+    const { executeToolHandler } = getTools();
+    const result = executeToolHandler('add_service_note', { title: 'VIP Alert', content: 'Peanut allergy table 5' }, { preview: true });
+    expect(result.description).toContain('VIP Alert');
+  });
+
+  test('execute creates a service note', () => {
+    const { executeToolHandler } = getTools();
+    const result = executeToolHandler('add_service_note',
+      { title: 'Staff Note', content: 'Short on parsley', shift: 'am' },
+      { preview: false, broadcast: () => {} }
+    );
+
+    expect(result.success).toBe(true);
+    const note = db.prepare('SELECT * FROM service_notes WHERE id = ?').get(result.entityId);
+    expect(note.title).toBe('Staff Note');
+    expect(note.shift).toBe('am');
+  });
+});
+
+// ─── Handler: unknown tool ──────────────────────────────────────────────────
+
+describe('unknown tool handler', () => {
+  test('returns error message for unknown tool', () => {
+    const { executeToolHandler } = getTools();
+    const result = executeToolHandler('nonexistent_tool', {}, { preview: true });
+    expect(result.message).toMatch(/don.*know/i);
+  });
+});
