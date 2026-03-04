@@ -3,11 +3,16 @@
  */
 
 const express = require('express');
+const multer = require('multer');
 const { getDb } = require('../db/database');
 const asyncHandler = require('../middleware/asyncHandler');
 const { createRateLimit } = require('../middleware/rateLimit');
 const { processCommand, executeConfirmedAction, getAiSettings, getUsageStats, getApiKey, checkUsageLimits } = require('../services/ai/aiService');
 const { restoreSnapshot, cleanupOldSnapshots } = require('../services/ai/aiHistory');
+const { extractText } = require('../services/textExtractor');
+
+// File upload for text extraction (10MB limit, memory storage)
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
 const router = express.Router();
 
@@ -144,21 +149,9 @@ router.post('/command', aiRateLimit, asyncHandler(async (req, res) => {
       });
     }
 
-    // Auto-executed tool (no confirmation needed)
-    if (result.autoExecuted) {
-      const toolResult = result.toolResult || {};
-      return res.json({
-        response: result.response,
-        autoExecuted: true,
-        toolName: result.toolName,
-        undoId: toolResult.undoId || null,
-        entityType: toolResult.entityType,
-        entityId: toolResult.entityId,
-        navigateTo: toolResult.navigateTo || null,
-      });
-    }
-
-    // Tool call that needs confirmation — store it
+    // Tool call that needs confirmation — store it (check before autoExecuted
+    // because chained results can have both flags when auto-approved tools ran
+    // before hitting a non-auto-approved tool that needs confirmation)
     if (result.confirmationData) {
       const confirmationId = generateConfirmationId();
       pendingActions.set(confirmationId, {
@@ -171,6 +164,20 @@ router.post('/command', aiRateLimit, asyncHandler(async (req, res) => {
         preview: result.preview,
         confirmationId,
         toolName: result.toolCall.name,
+      });
+    }
+
+    // Auto-executed tool (no confirmation needed)
+    if (result.autoExecuted) {
+      const toolResult = result.toolResult || {};
+      return res.json({
+        response: result.response,
+        autoExecuted: true,
+        toolName: result.toolName,
+        undoId: toolResult.undoId || null,
+        entityType: toolResult.entityType,
+        entityId: toolResult.entityId,
+        navigateTo: toolResult.navigateTo || null,
       });
     }
 
@@ -495,6 +502,81 @@ router.post('/settings', asyncHandler(async (req, res) => {
   }
 
   res.json({ success: true });
+}));
+
+/**
+ * POST /api/ai/extract-text — Extract text from an uploaded file
+ * Accepts: PDF, DOCX, CSV, XLSX, images
+ * Returns: { text, type } or { base64, mediaType, type } for images
+ */
+router.post('/extract-text', upload.single('file'), asyncHandler(async (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({ error: 'No file uploaded' });
+  }
+
+  try {
+    const result = await extractText(req.file.buffer, req.file.originalname, req.file.mimetype);
+
+    if (result.type === 'unknown') {
+      return res.status(400).json({ error: 'Unsupported file type' });
+    }
+
+    // For images, use Haiku vision to extract text
+    if (result.type === 'image') {
+      const apiKey = getApiKey();
+      if (!apiKey) {
+        return res.status(400).json({ error: 'AI features require an API key to process images.' });
+      }
+
+      const limitCheck = checkUsageLimits();
+      if (!limitCheck.allowed) {
+        return res.status(429).json({ error: limitCheck.reason });
+      }
+
+      const Anthropic = require('@anthropic-ai/sdk');
+      const client = new Anthropic({ apiKey, timeout: 45 * 1000 });
+
+      const response = await client.messages.create({
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 2048,
+        messages: [{
+          role: 'user',
+          content: [
+            {
+              type: 'image',
+              source: { type: 'base64', media_type: result.mediaType, data: result.base64 },
+            },
+            {
+              type: 'text',
+              text: 'Extract ALL text content from this image. If it contains a menu, recipe, ingredient list, invoice, or pricing — format it as structured text. Include all numbers, prices, quantities, and names exactly as they appear.',
+            },
+          ],
+        }],
+      });
+
+      const db = getDb();
+      db.prepare(
+        'INSERT INTO ai_usage (tokens_in, tokens_out, model, tool_used) VALUES (?, ?, ?, ?)'
+      ).run(
+        response.usage?.input_tokens || 0,
+        response.usage?.output_tokens || 0,
+        'claude-haiku-4-5-20251001',
+        'extract_image_text'
+      );
+
+      const extractedText = response.content[0]?.text || '';
+      return res.json({ text: extractedText, type: 'image' });
+    }
+
+    if (!result.text) {
+      return res.status(400).json({ error: 'Could not extract text from this file.' });
+    }
+
+    return res.json({ text: result.text, type: result.type });
+  } catch (err) {
+    console.error('Text extraction error:', err);
+    return res.status(500).json({ error: 'Failed to extract text from file.' });
+  }
 }));
 
 // Clean up old snapshots on startup

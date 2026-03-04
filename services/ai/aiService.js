@@ -11,6 +11,7 @@ const { buildContext } = require('./aiContext');
 
 const MODEL = 'claude-haiku-4-5-20251001';
 const MAX_RETRIES = 3;
+const MAX_TOOL_ROUNDS = 3;
 
 /**
  * Get the API key from settings table
@@ -108,11 +109,22 @@ function buildSystemPrompt(context) {
 
 IMPORTANT RULES:
 - You are embedded in a cooking/menu planning application
-- When a tool matches the user's request, USE IT. Always prefer using tools over just responding with text.
-- Be concise and practical — chefs are busy
+- When a tool matches the user's request, ALWAYS use it. Never respond with just text when a tool could answer the question better.
+- You can call multiple tools in sequence. For example, to answer "what allergens are on the Friday menu?", first use lookup_menu to get the dishes, then use lookup_dish for each one to check allergens.
+- For questions about specific dishes, menus, ingredients, or tasks — ALWAYS use the lookup/search tools to get real data. Never guess or make up information.
+- Be concise and practical — chefs are busy. Keep responses short and actionable.
 - Use professional culinary terminology
+- When presenting data from tools, format it clearly with key information highlighted
 - When cleaning up recipes, standardize to professional kitchen language
-- For unit conversions, use metric where practical but respect the user's preferences`;
+- For unit conversions, use metric where practical but respect the user's preferences
+- If the user uploads a document (menu, invoice, recipe), analyze it thoroughly and suggest next actions (e.g. "I found 5 dishes — want me to create them?")
+
+AVAILABLE ACTIONS:
+- Search and look up dishes, menus, ingredients, tasks, service notes, shopping lists
+- Create tasks and service notes (executed immediately)
+- Create menus and dishes (requires user confirmation)
+- Add dishes to menus, clean up recipes, check allergens, convert units, scale recipes
+- Get a system overview of all data`;
 
   if (context) {
     prompt += '\n\nCURRENT CONTEXT:\n' + context;
@@ -122,8 +134,33 @@ IMPORTANT RULES:
 }
 
 /**
- * Main entry point: process a user command through Haiku
- * Returns: { response, toolCall?, preview?, confirmationData? }
+ * Call the Anthropic API with retry logic
+ */
+async function callApi(client, systemPrompt, tools, messages) {
+  let response;
+  for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+    try {
+      response = await client.messages.create({
+        model: MODEL,
+        max_tokens: 1024,
+        system: systemPrompt,
+        tools,
+        messages,
+      });
+      break;
+    } catch (err) {
+      const isRetryable = err.status >= 500 || err.status === 429;
+      if (attempt === MAX_RETRIES - 1 || !isRetryable) throw err;
+      await new Promise(r => setTimeout(r, 1000 * Math.pow(2, attempt)));
+    }
+  }
+  return response;
+}
+
+/**
+ * Main entry point: process a user command through Haiku.
+ * Supports multi-step tool chaining (up to MAX_TOOL_ROUNDS auto-approved tool calls).
+ * Returns: { response, autoExecuted?, toolCall?, preview?, confirmationData?, toolResults? }
  */
 async function processCommand(message, pageContext, conversationHistory, broadcast) {
   const apiKey = getApiKey();
@@ -147,61 +184,94 @@ async function processCommand(message, pageContext, conversationHistory, broadca
   }
   messages.push({ role: 'user', content: message });
 
-  let response;
-  for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
-    try {
-      response = await client.messages.create({
-        model: MODEL,
-        max_tokens: 1024,
-        system: systemPrompt,
-        tools,
-        messages,
+  // Agentic loop: Haiku can call auto-approved tools up to MAX_TOOL_ROUNDS times
+  const executedTools = [];
+  let totalTokensIn = 0;
+  let totalTokensOut = 0;
+
+  for (let round = 0; round < MAX_TOOL_ROUNDS + 1; round++) {
+    const response = await callApi(client, systemPrompt, tools, messages);
+
+    const tokensIn = response.usage?.input_tokens || 0;
+    const tokensOut = response.usage?.output_tokens || 0;
+    totalTokensIn += tokensIn;
+    totalTokensOut += tokensOut;
+
+    // Extract text and tool_use blocks
+    let textResponse = '';
+    let toolCall = null;
+
+    for (const block of response.content) {
+      if (block.type === 'text') {
+        textResponse += block.text;
+      } else if (block.type === 'tool_use') {
+        toolCall = { id: block.id, name: block.name, input: block.input };
+      }
+    }
+
+    // No tool call — return text response (final answer)
+    if (!toolCall) {
+      const toolNames = executedTools.map(t => t.name).join(',') || null;
+      trackUsage(totalTokensIn, totalTokensOut, toolNames);
+
+      if (executedTools.length > 0) {
+        // Had auto-executed tools in earlier rounds, now Haiku gave final answer
+        const lastMutating = executedTools.filter(t => t.result.undoId);
+        const lastResult = lastMutating.length ? lastMutating[lastMutating.length - 1].result : null;
+        return {
+          response: textResponse,
+          autoExecuted: true,
+          toolName: executedTools.map(t => t.name).join(', '),
+          toolResult: lastResult || executedTools[executedTools.length - 1].result,
+          toolResults: executedTools.map(t => ({ name: t.name, result: t.result })),
+        };
+      }
+
+      return { response: textResponse };
+    }
+
+    // Tool call: check if auto-approved
+    if (isAutoApproved(toolCall.name) && round < MAX_TOOL_ROUNDS) {
+      // Execute immediately and feed result back to Haiku
+      const result = executeToolHandler(toolCall.name, toolCall.input, { preview: false, pageContext, broadcast });
+      executedTools.push({ name: toolCall.name, input: toolCall.input, result });
+
+      // Append assistant message (with tool_use) + tool_result for next round
+      messages.push({ role: 'assistant', content: response.content });
+      messages.push({
+        role: 'user',
+        content: [{
+          type: 'tool_result',
+          tool_use_id: toolCall.id,
+          content: result.message,
+        }],
       });
-      break;
-    } catch (err) {
-      // Don't retry on timeout or client errors — only on 5xx / transient failures
-      const isRetryable = err.status >= 500 || err.status === 429;
-      if (attempt === MAX_RETRIES - 1 || !isRetryable) throw err;
-      // Exponential backoff: 1s, 2s, 4s
-      await new Promise(r => setTimeout(r, 1000 * Math.pow(2, attempt)));
+      // Continue loop — Haiku will see the result and decide what to do next
+      continue;
     }
-  }
 
-  // Track usage
-  const tokensIn = response.usage?.input_tokens || 0;
-  const tokensOut = response.usage?.output_tokens || 0;
-
-  // Process response — check for tool use
-  let textResponse = '';
-  let toolCall = null;
-
-  for (const block of response.content) {
-    if (block.type === 'text') {
-      textResponse += block.text;
-    } else if (block.type === 'tool_use') {
-      toolCall = {
-        id: block.id,
-        name: block.name,
-        input: block.input,
-      };
-    }
-  }
-
-  if (toolCall) {
-    trackUsage(tokensIn, tokensOut, toolCall.name);
-
-    // Auto-approved tools execute immediately without confirmation
+    // Auto-approved tool on final allowed round — execute but don't loop
     if (isAutoApproved(toolCall.name)) {
       const result = executeToolHandler(toolCall.name, toolCall.input, { preview: false, pageContext, broadcast });
+      executedTools.push({ name: toolCall.name, input: toolCall.input, result });
+      const toolNames = executedTools.map(t => t.name).join(',');
+      trackUsage(totalTokensIn, totalTokensOut, toolNames);
+
+      const lastMutating = executedTools.filter(t => t.result.undoId);
+      const lastResult = lastMutating.length ? lastMutating[lastMutating.length - 1].result : null;
       return {
         response: textResponse || result.message,
         autoExecuted: true,
-        toolName: toolCall.name,
-        toolResult: result,
+        toolName: executedTools.map(t => t.name).join(', '),
+        toolResult: lastResult || result,
+        toolResults: executedTools.map(t => ({ name: t.name, result: t.result })),
       };
     }
 
-    // Tools requiring confirmation: generate preview only
+    // Non-auto-approved tool — needs confirmation (stops the loop)
+    const toolNames = executedTools.map(t => t.name).join(',') || null;
+    trackUsage(totalTokensIn, totalTokensOut, toolNames ? toolNames + ',' + toolCall.name : toolCall.name);
+
     const preview = executeToolHandler(toolCall.name, toolCall.input, { preview: true, pageContext });
 
     return {
@@ -213,12 +283,15 @@ async function processCommand(message, pageContext, conversationHistory, broadca
         toolInput: toolCall.input,
         pageContext,
       },
+      // Include any auto-executed results from earlier rounds
+      toolResults: executedTools.length ? executedTools.map(t => ({ name: t.name, result: t.result })) : undefined,
+      autoExecuted: executedTools.length > 0 ? true : undefined,
     };
   }
 
-  // Text-only response (no tool called)
-  trackUsage(tokensIn, tokensOut, null);
-  return { response: textResponse };
+  // Safety fallback (shouldn't reach here)
+  trackUsage(totalTokensIn, totalTokensOut, null);
+  return { response: 'I ran into an issue processing that request. Please try again.' };
 }
 
 /**

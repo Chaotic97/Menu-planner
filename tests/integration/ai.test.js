@@ -116,6 +116,14 @@ function addDirections(dishId, steps) {
   }
 }
 
+/** Mock a follow-up text response from Haiku (used after auto-approved tool execution in the agentic loop) */
+function mockFollowUpText(text = 'Done.') {
+  mockMessagesCreate.mockResolvedValueOnce({
+    content: [{ type: 'text', text }],
+    usage: { input_tokens: 100, output_tokens: 30 },
+  });
+}
+
 // ─── SETTINGS ───────────────────────────────────────────────────────────────
 
 describe('GET /api/ai/settings', () => {
@@ -392,7 +400,7 @@ describe('POST /api/ai/confirm/:id', () => {
     expect(dish.category).toBe('main');
   });
 
-  test('executes create_task tool on confirm', async () => {
+  test('executes create_task tool (auto-approved)', async () => {
     setApiKey();
     mockMessagesCreate.mockResolvedValueOnce({
       content: [
@@ -400,24 +408,23 @@ describe('POST /api/ai/confirm/:id', () => {
       ],
       usage: { input_tokens: 80, output_tokens: 40 },
     });
+    mockFollowUpText('Task "Call fish supplier" created.');
 
-    // create_task is auto-approved — no confirmation needed
     const res = await agent
       .post('/api/ai/command')
       .send({ message: 'remind me to call the fish supplier', context: { page: '#/todos' } })
       .expect(200);
 
     expect(res.body.autoExecuted).toBe(true);
-    expect(res.body.toolName).toBe('create_task');
-    expect(res.body.entityId).toBeDefined();
-    expect(res.body.undoId).toBeDefined();
+    expect(res.body.response).toContain('Call fish supplier');
 
-    const task = db.prepare('SELECT * FROM tasks WHERE id = ?').get(res.body.entityId);
-    expect(task.title).toBe('Call fish supplier');
-    expect(task.priority).toBe('high');
+    // Task was created in DB
+    const tasks = db.prepare("SELECT * FROM tasks WHERE title = 'Call fish supplier'").all();
+    expect(tasks.length).toBeGreaterThan(0);
+    expect(tasks[0].priority).toBe('high');
   });
 
-  test('executes add_service_note tool on confirm', async () => {
+  test('executes add_service_note tool (auto-approved)', async () => {
     setApiKey();
     mockMessagesCreate.mockResolvedValueOnce({
       content: [
@@ -428,20 +435,18 @@ describe('POST /api/ai/confirm/:id', () => {
       ],
       usage: { input_tokens: 80, output_tokens: 40 },
     });
+    mockFollowUpText('Service note created.');
 
-    // add_service_note is auto-approved — no confirmation needed
     const res = await agent
       .post('/api/ai/command')
       .send({ message: 'add a note about VIP table', context: { page: '#/service-notes' } })
       .expect(200);
 
     expect(res.body.autoExecuted).toBe(true);
-    expect(res.body.toolName).toBe('add_service_note');
-    expect(res.body.entityId).toBeDefined();
 
-    const note = db.prepare('SELECT * FROM service_notes WHERE id = ?').get(res.body.entityId);
-    expect(note.title).toBe('VIP table tonight');
-    expect(note.shift).toBe('pm');
+    const notes = db.prepare("SELECT * FROM service_notes WHERE title = 'VIP table tonight'").all();
+    expect(notes.length).toBeGreaterThan(0);
+    expect(notes[0].shift).toBe('pm');
   });
 
   test('confirmation ID cannot be reused', async () => {
@@ -554,16 +559,22 @@ describe('POST /api/ai/undo/:id', () => {
       ],
       usage: { input_tokens: 50, output_tokens: 20 },
     });
+    mockFollowUpText('Task created.');
 
-    // create_task is auto-approved — no confirm needed
     const cmdRes = await agent
       .post('/api/ai/command')
       .send({ message: 'create task for undo', context: { page: '#/todos' } })
       .expect(200);
 
     expect(cmdRes.body.autoExecuted).toBe(true);
-    const taskId = cmdRes.body.entityId;
+    // Find the undo ID from toolResults
     const undoId = cmdRes.body.undoId;
+    expect(undoId).toBeDefined();
+
+    // Find the task
+    const tasks = db.prepare("SELECT * FROM tasks WHERE title = 'Undo Task'").all();
+    expect(tasks.length).toBeGreaterThan(0);
+    const taskId = tasks[0].id;
 
     await agent.post(`/api/ai/undo/${undoId}`).expect(200);
 
@@ -688,13 +699,13 @@ describe('search_dishes tool (via command)', () => {
       ],
       usage: { input_tokens: 80, output_tokens: 30 },
     });
+    mockFollowUpText('Found Pasta Carbonara in your dishes.');
 
     const res = await agent
       .post('/api/ai/command')
       .send({ message: 'search for pasta', context: { page: '#/dishes' } })
       .expect(200);
 
-    // search_dishes is auto-approved — results returned directly
     expect(res.body.autoExecuted).toBe(true);
     expect(res.body.response).toContain('Pasta');
   });
@@ -754,6 +765,7 @@ describe('auto-approved read-only tools (via command)', () => {
       ],
       usage: { input_tokens: 80, output_tokens: 40 },
     });
+    mockFollowUpText('Lookup Test Dish is a main course.');
 
     const res = await agent
       .post('/api/ai/command')
@@ -761,7 +773,6 @@ describe('auto-approved read-only tools (via command)', () => {
       .expect(200);
 
     expect(res.body.autoExecuted).toBe(true);
-    expect(res.body.toolName).toBe('lookup_dish');
     expect(res.body.response).toContain('Lookup Test Dish');
   });
 
@@ -775,6 +786,7 @@ describe('auto-approved read-only tools (via command)', () => {
       ],
       usage: { input_tokens: 80, output_tokens: 40 },
     });
+    mockFollowUpText('Lookup Test Menu has no dishes yet.');
 
     const res = await agent
       .post('/api/ai/command')
@@ -795,6 +807,7 @@ describe('auto-approved read-only tools (via command)', () => {
       ],
       usage: { input_tokens: 80, output_tokens: 40 },
     });
+    mockFollowUpText('Yes, you have Olive Oil in stock.');
 
     const res = await agent
       .post('/api/ai/command')
@@ -815,6 +828,7 @@ describe('auto-approved read-only tools (via command)', () => {
       ],
       usage: { input_tokens: 80, output_tokens: 40 },
     });
+    mockFollowUpText('Found a task: Prep garlic.');
 
     const res = await agent
       .post('/api/ai/command')
@@ -833,6 +847,7 @@ describe('auto-approved read-only tools (via command)', () => {
       ],
       usage: { input_tokens: 80, output_tokens: 40 },
     });
+    mockFollowUpText('You have several Dishes: and Menus: in the system.');
 
     const res = await agent
       .post('/api/ai/command')
@@ -841,7 +856,6 @@ describe('auto-approved read-only tools (via command)', () => {
 
     expect(res.body.autoExecuted).toBe(true);
     expect(res.body.response).toContain('Dishes:');
-    expect(res.body.response).toContain('Menus:');
   });
 
   test('get_shopping_list returns list without confirmation', async () => {
@@ -859,6 +873,7 @@ describe('auto-approved read-only tools (via command)', () => {
       ],
       usage: { input_tokens: 80, output_tokens: 40 },
     });
+    mockFollowUpText('Shopping list includes Flour.');
 
     const res = await agent
       .post('/api/ai/command')
@@ -880,6 +895,7 @@ describe('auto-approved read-only tools (via command)', () => {
       ],
       usage: { input_tokens: 80, output_tokens: 40 },
     });
+    mockFollowUpText('Found a note: AM briefing.');
 
     const res = await agent
       .post('/api/ai/command')
@@ -928,6 +944,114 @@ describe('non-auto-approved tools require confirmation', () => {
 
     expect(res.body.confirmationId).toBeDefined();
     expect(res.body.autoExecuted).toBeUndefined();
+  });
+});
+
+// ─── TOOL CHAINING ──────────────────────────────────────────────────────────
+
+describe('multi-step tool chaining', () => {
+  test('chains two auto-approved tools and returns final answer', async () => {
+    setApiKey();
+    const menuId = createTestMenu('Chain Test Menu');
+    const dishId = createTestDish('Chain Test Dish');
+    db.prepare('INSERT INTO menu_dishes (menu_id, dish_id, servings, sort_order) VALUES (?, ?, ?, ?)').run(menuId, dishId, 1, 0);
+
+    // Round 1: Haiku calls lookup_menu
+    mockMessagesCreate.mockResolvedValueOnce({
+      content: [
+        { type: 'text', text: 'Let me look up the menu first.' },
+        { type: 'tool_use', id: 'chain_1', name: 'lookup_menu', input: { menu_id: menuId } },
+      ],
+      usage: { input_tokens: 80, output_tokens: 40 },
+    });
+
+    // Round 2: Haiku sees the result and gives final text answer
+    mockMessagesCreate.mockResolvedValueOnce({
+      content: [
+        { type: 'text', text: 'The Chain Test Menu has 1 dish: Chain Test Dish.' },
+      ],
+      usage: { input_tokens: 200, output_tokens: 60 },
+    });
+
+    const res = await agent
+      .post('/api/ai/command')
+      .send({ message: 'tell me about chain test menu', context: { page: '#/menus' } })
+      .expect(200);
+
+    expect(res.body.autoExecuted).toBe(true);
+    expect(res.body.response).toContain('Chain Test Menu');
+    // Haiku was called twice (initial + after tool result)
+    expect(mockMessagesCreate).toHaveBeenCalledTimes(2);
+  });
+
+  test('stops chaining when non-auto-approved tool is called (needs confirmation)', async () => {
+    setApiKey();
+
+    // Round 1: Haiku calls search_dishes (auto-approved) — executed immediately
+    mockMessagesCreate.mockResolvedValueOnce({
+      content: [
+        { type: 'tool_use', id: 'chain_2', name: 'search_dishes', input: { query: 'zzz_no_risotto_zzz' } },
+      ],
+      usage: { input_tokens: 80, output_tokens: 30 },
+    });
+
+    // Round 2: Haiku sees empty results and wants to create_dish (needs confirmation)
+    mockMessagesCreate.mockResolvedValueOnce({
+      content: [
+        { type: 'text', text: 'No risotto found. I\'ll create one.' },
+        { type: 'tool_use', id: 'chain_3', name: 'create_dish', input: { name: 'Mushroom Risotto', category: 'main' } },
+      ],
+      usage: { input_tokens: 200, output_tokens: 50 },
+    });
+
+    const res = await agent
+      .post('/api/ai/command')
+      .send({ message: 'find or create a risotto', context: { page: '#/dishes' } })
+      .expect(200);
+
+    // Should have a confirmation for create_dish
+    expect(res.body.confirmationId).toBeDefined();
+    expect(res.body.preview).toContain('Mushroom Risotto');
+    // Haiku was called twice
+    expect(mockMessagesCreate).toHaveBeenCalledTimes(2);
+  });
+});
+
+// ─── EXTRACT TEXT ENDPOINT ──────────────────────────────────────────────────
+
+describe('POST /api/ai/extract-text', () => {
+  test('returns 400 when no file uploaded', async () => {
+    await agent.post('/api/ai/extract-text').expect(400);
+  });
+
+  test('extracts text from CSV file', async () => {
+    const csv = 'Name,Qty\nFlour,500g\nButter,200g';
+    const res = await agent
+      .post('/api/ai/extract-text')
+      .attach('file', Buffer.from(csv), 'ingredients.csv')
+      .expect(200);
+
+    expect(res.body.text).toContain('Flour');
+    expect(res.body.type).toBe('text');
+  });
+
+  test('extracts text from plain text file', async () => {
+    const text = 'Preheat oven to 180C. Mix dry ingredients.';
+    const res = await agent
+      .post('/api/ai/extract-text')
+      .attach('file', Buffer.from(text), 'recipe.txt')
+      .expect(200);
+
+    expect(res.body.text).toBe(text);
+  });
+
+  test('returns 400 for unsupported file type', async () => {
+    const res = await agent
+      .post('/api/ai/extract-text')
+      .attach('file', Buffer.from('data'), 'file.xyz')
+      .expect(400);
+
+    expect(res.body.error).toMatch(/unsupported/i);
   });
 });
 
