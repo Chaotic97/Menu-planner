@@ -23,7 +23,8 @@ async function request(path, options = {}) {
     delete config.headers['Content-Type'];
   }
 
-  const res = await fetch(url, { ...config, signal: AbortSignal.timeout(15000) });
+  const timeout = options.timeout || 15000;
+  const res = await fetch(url, { ...config, signal: AbortSignal.timeout(timeout) });
   if (res.status === 401) {
     window.location.hash = '#/login';
     window.location.reload();
@@ -140,13 +141,14 @@ export const getNotificationPreferences = () => request('/notifications/preferen
 export const updateNotificationPreferences = (prefs) => request('/notifications/preferences', { method: 'PUT', body: prefs });
 export const getNotificationPending = () => request('/notifications/pending');
 
-// AI Assistant
-export const aiCommand = (data) => request('/ai/command', { method: 'POST', body: data });
-export const aiConfirm = (id) => request(`/ai/confirm/${id}`, { method: 'POST' });
+// AI Assistant (longer timeout — Anthropic API calls can take 30s+)
+const AI_TIMEOUT = 60000;
+export const aiCommand = (data) => request('/ai/command', { method: 'POST', body: data, timeout: AI_TIMEOUT });
+export const aiConfirm = (id) => request(`/ai/confirm/${id}`, { method: 'POST', timeout: AI_TIMEOUT });
 export const aiUndo = (id) => request(`/ai/undo/${id}`, { method: 'POST' });
 export const getAiUsage = () => request('/ai/usage');
-export const aiCleanupRecipe = (dishId) => request(`/ai/cleanup-recipe/${dishId}`, { method: 'POST' });
-export const aiMatchIngredients = (ingredients) => request('/ai/match-ingredients', { method: 'POST', body: { ingredients } });
+export const aiCleanupRecipe = (dishId) => request(`/ai/cleanup-recipe/${dishId}`, { method: 'POST', timeout: AI_TIMEOUT });
+export const aiMatchIngredients = (ingredients) => request('/ai/match-ingredients', { method: 'POST', body: { ingredients }, timeout: AI_TIMEOUT });
 export const getAiSettings = () => request('/ai/settings');
 export const saveAiSettings = (data) => request('/ai/settings', { method: 'POST', body: data });
 
