@@ -85,11 +85,13 @@ async function buildContext(pageContext) {
   // Menu context
   if (pageContext.entityType === 'menu' && pageContext.entityId) {
     const menu = db.prepare(
-      'SELECT id, name, description, sell_price, expected_covers FROM menus WHERE id = ? AND deleted_at IS NULL'
+      'SELECT id, name, description, sell_price, expected_covers, menu_type, event_date FROM menus WHERE id = ? AND deleted_at IS NULL'
     ).get(pageContext.entityId);
 
     if (menu) {
       parts.push(`Current menu: "${menu.name}" (ID: ${menu.id})`);
+      if (menu.menu_type) parts.push(`Menu type: ${menu.menu_type}`);
+      if (menu.event_date) parts.push(`Event date: ${menu.event_date}`);
       if (menu.sell_price) parts.push(`Sell price: ${menu.sell_price}`);
       if (menu.expected_covers) parts.push(`Expected covers: ${menu.expected_covers}`);
 
@@ -128,10 +130,16 @@ async function buildContext(pageContext) {
   parts.push(`Total menus: ${menuCount.cnt}`);
 
   const menus = db.prepare(
-    'SELECT id, name FROM menus WHERE deleted_at IS NULL ORDER BY name LIMIT 20'
+    'SELECT id, name, menu_type, event_date FROM menus WHERE deleted_at IS NULL ORDER BY event_date DESC, name LIMIT 20'
   ).all();
   if (menus.length) {
-    parts.push('Available menus: ' + menus.map(m => `"${m.name}" (ID:${m.id})`).join(', '));
+    parts.push('Available menus: ' + menus.map(m => {
+      let label = `"${m.name}" (ID:${m.id}`;
+      if (m.menu_type === 'standard') label += ', house menu';
+      if (m.event_date) label += `, date: ${m.event_date}`;
+      label += ')';
+      return label;
+    }).join(', '));
   }
 
   return parts.join('\n');

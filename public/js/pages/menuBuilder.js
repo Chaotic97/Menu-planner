@@ -1,4 +1,4 @@
-import { getMenu, updateMenu, getDishes, addDishToMenu, removeDishFromMenu, updateMenuDish, getScaledShoppingList, reorderMenuDishes, getMenuKitchenPrint, generateTasks } from '../api.js';
+import { getMenu, updateMenu, getDishes, createDish, addDishToMenu, removeDishFromMenu, updateMenuDish, getScaledShoppingList, reorderMenuDishes, getMenuKitchenPrint, generateTasks } from '../api.js';
 import { renderAllergenBadges } from '../components/allergenBadges.js';
 import { showToast } from '../components/toast.js';
 import { openModal, closeModal } from '../components/modal.js';
@@ -892,7 +892,11 @@ export async function renderMenuBuilder(container, menuId) {
     }
 
     const modal = openModal('Add Dishes', `
-      <input type="text" id="dish-picker-search" class="input" placeholder="Search dishes...">
+      <div class="mb-quick-add">
+        <input type="text" id="quick-add-name" class="input" placeholder="Quick add: type a dish name and press Enter">
+        <button type="button" id="quick-add-btn" class="btn btn-sm btn-primary">+ Add</button>
+      </div>
+      <input type="text" id="dish-picker-search" class="input" placeholder="Search existing dishes...">
       <div class="mb-picker-list" id="mb-picker-list">
         ${available.map(d => `
           <div class="mb-picker-item" data-id="${d.id}">
@@ -906,6 +910,37 @@ export async function renderMenuBuilder(container, menuId) {
         `).join('')}
       </div>
     `);
+
+    // Quick-add dish handler
+    const quickAddInput = modal.querySelector('#quick-add-name');
+    const quickAddBtn = modal.querySelector('#quick-add-btn');
+
+    async function quickAddDish() {
+      const name = quickAddInput.value.trim();
+      if (!name) return;
+      quickAddBtn.disabled = true;
+      quickAddBtn.textContent = 'Adding...';
+      try {
+        const dish = await createDish({ name, category: 'other' });
+        await addDishToMenu(menuId, { dish_id: dish.id, servings: 1 });
+        quickAddInput.value = '';
+        menu = await getMenu(menuId);
+        showToast(`"${name}" created and added`);
+      } catch (err) {
+        showToast(err.message, 'error');
+      } finally {
+        quickAddBtn.disabled = false;
+        quickAddBtn.textContent = '+ Add';
+      }
+    }
+
+    quickAddBtn.addEventListener('click', quickAddDish);
+    quickAddInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        quickAddDish();
+      }
+    });
 
     const searchInput = modal.querySelector('#dish-picker-search');
     searchInput.addEventListener('input', () => {

@@ -12,12 +12,14 @@ const { saveSnapshot } = require('./aiHistory');
 const TOOL_REGISTRY = [
   {
     name: 'create_menu',
-    description: 'Create a new menu in PlateStack. Use when the user wants to make a new menu.',
+    description: 'Create a new menu in PlateStack. Use when the user wants to make a new menu. Menus can be "event" type (one-off with an optional date) or "standard" type (recurring house menu). Only one standard menu can exist at a time.',
     input_schema: {
       type: 'object',
       properties: {
         name: { type: 'string', description: 'Name of the menu' },
         description: { type: 'string', description: 'Optional description of the menu' },
+        event_date: { type: 'string', description: 'Date for the menu in YYYY-MM-DD format (e.g. "2026-03-15"). Used for event menus to track when the event takes place.' },
+        menu_type: { type: 'string', enum: ['event', 'standard'], description: 'Type of menu. "event" (default) for one-off events, "standard" for the recurring house menu. Only one standard menu can exist.' },
       },
       required: ['name'],
     },
@@ -263,17 +265,37 @@ function isAutoApproved(toolName) {
 
 const handlers = {
   create_menu(input, opts) {
-    if (opts.preview) {
+    const menuType = input.menu_type || 'event';
+    const eventDate = menuType === 'event' ? (input.event_date || null) : null;
+
+    // Validate event_date format if provided
+    if (eventDate && !/^\d{4}-\d{2}-\d{2}$/.test(eventDate)) {
       return {
-        description: `Create menu: "${input.name}"${input.description ? ` — ${input.description}` : ''}`,
-        message: `I'll create a new menu called "${input.name}".`,
+        description: 'Invalid date format',
+        message: 'The date must be in YYYY-MM-DD format (e.g. "2026-03-15").',
       };
     }
 
+    if (opts.preview) {
+      let desc = `Create ${menuType} menu: "${input.name}"`;
+      if (eventDate) desc += ` on ${eventDate}`;
+      if (input.description) desc += ` — ${input.description}`;
+      let msg = `I'll create a new ${menuType} menu called "${input.name}"`;
+      if (eventDate) msg += ` scheduled for ${eventDate}`;
+      msg += '.';
+      return { description: desc, message: msg };
+    }
+
     const db = getDb();
-    const result = db.prepare('INSERT INTO menus (name, description) VALUES (?, ?)').run(
-      input.name, input.description || ''
-    );
+
+    // If creating a standard menu, demote any existing standard menu to event
+    if (menuType === 'standard') {
+      db.prepare("UPDATE menus SET menu_type = 'event' WHERE menu_type = 'standard' AND deleted_at IS NULL").run();
+    }
+
+    const result = db.prepare(
+      'INSERT INTO menus (name, description, menu_type, event_date) VALUES (?, ?, ?, ?)'
+    ).run(input.name, input.description || '', menuType, eventDate);
     const id = result.lastInsertRowid;
     const undoId = saveSnapshot('menu', id, 'create', null);
 
@@ -281,7 +303,7 @@ const handlers = {
 
     return {
       success: true,
-      message: `Menu "${input.name}" created.`,
+      message: `Menu "${input.name}" created${eventDate ? ` for ${eventDate}` : ''}.`,
       entityType: 'menu',
       entityId: id,
       undoId,
@@ -681,6 +703,8 @@ const handlers = {
     ).all(menu.id);
 
     const parts = [`Menu: "${menu.name}" (ID: ${menu.id})`];
+    if (menu.menu_type) parts.push(`Type: ${menu.menu_type}`);
+    if (menu.event_date) parts.push(`Event date: ${menu.event_date}`);
     if (menu.description) parts.push(`Description: ${menu.description}`);
     if (menu.sell_price) parts.push(`Sell price: ${menu.sell_price}`);
     if (menu.expected_covers) parts.push(`Expected covers: ${menu.expected_covers}`);
@@ -868,6 +892,11 @@ const handlers = {
       "SELECT name, created_at FROM dishes WHERE deleted_at IS NULL ORDER BY created_at DESC LIMIT 5"
     ).all();
 
+    // Upcoming events with dates
+    const upcomingEvents = db.prepare(
+      "SELECT name, event_date FROM menus WHERE deleted_at IS NULL AND event_date IS NOT NULL AND event_date >= date('now') ORDER BY event_date ASC LIMIT 5"
+    ).all();
+
     const parts = [
       'PlateStack System Summary:',
       `  Dishes: ${dishCount}`,
@@ -877,6 +906,13 @@ const handlers = {
       `  Service notes: ${noteCount}`,
       `  Active specials: ${specialCount}`,
     ];
+
+    if (upcomingEvents.length) {
+      parts.push('\nUpcoming events:');
+      for (const e of upcomingEvents) {
+        parts.push(`  - ${e.name} (${e.event_date})`);
+      }
+    }
 
     if (recentDishes.length) {
       parts.push('\nRecently added dishes:');
