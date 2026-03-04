@@ -140,6 +140,16 @@ export const getNotificationPreferences = () => request('/notifications/preferen
 export const updateNotificationPreferences = (prefs) => request('/notifications/preferences', { method: 'PUT', body: prefs });
 export const getNotificationPending = () => request('/notifications/pending');
 
+// AI Assistant
+export const aiCommand = (data) => request('/ai/command', { method: 'POST', body: data });
+export const aiConfirm = (id) => request(`/ai/confirm/${id}`, { method: 'POST' });
+export const aiUndo = (id) => request(`/ai/undo/${id}`, { method: 'POST' });
+export const getAiUsage = () => request('/ai/usage');
+export const aiCleanupRecipe = (dishId) => request(`/ai/cleanup-recipe/${dishId}`, { method: 'POST' });
+export const aiMatchIngredients = (ingredients) => request('/ai/match-ingredients', { method: 'POST', body: { ingredients } });
+export const getAiSettings = () => request('/ai/settings');
+export const saveAiSettings = (data) => request('/ai/settings', { method: 'POST', body: data });
+
 // Auth — public endpoints (no 401 redirect)
 async function authRequest(path, options = {}) {
   const url = `${BASE}${path}`;

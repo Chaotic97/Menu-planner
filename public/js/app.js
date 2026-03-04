@@ -12,7 +12,7 @@ import { renderSettings } from './pages/settings.js';
 import { renderToday } from './pages/today.js';
 import { renderIngredientList } from './pages/ingredientList.js';
 import { openUnitConverter } from './components/unitConverter.js';
-import { initQuickCapture } from './components/quickCapture.js';
+import { initCommandBar } from './components/commandBar.js';
 import { renderLogin } from './pages/login.js';
 import { authStatus, authLogout } from './api.js';
 import { connectSync } from './sync.js';
@@ -264,7 +264,7 @@ window.addEventListener('DOMContentLoaded', async () => {
   const authed = await checkAuth();
   if (authed) {
     connectSync();
-    initQuickCapture();
+    initCommandBar();
     initNotifications();
     router();
   }
