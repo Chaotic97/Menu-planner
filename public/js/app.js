@@ -13,6 +13,7 @@ import { renderToday } from './pages/today.js';
 import { renderIngredientList } from './pages/ingredientList.js';
 import { openUnitConverter } from './components/unitConverter.js';
 import { initCommandBar } from './components/commandBar.js';
+import { initChatDrawer } from './components/chatDrawer.js';
 import { renderLogin } from './pages/login.js';
 import { authStatus, authLogout } from './api.js';
 import { connectSync } from './sync.js';
@@ -265,6 +266,7 @@ window.addEventListener('DOMContentLoaded', async () => {
   if (authed) {
     connectSync();
     initCommandBar();
+    initChatDrawer();
     initNotifications();
     router();
   }

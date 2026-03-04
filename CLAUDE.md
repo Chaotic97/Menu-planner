@@ -433,6 +433,13 @@ The pipeline catches lint errors and test failures before code reaches `main`.
 | GET | `/api/ai/usage` | Usage stats: `{ today: { requests, tokens_in, tokens_out }, month: {...}, limits: { daily, monthly } }` |
 | GET | `/api/ai/settings` | AI config with masked API key: `{ apiKey (masked), hasApiKey, features, dailyLimit, monthlyLimit }` |
 | POST | `/api/ai/settings` | Save AI config. Body: `{ apiKey?, features?, dailyLimit?, monthlyLimit? }`. Key validated to start with "sk-". |
+| POST | `/api/ai/extract-text` | Upload a file for text extraction. multipart/form-data, field: `file`. Returns `{ text, type }`. |
+| POST | `/api/ai/generate-tasks/:menuId` | AI-powered task generation. Haiku analyzes menu dishes and creates practical, grouped prep tasks. Rate-limited. |
+| GET | `/api/ai/conversations` | List all chat conversations (newest first). |
+| POST | `/api/ai/conversations` | Create a new conversation. Body: `{ title? }`. |
+| GET | `/api/ai/conversations/:id/messages` | Get messages for a conversation. |
+| POST | `/api/ai/conversations/:id/messages` | Add a message. Body: `{ role, content }`. Auto-titles conversation from first user message. |
+| DELETE | `/api/ai/conversations/:id` | Delete a conversation and its messages. |
 
 ---
 
@@ -458,6 +465,8 @@ The pipeline catches lint errors and test failures before code reaches `main`.
 | `tasks` | id, menu_id (nullable FK→menus ON DELETE SET NULL), source_dish_id (nullable FK→dishes ON DELETE SET NULL), type (prep/custom), title, description, category, quantity, unit, timing_bucket, priority (high/medium/low), due_date, due_time, completed, completed_at, source (auto/manual), sort_order, created_at, updated_at |
 | `ai_history` | id, entity_type, entity_id, action_type (create/update/delete), previous_data (JSON snapshot), created_at — undo system for AI actions, auto-purged after 24h |
 | `ai_usage` | id, tokens_in, tokens_out, model, tool_used, created_at — tracks every AI API call for usage stats/limits |
+| `ai_conversations` | id, title, created_at, updated_at — chat drawer conversation sessions, auto-purged after 7 days |
+| `ai_messages` | id, conversation_id (FK→ai_conversations ON DELETE CASCADE), role, content, created_at — individual chat messages |
 
 **Shift values:** `all` · `am` · `lunch` · `pm` · `prep`
 
@@ -589,13 +598,23 @@ Context-aware AI command bar powered by Claude Haiku with function calling. Arch
 - **Undo system**: Every confirmed AI mutation saves a snapshot to `ai_history` table. Success toast includes a 15-second Undo button. Snapshots auto-purged after 24 hours on server startup.
 - **Context awareness**: The command bar sends `{ page, entityType, entityId }` with every request. `aiContext.js` hydrates this into dish/menu/ingredient data for the system prompt. When on a dish page, "clean up the directions" knows which dish you mean.
 - **Tool registry** (`aiTools.js`): Each tool is `{ name, description, input_schema, handler }`. Handler returns `{ preview, execute() }` pattern — preview for confirmation, execute for the actual mutation. Adding a new AI command = adding one entry to the registry array.
-- **Available tools**: `create_menu`, `create_dish`, `create_task`, `add_dish_to_menu` (fuzzy name matching), `cleanup_recipe`, `check_allergens`, `scale_recipe`, `convert_units`, `add_service_note`, `search_dishes`.
+- **Available tools**: `create_menu`, `create_dish`, `create_task`, `add_dish_to_menu` (fuzzy name matching), `cleanup_recipe`, `check_allergens`, `scale_recipe`, `convert_units`, `add_service_note`, `search_dishes`, `lookup_dish`, `lookup_menu`, `search_ingredients`, `search_tasks`, `search_service_notes`, `get_shopping_list`, `get_system_summary`.
 - **Recipe cleanup**: Dedicated endpoint `POST /api/ai/cleanup-recipe/:dishId` sends directions to Haiku with a structured prompt, returns cleaned JSON array, and shows a before/after diff in the dish form. "Clean up with AI" button appears in the Prep Directions section.
 - **Smart ingredient matching**: `POST /api/ai/match-ingredients` matches imported ingredient names to existing DB entries with confidence scores.
 - **Usage tracking**: Every AI API call logged to `ai_usage` table (tokens in/out, model, tool used). Configurable daily/monthly request limits in Settings.
 - **Settings**: AI Assistant section in `#/settings` — API key input (stored in `settings` table, masked on GET), usage limits, per-feature toggles, usage stats display.
 - **Offline degradation**: When offline, command bar falls back to plain task creation (same as old quick-capture). AI buttons disabled.
-- **Chat drawer** (`chatDrawer.js`): Level 2 structural skeleton — slide-out panel with multi-turn conversation support. Not wired up in v1. Same backend, adds `conversationHistory` parameter to track multi-turn context.
+- **Chat drawer** (`chatDrawer.js`): Fully wired slide-out panel with multi-turn conversation support. Conversations saved to `ai_conversations`/`ai_messages` tables with 7-day auto-purge. Session timeout after 1 hour of inactivity. History viewer for past conversations. File attachment support (PDF, images, DOCX, XLSX, CSV). Keyboard shortcut: Ctrl/Cmd+Shift+K.
+- **Multi-step tool chaining**: AI can call up to 3 auto-approved tools per message in sequence (agentic loop in `aiService.js`). Auto-approved tools execute and feed results back to Haiku; non-auto-approved tools stop the loop and return confirmation.
+- **AI task generation**: `POST /api/ai/generate-tasks/:menuId` sends all menu dish data to Haiku, which creates practical, grouped prep tasks (e.g. "Make beurre blanc (2L)" instead of individual steps). Replaces the basic auto-generate when an API key is configured. Falls back to the rule-based generator when offline.
+- **Document upload**: `POST /api/ai/extract-text` endpoint accepts file uploads via multer. Text extraction for CSV/DOCX/PDF/XLSX on server (`services/textExtractor.js`), image OCR via Haiku vision API.
+
+**Future: AI task timing estimates**
+The task generation prompt and DB schema are structured to support timing estimates in a future iteration:
+- Add `estimated_duration` (minutes) and `suggested_start_time` (HH:MM) columns to the `tasks` table
+- Extend the AI generate-tasks prompt to return `duration` and `start_by` per task
+- Frontend can then show a timeline view or Gantt-style prep schedule
+- This was deliberately deferred to keep the current implementation focused on task quality
 
 **Adding a new AI tool:**
 1. Add tool definition to `TOOL_REGISTRY` array in `services/ai/aiTools.js` (name, description, input_schema)

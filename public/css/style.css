@@ -4554,6 +4554,171 @@ textarea.input { resize: vertical; min-height: 80px; }
   opacity: 0.5;
 }
 
+/* --- Chat Drawer: header actions --- */
+.chat-drawer-header-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+.chat-drawer-new-chat {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  font-family: var(--font);
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+}
+.chat-drawer-new-chat:hover {
+  color: var(--text);
+  border-color: var(--text-muted);
+}
+
+/* --- Chat Drawer: welcome message --- */
+.chat-drawer-welcome {
+  text-align: center;
+  padding: var(--space-xl) var(--space-md);
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  line-height: 1.6;
+}
+.chat-drawer-welcome-hint {
+  font-size: var(--text-xs);
+  margin-top: var(--space-sm);
+  opacity: 0.7;
+}
+
+/* --- Chat Drawer: typing indicator --- */
+.chat-typing-dots {
+  display: inline-flex;
+  gap: 4px;
+  padding: 4px 0;
+}
+.chat-typing-dots span {
+  width: 6px;
+  height: 6px;
+  background: var(--text-muted);
+  border-radius: 50%;
+  animation: chat-typing-bounce 1.2s infinite ease-in-out;
+}
+.chat-typing-dots span:nth-child(2) { animation-delay: 0.15s; }
+.chat-typing-dots span:nth-child(3) { animation-delay: 0.3s; }
+@keyframes chat-typing-bounce {
+  0%, 80%, 100% { transform: scale(0.6); opacity: 0.4; }
+  40% { transform: scale(1); opacity: 1; }
+}
+
+/* --- Chat Drawer: file attachment --- */
+.chat-drawer-attach {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: none;
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: color 0.15s;
+}
+.chat-drawer-attach:hover {
+  color: var(--text);
+}
+
+/* --- Chat Drawer: error messages --- */
+.chat-msg-error .chat-msg-text {
+  background: rgba(var(--danger-rgb), 0.1);
+  color: var(--danger);
+  border: 1px solid rgba(var(--danger-rgb), 0.2);
+  font-size: var(--text-xs);
+}
+
+/* --- Chat Drawer: history view --- */
+.chat-drawer-history-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text-light);
+  padding: 4px;
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+}
+.chat-drawer-history-btn:hover,
+.chat-drawer-history-btn.active {
+  color: var(--primary);
+  background: rgba(var(--primary-rgb), 0.1);
+}
+.chat-history-loading,
+.chat-history-empty {
+  padding: var(--space-lg);
+  text-align: center;
+  color: var(--text-light);
+  font-size: var(--text-sm);
+}
+.chat-history-list {
+  padding: var(--space-sm);
+}
+.chat-history-header {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--text-light);
+  padding: var(--space-xs) var(--space-sm);
+  margin-bottom: var(--space-xs);
+}
+.chat-history-item {
+  display: flex;
+  align-items: center;
+  padding: var(--space-sm);
+  border-radius: var(--radius);
+  cursor: pointer;
+  gap: var(--space-sm);
+  transition: background 0.15s;
+}
+.chat-history-item:hover {
+  background: rgba(var(--primary-rgb), 0.06);
+}
+.chat-history-item-content {
+  flex: 1;
+  min-width: 0;
+}
+.chat-history-item-title {
+  font-size: var(--text-sm);
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.chat-history-item-date {
+  font-size: var(--text-xs);
+  color: var(--text-light);
+  margin-top: 2px;
+}
+.chat-history-item-delete {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text-light);
+  padding: 4px;
+  border-radius: var(--radius-sm);
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.chat-history-item:hover .chat-history-item-delete {
+  opacity: 1;
+}
+.chat-history-item-delete:hover {
+  color: var(--danger);
+  background: rgba(var(--danger-rgb), 0.1);
+}
+
 /* ============================
    AI Cleanup & Diff (.ai-)
    ============================ */
@@ -5579,6 +5744,25 @@ textarea.input { resize: vertical; min-height: 80px; }
 .cb-send:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+.cb-chat-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-muted, var(--text));
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 0.15s, color 0.15s;
+}
+.cb-chat-toggle:hover {
+  background: var(--primary);
+  color: white;
+  border-color: var(--primary);
 }
 
 /* --- Command Bar: Preview card --- */

@@ -298,6 +298,25 @@ async function initialize() {
       created_at TEXT DEFAULT (datetime('now'))
     )`,
     `CREATE INDEX IF NOT EXISTS idx_ai_usage_created_at ON ai_usage(created_at)`,
+    // Chat conversations for the AI chat drawer
+    `CREATE TABLE IF NOT EXISTS ai_conversations (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      title TEXT DEFAULT '',
+      created_at TEXT DEFAULT (datetime('now')),
+      updated_at TEXT DEFAULT (datetime('now'))
+    )`,
+    `CREATE TABLE IF NOT EXISTS ai_messages (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      conversation_id INTEGER NOT NULL REFERENCES ai_conversations(id) ON DELETE CASCADE,
+      role TEXT NOT NULL,
+      content TEXT NOT NULL,
+      created_at TEXT DEFAULT (datetime('now'))
+    )`,
+    `CREATE INDEX IF NOT EXISTS idx_ai_messages_conversation_id ON ai_messages(conversation_id)`,
+    // Performance indexes for search queries
+    `CREATE INDEX IF NOT EXISTS idx_dishes_name ON dishes(name)`,
+    `CREATE INDEX IF NOT EXISTS idx_ingredients_name ON ingredients(name)`,
+    `CREATE INDEX IF NOT EXISTS idx_menus_deleted_at ON menus(deleted_at)`,
   ];
 
   for (const sql of MIGRATIONS) {
@@ -308,6 +327,8 @@ async function initialize() {
   // Auto-purge soft-deleted records older than 7 days
   try { sqlDb.run("DELETE FROM dishes WHERE deleted_at IS NOT NULL AND deleted_at < datetime('now', '-7 days')"); } catch {}
   try { sqlDb.run("DELETE FROM menus WHERE deleted_at IS NOT NULL AND deleted_at < datetime('now', '-7 days')"); } catch {}
+  // Auto-purge old chat conversations older than 7 days
+  try { sqlDb.run("DELETE FROM ai_conversations WHERE updated_at < datetime('now', '-7 days')"); } catch {}
 
   wrapper = new DbWrapper(sqlDb);
 

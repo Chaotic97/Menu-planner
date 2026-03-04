@@ -1,6 +1,7 @@
 import { createTask, aiCommand, aiConfirm, aiUndo } from '../api.js';
 import { showToast } from './toast.js';
 import { escapeHtml } from '../utils/escapeHtml.js';
+import { toggleDrawer } from './chatDrawer.js';
 
 // Routes where command bar should be hidden
 const HIDDEN_ROUTES = [
@@ -93,6 +94,11 @@ function createBar() {
           <polygon points="22 2 15 22 11 13 2 9 22 2"/>
         </svg>
       </button>
+      <button class="cb-chat-toggle" title="Open chat (Ctrl+Shift+K)" aria-label="Open AI chat drawer">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+        </svg>
+      </button>
     </div>
   `;
 
@@ -100,6 +106,10 @@ function createBar() {
   const input = barEl.querySelector('.cb-input');
   const sendBtn = barEl.querySelector('.cb-send');
   const modeToggle = barEl.querySelector('.cb-mode-toggle');
+
+  // Chat drawer toggle
+  const chatToggle = barEl.querySelector('.cb-chat-toggle');
+  chatToggle.addEventListener('click', () => toggleDrawer());
 
   // Mode toggle
   modeToggle.addEventListener('click', () => {
@@ -218,7 +228,23 @@ async function submitAiCommand(text, input, sendBtn) {
       return;
     }
 
-    if (result.confirmationId) {
+    if (result.autoExecuted) {
+      // Auto-executed tool — show result directly
+      dismissPreview();
+      if (result.undoId) {
+        showToast(result.response || 'Done', 'success', 15000, {
+          label: 'Undo',
+          onClick: () => handleUndo(result.undoId),
+        });
+      } else {
+        showPreviewMessage(result.response, 'info');
+      }
+      input.value = '';
+      if (result.navigateTo) {
+        window.location.hash = result.navigateTo;
+      }
+      window.dispatchEvent(new CustomEvent('quickcapture:created'));
+    } else if (result.confirmationId) {
       // Show confirmation preview
       currentConfirmationId = result.confirmationId;
       _currentToolName = result.toolName;
