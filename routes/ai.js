@@ -33,6 +33,95 @@ setInterval(() => {
 }, 60 * 1000);
 
 /**
+ * Call Anthropic to clean up directions for a dish.
+ * Shared by the dedicated cleanup-recipe endpoint and the command bar confirm flow.
+ * Returns the parsed cleaned directions array.
+ */
+async function fetchCleanedDirections(dishId) {
+  const apiKey = getApiKey();
+  if (!apiKey) throw new Error('API key not configured');
+
+  const db = getDb();
+  const dish = db.prepare('SELECT id, name, chefs_notes FROM dishes WHERE id = ? AND deleted_at IS NULL').get(dishId);
+  if (!dish) throw new Error('Dish not found');
+
+  const directions = db.prepare(
+    'SELECT id, type, text, sort_order FROM dish_directions WHERE dish_id = ? ORDER BY sort_order'
+  ).all(dishId);
+
+  const ingredients = db.prepare(
+    `SELECT di.quantity, di.unit, i.name, di.prep_note
+     FROM dish_ingredients di JOIN ingredients i ON di.ingredient_id = i.id
+     WHERE di.dish_id = ? ORDER BY di.sort_order`
+  ).all(dishId);
+
+  if (!directions.length && !dish.chefs_notes) {
+    throw new Error('No directions to clean up');
+  }
+
+  let currentText;
+  if (directions.length) {
+    currentText = directions.map(d => d.type === 'section' ? `[SECTION: ${d.text}]` : d.text).join('\n');
+  } else {
+    currentText = dish.chefs_notes;
+  }
+
+  const ingredientList = ingredients.map(i => {
+    const qty = i.quantity ? `${i.quantity}${i.unit ? ' ' + i.unit : ''}` : '';
+    return `${qty} ${i.name}${i.prep_note ? ' (' + i.prep_note + ')' : ''}`.trim();
+  }).join(', ');
+
+  const Anthropic = require('@anthropic-ai/sdk');
+  const client = new Anthropic({ apiKey, timeout: 45 * 1000 });
+
+  const response = await client.messages.create({
+    model: 'claude-haiku-4-5-20251001',
+    max_tokens: 2048,
+    system: `You are a professional chef helping clean up recipe directions. Your job is to:
+- Standardize culinary terminology (e.g., "chop real fine" → "brunoise", "put in pan" → "sauté in")
+- Ensure steps are clear, concise, and well-structured
+- Keep the same cooking process — do NOT change what is being done, only how it's described
+- Use professional kitchen language
+- Include timing where implied (e.g., "cook until golden" → "cook 3-4 minutes until golden")
+- Group related steps under section headers if the recipe is complex (6+ steps)
+- Preserve all important details — temperatures, quantities, visual cues
+
+Return a JSON array of direction objects. Each object has:
+- "type": either "step" or "section"
+- "text": the direction text
+
+ONLY output the JSON array, nothing else.`,
+    messages: [{
+      role: 'user',
+      content: `Clean up these directions for "${dish.name}".\n\nIngredients: ${ingredientList || 'Not specified'}\n\nCurrent directions:\n${currentText}`,
+    }],
+  });
+
+  // Track usage
+  const tokensIn = response.usage?.input_tokens || 0;
+  const tokensOut = response.usage?.output_tokens || 0;
+  db.prepare(
+    'INSERT INTO ai_usage (tokens_in, tokens_out, model, tool_used) VALUES (?, ?, ?, ?)'
+  ).run(tokensIn, tokensOut, 'claude-haiku-4-5-20251001', 'cleanup_recipe');
+
+  const text = response.content[0]?.text || '';
+  const jsonMatch = text.match(/\[[\s\S]*\]/);
+  if (!jsonMatch) throw new Error('Failed to parse AI response');
+
+  const cleanedDirections = JSON.parse(jsonMatch[0]);
+  if (!Array.isArray(cleanedDirections) || !cleanedDirections.length) {
+    throw new Error('AI returned empty directions');
+  }
+
+  for (const dir of cleanedDirections) {
+    if (!dir.type || !dir.text) throw new Error('AI returned malformed directions');
+    if (dir.type !== 'step' && dir.type !== 'section') dir.type = 'step';
+  }
+
+  return cleanedDirections;
+}
+
+/**
  * POST /api/ai/command — Main entry point
  * Body: { message, context: { page, entityType?, entityId? }, conversationHistory? }
  */
@@ -108,6 +197,13 @@ router.post('/confirm/:id', asyncHandler(async (req, res) => {
   pendingActions.delete(id);
 
   try {
+    // When cleanup_recipe comes from the command bar, it has no cleaned_directions yet.
+    // We need to call Anthropic to get them before executing.
+    if (pending.data.toolName === 'cleanup_recipe' && !pending.data.toolInput.cleaned_directions) {
+      const cleanedDirections = await fetchCleanedDirections(pending.data.toolInput.dish_id);
+      pending.data.toolInput.cleaned_directions = cleanedDirections;
+    }
+
     const result = await executeConfirmedAction(pending.data, req.broadcast);
 
     if (result.success === false) {
@@ -177,101 +273,12 @@ router.post('/cleanup-recipe/:dishId', aiRateLimit, asyncHandler(async (req, res
     'SELECT id, type, text, sort_order FROM dish_directions WHERE dish_id = ? ORDER BY sort_order'
   ).all(dishId);
 
-  const ingredients = db.prepare(
-    `SELECT di.quantity, di.unit, i.name, di.prep_note
-     FROM dish_ingredients di JOIN ingredients i ON di.ingredient_id = i.id
-     WHERE di.dish_id = ? ORDER BY di.sort_order`
-  ).all(dishId);
-
   if (!directions.length && !dish.chefs_notes) {
     return res.status(400).json({ error: 'This dish has no directions to clean up.' });
   }
 
-  // Build the text to clean up
-  let currentText;
-  if (directions.length) {
-    currentText = directions.map(d => d.type === 'section' ? `[SECTION: ${d.text}]` : d.text).join('\n');
-  } else {
-    currentText = dish.chefs_notes;
-  }
-
-  const ingredientList = ingredients.map(i => {
-    const qty = i.quantity ? `${i.quantity}${i.unit ? ' ' + i.unit : ''}` : '';
-    return `${qty} ${i.name}${i.prep_note ? ' (' + i.prep_note + ')' : ''}`.trim();
-  }).join(', ');
-
-  // Send to Haiku for cleanup
-  const Anthropic = require('@anthropic-ai/sdk');
-  const client = new Anthropic({ apiKey, timeout: 45 * 1000 });
-
   try {
-    const response = await client.messages.create({
-      model: 'claude-haiku-4-5-20251001',
-      max_tokens: 2048,
-      system: `You are a professional chef helping clean up recipe directions. Your job is to:
-- Standardize culinary terminology (e.g., "chop real fine" → "brunoise", "put in pan" → "sauté in")
-- Ensure steps are clear, concise, and well-structured
-- Keep the same cooking process — do NOT change what is being done, only how it's described
-- Use professional kitchen language
-- Include timing where implied (e.g., "cook until golden" → "cook 3-4 minutes until golden")
-- Group related steps under section headers if the recipe is complex (6+ steps)
-- Preserve all important details — temperatures, quantities, visual cues
-
-Return a JSON array of direction objects. Each object has:
-- "type": either "step" or "section"
-- "text": the direction text
-
-Example output:
-[
-  {"type": "section", "text": "Mise en Place"},
-  {"type": "step", "text": "Brunoise the shallots and mince the garlic."},
-  {"type": "step", "text": "Season the salmon fillets with salt, pepper, and a squeeze of lemon."},
-  {"type": "section", "text": "Cooking"},
-  {"type": "step", "text": "Heat olive oil in a heavy-based pan over medium-high heat until shimmering."}
-]
-
-ONLY output the JSON array, nothing else.`,
-      messages: [{
-        role: 'user',
-        content: `Clean up these directions for "${dish.name}".\n\nIngredients: ${ingredientList || 'Not specified'}\n\nCurrent directions:\n${currentText}`,
-      }],
-    });
-
-    // Track usage
-    const tokensIn = response.usage?.input_tokens || 0;
-    const tokensOut = response.usage?.output_tokens || 0;
-    db.prepare(
-      'INSERT INTO ai_usage (tokens_in, tokens_out, model, tool_used) VALUES (?, ?, ?, ?)'
-    ).run(tokensIn, tokensOut, 'claude-haiku-4-5-20251001', 'cleanup_recipe');
-
-    // Parse the response
-    const text = response.content[0]?.text || '';
-    let cleanedDirections;
-    try {
-      // Try to extract JSON from the response (might have markdown code fences)
-      const jsonMatch = text.match(/\[[\s\S]*\]/);
-      if (jsonMatch) {
-        cleanedDirections = JSON.parse(jsonMatch[0]);
-      } else {
-        throw new Error('No JSON array found');
-      }
-    } catch {
-      return res.status(500).json({ error: 'Failed to parse AI response. Please try again.' });
-    }
-
-    // Validate the response
-    if (!Array.isArray(cleanedDirections) || !cleanedDirections.length) {
-      return res.status(500).json({ error: 'AI returned empty directions. Please try again.' });
-    }
-
-    for (const dir of cleanedDirections) {
-      if (!dir.type || !dir.text) {
-        return res.status(500).json({ error: 'AI returned malformed directions. Please try again.' });
-      }
-      if (dir.type !== 'step' && dir.type !== 'section') {
-        dir.type = 'step';
-      }
-    }
+    const cleanedDirections = await fetchCleanedDirections(dishId);
 
     // Build before text for diff
     const before = directions.length
