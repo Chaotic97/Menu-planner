@@ -128,6 +128,7 @@ AVAILABLE ACTIONS:
 - Allergens: add/remove allergen flags, check allergens with AI analysis, view menu-wide allergen breakdown
 - Analysis: food cost analysis per menu, pricing suggestions, dietary suitability analysis
 - Advisory: dish pairing suggestions, ingredient substitutions, recipe scaling advice, unit conversions
+- Recipe building: add/remove ingredients on dishes, add direction steps/sections, add/remove tags
 - Workflow: generate prep tasks for a menu, clean up recipe directions with AI`;
 
   if (context) {

@@ -702,6 +702,83 @@ const TOOL_REGISTRY = [
       required: [],
     },
   },
+
+  // ─── Recipe Building Tools ─────────────────────────────────────
+  {
+    name: 'add_ingredient_to_dish',
+    description: 'Add an ingredient to a dish recipe. Creates the ingredient in the system if it doesn\'t exist. Use when the user says "add 500g flour to the focaccia".',
+    input_schema: {
+      type: 'object',
+      properties: {
+        dish_id: { type: 'number', description: 'ID of the dish' },
+        dish_name: { type: 'string', description: 'Name of the dish (fuzzy matched if no ID)' },
+        ingredient_name: { type: 'string', description: 'Name of the ingredient to add' },
+        quantity: { type: 'number', description: 'Quantity of the ingredient' },
+        unit: { type: 'string', description: 'Unit of measurement (e.g. g, kg, ml, L, each, bunch)' },
+        prep_note: { type: 'string', description: 'Prep instructions (e.g. "diced", "julienned", "room temperature")' },
+      },
+      required: ['ingredient_name'],
+    },
+  },
+  {
+    name: 'remove_ingredient_from_dish',
+    description: 'Remove an ingredient from a dish recipe. Use when the user says "remove the cream from the soup" or "take out the butter".',
+    autoApprove: true,
+    input_schema: {
+      type: 'object',
+      properties: {
+        dish_id: { type: 'number', description: 'ID of the dish' },
+        dish_name: { type: 'string', description: 'Name of the dish (fuzzy matched if no ID)' },
+        ingredient_name: { type: 'string', description: 'Name of the ingredient to remove' },
+        ingredient_id: { type: 'number', description: 'ID of the ingredient to remove (if known)' },
+      },
+      required: ['ingredient_name'],
+    },
+  },
+  {
+    name: 'add_direction_to_dish',
+    description: 'Add a direction step or section header to a dish recipe. Appends at the end by default. Use when the user says "add a step: rest the dough for 30 minutes".',
+    autoApprove: true,
+    input_schema: {
+      type: 'object',
+      properties: {
+        dish_id: { type: 'number', description: 'ID of the dish' },
+        dish_name: { type: 'string', description: 'Name of the dish (fuzzy matched if no ID)' },
+        text: { type: 'string', description: 'The direction step text or section header title' },
+        type: { type: 'string', enum: ['step', 'section'], description: 'Whether this is a step or a section header. Defaults to step.' },
+        position: { type: 'number', description: 'Position to insert at (0-indexed). If omitted, appends at end.' },
+      },
+      required: ['text'],
+    },
+  },
+  {
+    name: 'add_tag',
+    description: 'Add a tag to a dish. Creates the tag if it doesn\'t exist. Use when the user says "tag this as summer menu" or "add the brunch tag".',
+    autoApprove: true,
+    input_schema: {
+      type: 'object',
+      properties: {
+        dish_id: { type: 'number', description: 'ID of the dish' },
+        dish_name: { type: 'string', description: 'Name of the dish (fuzzy matched if no ID)' },
+        tag: { type: 'string', description: 'Tag name to add' },
+      },
+      required: ['tag'],
+    },
+  },
+  {
+    name: 'remove_tag',
+    description: 'Remove a tag from a dish.',
+    autoApprove: true,
+    input_schema: {
+      type: 'object',
+      properties: {
+        dish_id: { type: 'number', description: 'ID of the dish' },
+        dish_name: { type: 'string', description: 'Name of the dish (fuzzy matched if no ID)' },
+        tag: { type: 'string', description: 'Tag name to remove' },
+      },
+      required: ['tag'],
+    },
+  },
 ];
 
 /**
@@ -2446,6 +2523,203 @@ const handlers = {
     const message = parts.join('\n');
     if (opts.preview) return { description: `Pricing: "${dishName}"`, message };
     return { success: true, message };
+  },
+
+  // ─── Recipe Building Handlers ──────────────────────────────────
+
+  add_ingredient_to_dish(input, opts) {
+    const db = getDb();
+    const resolved = resolveDish(db, input);
+    if (!resolved) return { description: 'Dish not found', message: 'Could not find that dish.' };
+    const { dishId, dishName } = resolved;
+
+    // Find or create the ingredient
+    let ingredient = db.prepare('SELECT id, name FROM ingredients WHERE name LIKE ? LIMIT 1').get(`%${input.ingredient_name}%`);
+
+    if (opts.preview) {
+      const qty = input.quantity ? `${input.quantity} ${input.unit || ''}` : '';
+      const prep = input.prep_note ? ` (${input.prep_note})` : '';
+      const ingLabel = ingredient ? ingredient.name : input.ingredient_name;
+      return {
+        description: `Add ${qty} ${ingLabel}${prep} to "${dishName}"`,
+        message: `I'll add ${qty ? qty + ' ' : ''}${ingLabel}${prep} to "${dishName}".${!ingredient ? ` This will also create "${input.ingredient_name}" as a new ingredient.` : ''}`,
+      };
+    }
+
+    // Create ingredient if it doesn't exist
+    if (!ingredient) {
+      db.prepare('INSERT INTO ingredients (name) VALUES (?)').run(input.ingredient_name);
+      ingredient = db.prepare('SELECT id, name FROM ingredients WHERE name = ? COLLATE NOCASE').get(input.ingredient_name);
+      if (opts.broadcast) opts.broadcast('ingredient_created', { id: ingredient.id });
+    }
+
+    // Check if already on this dish (UNIQUE constraint)
+    const existing = db.prepare('SELECT 1 FROM dish_ingredients WHERE dish_id = ? AND ingredient_id = ?').get(dishId, ingredient.id);
+    if (existing) {
+      return { success: false, message: `"${ingredient.name}" is already on "${dishName}". Update the quantity in the dish form instead.` };
+    }
+
+    // Get next sort_order
+    const maxSort = db.prepare('SELECT COALESCE(MAX(sort_order), -1) as mx FROM dish_ingredients WHERE dish_id = ?').get(dishId).mx;
+
+    db.prepare(
+      'INSERT INTO dish_ingredients (dish_id, ingredient_id, quantity, unit, prep_note, sort_order) VALUES (?, ?, ?, ?, ?, ?)'
+    ).run(dishId, ingredient.id, input.quantity || null, input.unit || null, input.prep_note || null, maxSort + 1);
+
+    // Re-run allergen detection
+    const { updateDishAllergens } = require('../allergenDetector');
+    updateDishAllergens(dishId);
+
+    if (opts.broadcast) opts.broadcast('dish_updated', { id: dishId });
+
+    const qty = input.quantity ? `${input.quantity} ${input.unit || ''}` : '';
+    return {
+      success: true,
+      message: `Added ${qty ? qty + ' ' : ''}${ingredient.name} to "${dishName}".`,
+      entityType: 'dish',
+      entityId: dishId,
+    };
+  },
+
+  remove_ingredient_from_dish(input, opts) {
+    const db = getDb();
+    const resolved = resolveDish(db, input);
+    if (!resolved) return { success: true, message: 'Dish not found.' };
+    const { dishId, dishName } = resolved;
+
+    // Find the ingredient
+    let ingredientId = input.ingredient_id;
+    let ingredientName = input.ingredient_name;
+    if (!ingredientId && ingredientName) {
+      const ing = db.prepare(
+        'SELECT di.ingredient_id, i.name FROM dish_ingredients di JOIN ingredients i ON di.ingredient_id = i.id WHERE di.dish_id = ? AND i.name LIKE ? LIMIT 1'
+      ).get(dishId, `%${ingredientName}%`);
+      if (ing) { ingredientId = ing.ingredient_id; ingredientName = ing.name; }
+    }
+
+    if (!ingredientId) {
+      return { success: true, message: `Could not find "${input.ingredient_name}" on "${dishName}".` };
+    }
+
+    if (opts.preview) {
+      return {
+        description: `Remove ${ingredientName} from "${dishName}"`,
+        message: `I'll remove "${ingredientName}" from "${dishName}".`,
+      };
+    }
+
+    const result = db.prepare('DELETE FROM dish_ingredients WHERE dish_id = ? AND ingredient_id = ?').run(dishId, ingredientId);
+    if (result.changes === 0) {
+      return { success: false, message: `"${ingredientName}" is not on "${dishName}".` };
+    }
+
+    // Re-run allergen detection
+    const { updateDishAllergens } = require('../allergenDetector');
+    updateDishAllergens(dishId);
+
+    if (opts.broadcast) opts.broadcast('dish_updated', { id: dishId });
+
+    return { success: true, message: `Removed "${ingredientName}" from "${dishName}".`, entityType: 'dish', entityId: dishId };
+  },
+
+  add_direction_to_dish(input, opts) {
+    const db = getDb();
+    const resolved = resolveDish(db, input);
+    if (!resolved) return { success: true, message: 'Dish not found.' };
+    const { dishId, dishName } = resolved;
+
+    const dirType = input.type || 'step';
+
+    if (opts.preview) {
+      const label = dirType === 'section' ? `section header: "${input.text}"` : `step: "${input.text}"`;
+      return {
+        description: `Add ${label} to "${dishName}"`,
+        message: `I'll add a ${label} to "${dishName}".`,
+      };
+    }
+
+    // Get existing directions to figure out sort_order
+    const existing = db.prepare('SELECT sort_order FROM dish_directions WHERE dish_id = ? ORDER BY sort_order DESC LIMIT 1').get(dishId);
+    const nextSort = existing ? existing.sort_order + 1 : 0;
+
+    if (input.position !== undefined && input.position !== null) {
+      // Shift existing directions to make room
+      db.prepare('UPDATE dish_directions SET sort_order = sort_order + 1 WHERE dish_id = ? AND sort_order >= ?').run(dishId, input.position);
+      db.prepare('INSERT INTO dish_directions (dish_id, type, text, sort_order) VALUES (?, ?, ?, ?)').run(dishId, dirType, input.text, input.position);
+    } else {
+      db.prepare('INSERT INTO dish_directions (dish_id, type, text, sort_order) VALUES (?, ?, ?, ?)').run(dishId, dirType, input.text, nextSort);
+    }
+
+    // Clear legacy chefs_notes since we now have structured directions
+    db.prepare('UPDATE dishes SET chefs_notes = ? WHERE id = ?').run('', dishId);
+
+    if (opts.broadcast) opts.broadcast('dish_updated', { id: dishId });
+
+    const label = dirType === 'section' ? 'section header' : 'step';
+    return { success: true, message: `Added ${label} to "${dishName}": "${input.text}".`, entityType: 'dish', entityId: dishId };
+  },
+
+  add_tag(input, opts) {
+    const db = getDb();
+    const resolved = resolveDish(db, input);
+    if (!resolved) return { success: true, message: 'Dish not found.' };
+    const { dishId, dishName } = resolved;
+
+    const tagName = input.tag.trim();
+
+    if (opts.preview) {
+      return {
+        description: `Add tag "${tagName}" to "${dishName}"`,
+        message: `I'll tag "${dishName}" with "${tagName}".`,
+      };
+    }
+
+    // Find or create the tag
+    let tag = db.prepare('SELECT id FROM tags WHERE name = ? COLLATE NOCASE').get(tagName);
+    if (!tag) {
+      db.prepare('INSERT INTO tags (name) VALUES (?)').run(tagName);
+      tag = db.prepare('SELECT id FROM tags WHERE name = ? COLLATE NOCASE').get(tagName);
+    }
+
+    // Check if already tagged
+    const existing = db.prepare('SELECT 1 FROM dish_tags WHERE dish_id = ? AND tag_id = ?').get(dishId, tag.id);
+    if (existing) {
+      return { success: true, message: `"${dishName}" is already tagged with "${tagName}".` };
+    }
+
+    db.prepare('INSERT INTO dish_tags (dish_id, tag_id) VALUES (?, ?)').run(dishId, tag.id);
+    if (opts.broadcast) opts.broadcast('dish_updated', { id: dishId });
+
+    return { success: true, message: `Tagged "${dishName}" with "${tagName}".` };
+  },
+
+  remove_tag(input, opts) {
+    const db = getDb();
+    const resolved = resolveDish(db, input);
+    if (!resolved) return { success: true, message: 'Dish not found.' };
+    const { dishId, dishName } = resolved;
+
+    const tagName = input.tag.trim();
+
+    if (opts.preview) {
+      return {
+        description: `Remove tag "${tagName}" from "${dishName}"`,
+        message: `I'll remove the "${tagName}" tag from "${dishName}".`,
+      };
+    }
+
+    const tag = db.prepare('SELECT id FROM tags WHERE name = ? COLLATE NOCASE').get(tagName);
+    if (!tag) {
+      return { success: true, message: `Tag "${tagName}" doesn't exist.` };
+    }
+
+    const result = db.prepare('DELETE FROM dish_tags WHERE dish_id = ? AND tag_id = ?').run(dishId, tag.id);
+    if (result.changes === 0) {
+      return { success: true, message: `"${dishName}" doesn't have the "${tagName}" tag.` };
+    }
+
+    if (opts.broadcast) opts.broadcast('dish_updated', { id: dishId });
+    return { success: true, message: `Removed tag "${tagName}" from "${dishName}".` };
   },
 };
 
