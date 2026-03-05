@@ -18,6 +18,8 @@
  *   makeCollapsible(document.getElementById('my-section'), { open: false });
  */
 
+import { escapeHtml } from '../utils/escapeHtml.js';
+
 /**
  * @param {HTMLElement} sectionEl — the .collapsible-section wrapper
  * @param {object} [opts]
@@ -66,8 +68,8 @@ export function makeCollapsible(sectionEl, opts = {}) {
  */
 export function collapsibleHeader(title, subtitle) {
   return `<button type="button" class="collapsible-section__header">
-    <span class="collapsible-section__title">${title}</span>
-    ${subtitle ? `<span class="collapsible-section__subtitle">${subtitle}</span>` : ''}
+    <span class="collapsible-section__title">${escapeHtml(title)}</span>
+    ${subtitle ? `<span class="collapsible-section__subtitle">${escapeHtml(subtitle)}</span>` : ''}
     <span class="collapsible-chevron">&#9662;</span>
   </button>`;
 }

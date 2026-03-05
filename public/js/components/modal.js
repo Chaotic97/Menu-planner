@@ -1,5 +1,12 @@
 import { escapeHtml } from '../utils/escapeHtml.js';
 
+/**
+ * @param {string} title — auto-escaped for safe rendering
+ * @param {string} contentHtml — raw HTML for modal body. Caller MUST escape any
+ *   user-supplied strings with escapeHtml() before embedding them.
+ * @param {function} [onClose] — called when the modal is dismissed
+ * @returns {HTMLElement} the modal overlay element
+ */
 export function openModal(title, contentHtml, onClose) {
   const previousFocus = document.activeElement;
   const overlay = document.createElement('div');

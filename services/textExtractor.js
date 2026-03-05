@@ -53,7 +53,7 @@ async function extractText(buffer, originalName, mimetype) {
       worksheet.eachRow((row) => {
         const values = row.values.slice(1); // row.values is 1-indexed in ExcelJS
         rows.push(values.map(v => {
-          if (v == null) return '';
+          if (v === null || v === undefined) return '';
           const s = String(v);
           return (s.includes(',') || s.includes('"') || s.includes('\n'))
             ? '"' + s.replace(/"/g, '""') + '"'
