@@ -1,4 +1,4 @@
-import { getAllergenKeywords, addAllergenKeyword, deleteAllergenKeyword, changePassword, getDayPhases, updateDayPhases, getNotificationPreferences, updateNotificationPreferences, restoreBackup, getAiSettings, saveAiSettings, getAiUsage } from '../api.js';
+import { getAllergenKeywords, addAllergenKeyword, deleteAllergenKeyword, changePassword, getDayPhases, updateDayPhases, getNotificationPreferences, updateNotificationPreferences, restoreBackup, getAiSettings, saveAiSettings, getAiUsage, getCalendarSettings, saveCalendarSettings } from '../api.js';
 import { showToast } from '../components/toast.js';
 import { escapeHtml } from '../utils/escapeHtml.js';
 import { restartNotifications } from '../utils/notifications.js';
@@ -82,6 +82,48 @@ export async function renderSettings(container) {
             <div class="st-form-actions">
               <button id="ai-save-btn" class="btn btn-primary">Save AI Settings</button>
             </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="st-section">
+        <button class="st-section-toggle" aria-expanded="true">
+          <span class="st-section-title">Google Calendar</span>
+          <span class="st-chevron" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16"><polyline points="6 9 12 15 18 9"/></svg>
+          </span>
+        </button>
+        <div class="st-section-body">
+          <p class="ak-intro">
+            Connect a public Google Calendar to see events on your calendar page.
+            Events are read-only — you can create menus from them with one click.
+            Requires a Google API key with the Calendar API enabled.
+          </p>
+          <div class="card" style="padding: var(--space-md);">
+            <h3 class="st-card-heading">API Key</h3>
+            <div class="st-form-group">
+              <label class="st-label" for="gcal-api-key">Google API Key</label>
+              <div class="ai-key-row">
+                <input type="password" id="gcal-api-key" class="input" placeholder="AIza..." autocomplete="off">
+                <button id="gcal-key-toggle" class="btn btn-secondary btn-sm" type="button">Show</button>
+              </div>
+              <p id="gcal-key-status" class="ai-key-status"></p>
+            </div>
+
+            <h3 class="st-card-heading" style="margin-top: var(--space-lg);">Calendar ID</h3>
+            <div class="st-form-group">
+              <label class="st-label" for="gcal-calendar-id">Calendar ID</label>
+              <input type="text" id="gcal-calendar-id" class="input" placeholder="example@gmail.com or long-id@group.calendar.google.com">
+              <p class="st-help-text" style="margin-top:4px; font-size: var(--text-xs); color: var(--text-muted);">
+                Find this in Google Calendar &rarr; Settings &rarr; your calendar &rarr; "Integrate calendar" section.
+              </p>
+            </div>
+
+            <div class="st-form-actions">
+              <button id="gcal-save-btn" class="btn btn-primary">Save Calendar Settings</button>
+              <button id="gcal-test-btn" class="btn btn-secondary" style="margin-left:8px;">Test Connection</button>
+            </div>
+            <div id="gcal-test-result" style="margin-top: var(--space-sm);"></div>
           </div>
         </div>
       </section>
@@ -750,6 +792,102 @@ export async function renderSettings(container) {
 
   await loadAiSettings();
   await loadAiUsage();
+
+  // --- Google Calendar Settings ---
+  const gcalKeyInput = container.querySelector('#gcal-api-key');
+  const gcalKeyToggle = container.querySelector('#gcal-key-toggle');
+  const gcalKeyStatus = container.querySelector('#gcal-key-status');
+  const gcalCalendarId = container.querySelector('#gcal-calendar-id');
+  const gcalSaveBtn = container.querySelector('#gcal-save-btn');
+  const gcalTestBtn = container.querySelector('#gcal-test-btn');
+  const gcalTestResult = container.querySelector('#gcal-test-result');
+
+  gcalKeyToggle.addEventListener('click', () => {
+    const isPassword = gcalKeyInput.type === 'password';
+    gcalKeyInput.type = isPassword ? 'text' : 'password';
+    gcalKeyToggle.textContent = isPassword ? 'Hide' : 'Show';
+  });
+
+  async function loadGcalSettings() {
+    try {
+      const settings = await getCalendarSettings();
+      if (settings.hasApiKey) {
+        gcalKeyInput.placeholder = settings.apiKey || 'Key configured';
+        gcalKeyStatus.textContent = 'API key is configured';
+        gcalKeyStatus.className = 'ai-key-status ai-key-status--ok';
+      } else {
+        gcalKeyStatus.textContent = 'No API key set — Google Calendar disabled';
+        gcalKeyStatus.className = 'ai-key-status ai-key-status--warning';
+      }
+      gcalCalendarId.value = settings.calendarId || '';
+    } catch {
+      gcalKeyStatus.textContent = 'Failed to load settings';
+      gcalKeyStatus.className = 'ai-key-status ai-key-status--warning';
+    }
+  }
+
+  gcalSaveBtn.addEventListener('click', async () => {
+    gcalSaveBtn.disabled = true;
+    gcalSaveBtn.textContent = 'Saving...';
+    const body = {};
+    if (gcalKeyInput.value.trim()) {
+      body.apiKey = gcalKeyInput.value.trim();
+    }
+    body.calendarId = gcalCalendarId.value.trim();
+
+    try {
+      await saveCalendarSettings(body);
+      showToast('Calendar settings saved');
+      gcalKeyInput.value = '';
+      await loadGcalSettings();
+    } catch (err) {
+      showToast(err.message || 'Failed to save', 'error');
+    } finally {
+      gcalSaveBtn.disabled = false;
+      gcalSaveBtn.textContent = 'Save Calendar Settings';
+    }
+  });
+
+  gcalTestBtn.addEventListener('click', async () => {
+    // Save first if user entered new values
+    if (gcalKeyInput.value.trim() || gcalCalendarId.value.trim()) {
+      const body = {};
+      if (gcalKeyInput.value.trim()) body.apiKey = gcalKeyInput.value.trim();
+      body.calendarId = gcalCalendarId.value.trim();
+      try {
+        await saveCalendarSettings(body);
+        gcalKeyInput.value = '';
+        await loadGcalSettings();
+      } catch (err) {
+        gcalTestResult.innerHTML = `<p style="color: var(--danger);">Save failed: ${escapeHtml(err.message)}</p>`;
+        return;
+      }
+    }
+
+    gcalTestBtn.disabled = true;
+    gcalTestBtn.textContent = 'Testing...';
+    gcalTestResult.innerHTML = '<p style="color: var(--text-muted);">Fetching events...</p>';
+
+    try {
+      const result = await getCalendarSettings();
+      if (!result.hasApiKey || !result.calendarId) {
+        gcalTestResult.innerHTML = '<p style="color: var(--warning);">Please enter both an API key and Calendar ID first.</p>';
+        return;
+      }
+
+      const { getCalendarEvents } = await import('../api.js');
+      const eventsResult = await getCalendarEvents();
+      const count = eventsResult.events ? eventsResult.events.length : 0;
+      gcalTestResult.innerHTML = `<p style="color: var(--success);">Connected! Found ${count} event${count !== 1 ? 's' : ''} in the next 3 months.</p>`;
+    } catch (err) {
+      gcalTestResult.innerHTML = `<p style="color: var(--danger);">Connection failed: ${escapeHtml(err.message)}</p>`;
+    } finally {
+      gcalTestBtn.disabled = false;
+      gcalTestBtn.textContent = 'Test Connection';
+    }
+  });
+
+  await loadGcalSettings();
 
   // --- Backup / Restore ---
   const restoreInput = container.querySelector('#st-restore-input');
