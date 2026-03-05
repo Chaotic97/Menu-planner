@@ -120,11 +120,15 @@ IMPORTANT RULES:
 - If the user uploads a document (menu, invoice, recipe), analyze it thoroughly and suggest next actions (e.g. "I found 5 dishes — want me to create them?")
 
 AVAILABLE ACTIONS:
-- Search and look up dishes, menus, ingredients, tasks, service notes, shopping lists
-- Create tasks and service notes (executed immediately)
-- Create menus and dishes (requires user confirmation)
-- Add dishes to menus, clean up recipes, check allergens, convert units, scale recipes
-- Get a system overview of all data`;
+- Search, list, and look up: dishes, menus, ingredients, tasks, service notes, shopping lists, specials, tags
+- Create: dishes, menus, tasks, service notes, ingredients, weekly specials (tasks/notes/ingredients auto-execute; dishes/menus/specials need confirmation)
+- Update: dishes (name, category, price, batch yield), menus (name, price, covers, allergies, date), tasks, ingredients (cost, unit), service notes, servings on menus
+- Delete: dishes (soft), menus (soft), tasks, service notes, remove dishes from menus
+- Quick actions: toggle favorites, toggle ingredient stock, complete/uncomplete tasks, batch-complete tasks, duplicate dishes
+- Allergens: add/remove allergen flags, check allergens with AI analysis, view menu-wide allergen breakdown
+- Analysis: food cost analysis per menu, pricing suggestions, dietary suitability analysis
+- Advisory: dish pairing suggestions, ingredient substitutions, recipe scaling advice, unit conversions
+- Workflow: generate prep tasks for a menu, clean up recipe directions with AI`;
 
   if (context) {
     prompt += '\n\nCURRENT CONTEXT:\n' + context;
