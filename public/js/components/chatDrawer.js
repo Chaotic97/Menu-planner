@@ -130,7 +130,7 @@ function createDrawer() {
       <div class="chat-drawer-input-row">
         <label class="chat-drawer-attach" title="Attach file" aria-label="Attach file">
           <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/></svg>
-          <input type="file" class="chat-drawer-file-input" accept=".pdf,.png,.jpg,.jpeg,.gif,.webp,.csv,.xlsx,.xls,.doc,.docx" hidden>
+          <input type="file" class="chat-drawer-file-input" accept=".pdf,.png,.jpg,.jpeg,.gif,.webp,.csv,.xlsx,.xls,.doc,.docx">
         </label>
         <input type="text" class="chat-drawer-input" placeholder="Ask anything..." aria-label="Chat input">
         <button class="chat-drawer-send" title="Send" aria-label="Send message">
@@ -150,7 +150,6 @@ function createDrawer() {
   const input = drawerEl.querySelector('.chat-drawer-input');
   const sendBtn = drawerEl.querySelector('.chat-drawer-send');
   const fileInput = drawerEl.querySelector('.chat-drawer-file-input');
-  const attachBtn = drawerEl.querySelector('.chat-drawer-attach');
 
   backdrop.addEventListener('click', closeDrawer);
   closeBtn.addEventListener('click', closeDrawer);
@@ -166,8 +165,10 @@ function createDrawer() {
     }
   });
 
-  // File attachment
-  attachBtn.addEventListener('click', () => fileInput.click());
+  // File attachment — use change listener only; the <label> natively opens the picker.
+  // Do NOT call fileInput.click() manually — on iOS Safari, a <label> wrapping
+  // a hidden input already triggers the picker, and a second .click() causes a
+  // double-fire that cancels itself out (nothing happens).
   fileInput.addEventListener('change', () => {
     const file = fileInput.files[0];
     if (!file) return;
