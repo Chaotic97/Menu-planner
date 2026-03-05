@@ -93,26 +93,41 @@ export async function renderCalendar(container) {
       const dayGcal = gcalMap[dateStr] || [];
       const isPast = dateStr < todayStr;
 
-      // Build list of linked gcal event IDs to avoid showing duplicate
+      // Build maps for linked gcal events (gcal_event_id → menu)
       const linkedGcalIds = new Set();
+      const gcalToMenu = {};
       for (const m of dayMenus) {
-        if (m.gcal_event_id) linkedGcalIds.add(m.gcal_event_id);
+        if (m.gcal_event_id) {
+          linkedGcalIds.add(m.gcal_event_id);
+          gcalToMenu[m.gcal_event_id] = m;
+        }
       }
+
+      // Non-linked menus (standalone, not created from a gcal event)
+      const standaloneMenus = dayMenus.filter(m => !m.gcal_event_id);
 
       gridCells += `
         <div class="cal-cell ${isToday ? 'cal-cell--today' : ''} ${isPast ? 'cal-cell--past' : ''}" data-date="${dateStr}">
           <div class="cal-day-num">${day}</div>
-          ${dayMenus.map(m => `
-            <a href="#/menus/${m.id}" class="cal-event${m.gcal_event_id ? ' cal-event--linked' : ''}" title="${escapeHtml(m.name)}${m.dish_count ? ' (' + m.dish_count + ' dishes)' : ''}${m.gcal_event_id ? ' (from Google Calendar)' : ''}">
+          ${standaloneMenus.map(m => `
+            <a href="#/menus/${m.id}" class="cal-event" title="${escapeHtml(m.name)}${m.dish_count ? ' (' + m.dish_count + ' dishes)' : ''}">
               ${escapeHtml(m.name)}
             </a>
           `).join('')}
-          ${dayGcal.filter(e => !linkedGcalIds.has(e.id)).map(e => `
-            <div class="cal-gcal-event" data-gcal-id="${escapeHtml(e.id)}" data-gcal-date="${dateStr}" title="${escapeHtml(e.summary)}${e.location ? ' — ' + escapeHtml(e.location) : ''}">
+          ${dayGcal.map(e => {
+            const linkedMenu = gcalToMenu[e.id];
+            if (linkedMenu) {
+              // Linked: show as gcal-styled badge that links to the menu
+              return `<a href="#/menus/${linkedMenu.id}" class="cal-gcal-event cal-gcal-event--linked" title="${escapeHtml(e.summary)} — ${escapeHtml(linkedMenu.name)}${linkedMenu.dish_count ? ' (' + linkedMenu.dish_count + ' dishes)' : ''}">
+                <span class="cal-gcal-label">${escapeHtml(e.summary)}</span>
+              </a>`;
+            }
+            // Unlinked: show with "+" button to create menu
+            return `<div class="cal-gcal-event" data-gcal-id="${escapeHtml(e.id)}" data-gcal-date="${dateStr}" title="${escapeHtml(e.summary)}${e.location ? ' — ' + escapeHtml(e.location) : ''}">
               <span class="cal-gcal-label">${escapeHtml(e.summary)}</span>
               <button class="cal-gcal-menu-btn" data-gcal-id="${escapeHtml(e.id)}" data-gcal-date="${dateStr}" title="Create menu from this event" aria-label="Create menu from ${escapeHtml(e.summary)}">+</button>
-            </div>
-          `).join('')}
+            </div>`;
+          }).join('')}
         </div>
       `;
     }
@@ -178,21 +193,23 @@ export async function renderCalendar(container) {
         if (e.target.closest('.cal-event') || e.target.closest('.cal-gcal-event') || e.target.closest('.cal-gcal-menu-btn')) return;
         const dateStr = cell.dataset.date;
         const dayMenus = menuMap[dateStr] || [];
-        // If there's exactly one menu, navigate to it
-        if (dayMenus.length === 1) {
+        const dayGcalEvents = gcalMap[dateStr] || [];
+        const hasUnlinkedGcal = dayGcalEvents.some(ev => !dayMenus.some(m => m.gcal_event_id === ev.id));
+        // If there's exactly one menu and no unlinked gcal events, navigate to it
+        if (dayMenus.length === 1 && !hasUnlinkedGcal) {
           window.location.hash = `#/menus/${dayMenus[0].id}`;
           return;
         }
-        // If no menus, open new menu modal with date pre-filled
-        if (dayMenus.length === 0) {
+        // If no menus and no gcal events, open new menu modal with date pre-filled
+        if (dayMenus.length === 0 && dayGcalEvents.length === 0) {
           openNewMenuModal(dateStr);
         }
-        // If multiple menus on same date, do nothing (user can click the links)
+        // Otherwise let user click the individual badges
       });
     });
 
     // Prevent event link clicks from bubbling to cell click
-    container.querySelectorAll('.cal-event').forEach(link => {
+    container.querySelectorAll('.cal-event, .cal-gcal-event--linked').forEach(link => {
       link.addEventListener('click', (e) => e.stopPropagation());
     });
 
