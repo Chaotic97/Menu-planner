@@ -448,10 +448,10 @@ function showConfirmationPreview(message, preview) {
 }
 
 /**
- * Handle confirmation
+ * Handle confirmation. Returns true if the action succeeded.
  */
 async function handleConfirm() {
-  if (!currentConfirmationId) return;
+  if (!currentConfirmationId) return false;
 
   const confirmId = currentConfirmationId;
   currentConfirmationId = null;
@@ -466,7 +466,7 @@ async function handleConfirm() {
 
     if (result.success === false) {
       showToast(result.response || 'Action failed', 'error');
-      return;
+      return false;
     }
 
     // Success toast with undo option
@@ -480,6 +480,9 @@ async function handleConfirm() {
       showToast(result.response || 'Done', 'success');
     }
 
+    // Save confirmation result to chat history
+    saveToChatHistory('(confirmed action)', result.response || 'Done');
+
     // Navigate if requested
     if (result.navigateTo) {
       window.location.hash = result.navigateTo;
@@ -487,20 +490,32 @@ async function handleConfirm() {
 
     // Notify other components
     window.dispatchEvent(new CustomEvent('quickcapture:created'));
+    return true;
   } catch (err) {
     dismissPreview();
     showToast(err.message || 'Failed to execute action', 'error');
+    return false;
   }
 }
 
 /**
- * Handle "Confirm All" — approve this action AND auto-approve this tool type for the session
+ * Handle "Confirm All" — approve this action AND auto-approve this tool type for the session.
+ * After successful confirmation, auto-resume the AI to continue remaining operations.
  */
 async function handleConfirmAll() {
   if (_currentToolName) {
     _sessionApprovedTools.add(_currentToolName);
   }
-  await handleConfirm();
+  const success = await handleConfirm();
+
+  // Auto-resume: send a follow-up so the AI continues with remaining items
+  if (success && _sessionApprovedTools.size > 0) {
+    const input = barEl?.querySelector('.cb-input');
+    const sendBtn = barEl?.querySelector('.cb-send');
+    if (input && sendBtn) {
+      await submitAiCommand('Continue with the remaining items.', input, sendBtn);
+    }
+  }
 }
 
 /**
