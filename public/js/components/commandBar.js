@@ -1,4 +1,4 @@
-import { createTask, aiCommand, aiConfirm, aiUndo } from '../api.js';
+import { createTask, aiCommand, aiConfirm, aiUndo, createConversation, addConversationMessage } from '../api.js';
 import { showToast } from './toast.js';
 import { escapeHtml } from '../utils/escapeHtml.js';
 import { toggleDrawer } from './chatDrawer.js';
@@ -21,6 +21,7 @@ let isAiMode = true;
 let isProcessing = false;
 let currentConfirmationId = null;
 let _currentToolName = null;
+let _commandBarConversationId = null;
 
 /**
  * Context-aware suggested prompts based on current page
@@ -213,6 +214,8 @@ function createBar() {
     if (!text) return;
     if (isProcessing) return;
 
+    hideSuggestions();
+
     if (isAiMode) {
       await submitAiCommand(text, input, sendBtn);
     } else {
@@ -292,6 +295,22 @@ async function submitPlainTask(text, input, sendBtn) {
 }
 
 /**
+ * Save a command bar exchange to chat drawer conversation history
+ */
+async function saveToChatHistory(userMessage, assistantResponse) {
+  try {
+    if (!_commandBarConversationId) {
+      const conv = await createConversation('');
+      _commandBarConversationId = conv.id;
+    }
+    await addConversationMessage(_commandBarConversationId, 'user', userMessage);
+    await addConversationMessage(_commandBarConversationId, 'assistant', assistantResponse);
+  } catch {
+    // Non-critical — don't block the UI
+  }
+}
+
+/**
  * Submit as AI command
  */
 async function submitAiCommand(text, input, sendBtn) {
@@ -330,16 +349,22 @@ async function submitAiCommand(text, input, sendBtn) {
         window.location.hash = result.navigateTo;
       }
       window.dispatchEvent(new CustomEvent('quickcapture:created'));
+      // Save to chat history
+      saveToChatHistory(text, result.response || 'Done');
     } else if (result.confirmationId) {
       // Show confirmation preview
       currentConfirmationId = result.confirmationId;
       _currentToolName = result.toolName;
       showConfirmationPreview(result.response, result.preview);
       input.value = '';
+      // Save the prompt and pending response to chat history
+      saveToChatHistory(text, result.response);
     } else {
       // Text-only response
       showPreviewMessage(result.response, 'info');
       input.value = '';
+      // Save to chat history
+      saveToChatHistory(text, result.response);
     }
   } catch (err) {
     showPreviewMessage(err.message || 'AI request failed', 'error');
