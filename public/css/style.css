@@ -6486,7 +6486,7 @@ textarea.input { resize: vertical; min-height: 80px; }
 }
 
 .cal-cell {
-  min-height: 90px;
+  height: 100px;
   padding: var(--space-xs);
   border-right: 1px solid var(--border);
   border-bottom: 1px solid var(--border);
@@ -6495,6 +6495,7 @@ textarea.input { resize: vertical; min-height: 80px; }
   display: flex;
   flex-direction: column;
   gap: 2px;
+  overflow: hidden;
 }
 
 .cal-cell:hover {
@@ -6649,6 +6650,16 @@ textarea.input { resize: vertical; min-height: 80px; }
   color: #333;
 }
 
+.cal-gcal-event--linked {
+  cursor: pointer;
+  text-decoration: none;
+  color: #fff;
+}
+
+.cal-gcal-event--linked:hover {
+  opacity: 0.85;
+}
+
 .cal-event--linked {
   background: var(--primary);
   border-left: 3px solid #4285f4;
@@ -6687,7 +6698,7 @@ textarea.input { resize: vertical; min-height: 80px; }
 
 @media (max-width: 480px) {
   .cal-cell {
-    min-height: 60px;
+    height: 70px;
   }
 
   .cal-month-title {
