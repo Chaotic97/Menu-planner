@@ -172,7 +172,7 @@ export async function renderMenuList(container) {
           ${!isHouse && menu.event_date ? `<div class="ml-event-date ${past ? 'ml-event-past' : ''}">${escapeHtml(formatEventDate(menu.event_date))}${past ? ' <span class="ml-past-label">Past</span>' : ''}</div>` : ''}
           <div class="menu-status ${menu.is_active ? 'active' : 'inactive'}">${menu.is_active ? 'Active' : 'Inactive'}</div>
           <h3 class="card-title">${escapeHtml(menu.name)}</h3>
-          ${menu.description ? `<p class="card-desc">${escapeHtml(menu.description)}</p>` : ''}
+          ${menu.description ? `<p class="card-desc">${escapeHtml(menu.description.length > 120 ? menu.description.slice(0, 120) + '…' : menu.description)}</p>` : ''}
           <div class="menu-stats">
             <span>${menu.dish_count} dish${menu.dish_count !== 1 ? 'es' : ''}</span>
             ${menu.sell_price ? `<span> &middot; $${Number(menu.sell_price).toFixed(2)}</span>` : ''}
