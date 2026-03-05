@@ -373,15 +373,23 @@ function appendConfirmation(data, messagesEl) {
   messagesEl.appendChild(card);
   messagesEl.scrollTop = messagesEl.scrollHeight;
 
-  async function executeConfirmation() {
+  async function executeConfirmation(shouldResume = false) {
     card.querySelector('.chat-confirmation-actions').innerHTML = '<span class="chat-tool-spinner"></span> Executing...';
     try {
       const result = await aiConfirm(data.confirmationId);
       card.remove();
       if (result.success !== false) {
-        appendMessage('assistant', result.response || 'Done');
+        const responseText = result.response || 'Done';
+        appendMessage('assistant', responseText);
+
+        // Track in conversation history so AI has context for continuation
+        conversationHistory.push({ role: 'assistant', content: responseText });
+        if (currentConversationId) {
+          addConversationMessage(currentConversationId, 'assistant', responseText).catch(() => {});
+        }
+
         if (result.undoId) {
-          showToast(result.response || 'Done', 'success', 15000, {
+          showToast(responseText, 'success', 15000, {
             label: 'Undo',
             onClick: async () => {
               try {
@@ -397,6 +405,30 @@ function appendConfirmation(data, messagesEl) {
         if (result.navigateTo) {
           window.location.hash = result.navigateTo;
         }
+
+        // Auto-resume: feed the result back to AI so it can continue
+        if (shouldResume) {
+          const resumeText = 'Confirmed. Continue with the remaining items.';
+          appendMessage('user', resumeText);
+          conversationHistory.push({ role: 'user', content: resumeText });
+          if (currentConversationId) {
+            addConversationMessage(currentConversationId, 'user', resumeText).catch(() => {});
+          }
+
+          const input = drawerEl.querySelector('.chat-drawer-input');
+          const sendBtn = drawerEl.querySelector('.chat-drawer-send');
+          isSending = true;
+          if (input) input.disabled = true;
+          if (sendBtn) sendBtn.disabled = true;
+
+          try {
+            await sendStreamingMessage(resumeText, input, sendBtn);
+          } catch {
+            isSending = false;
+            if (input) input.disabled = false;
+            if (sendBtn) sendBtn.disabled = false;
+          }
+        }
       } else {
         appendMessage('error', result.response || 'Action failed');
       }
@@ -406,11 +438,11 @@ function appendConfirmation(data, messagesEl) {
     }
   }
 
-  card.querySelector('.chat-confirm-btn').addEventListener('click', executeConfirmation);
+  card.querySelector('.chat-confirm-btn').addEventListener('click', () => executeConfirmation(false));
 
   card.querySelector('.chat-confirm-all-btn').addEventListener('click', () => {
     if (data.toolName) sessionApprovedTools.add(data.toolName);
-    executeConfirmation();
+    executeConfirmation(true);
   });
 
   card.querySelector('.chat-cancel-btn').addEventListener('click', () => {
