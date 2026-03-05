@@ -228,6 +228,11 @@ export const deleteConversation = (id) => request(`/ai/conversations/${id}`, { m
 // AI Task Generation
 export const aiGenerateTasks = (menuId) => request(`/ai/generate-tasks/${menuId}`, { method: 'POST', timeout: AI_TIMEOUT });
 
+// Google Calendar
+export const getCalendarSettings = () => request('/calendar/settings');
+export const saveCalendarSettings = (data) => request('/calendar/settings', { method: 'POST', body: data });
+export const getCalendarEvents = () => request('/calendar/events');
+
 // Auth — public endpoints (no 401 redirect)
 async function authRequest(path, options = {}) {
   const url = `${BASE}${path}`;

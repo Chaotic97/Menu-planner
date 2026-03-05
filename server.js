@@ -129,6 +129,7 @@ async function start() {
   app.use('/api/notifications', require('./routes/notifications'));
   app.use('/api/settings', require('./routes/settings'));
   app.use('/api/ai', require('./routes/ai'));
+  app.use('/api/calendar', require('./routes/calendar'));
 
   // Global error handler — catches unhandled errors from async routes
   app.use((err, req, res, _next) => {

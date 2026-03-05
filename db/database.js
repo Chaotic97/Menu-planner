@@ -317,6 +317,8 @@ async function initialize() {
     `CREATE INDEX IF NOT EXISTS idx_dishes_name ON dishes(name)`,
     `CREATE INDEX IF NOT EXISTS idx_ingredients_name ON ingredients(name)`,
     `CREATE INDEX IF NOT EXISTS idx_menus_deleted_at ON menus(deleted_at)`,
+    // Google Calendar integration: link menus to Google Calendar event IDs
+    `ALTER TABLE menus ADD COLUMN gcal_event_id TEXT DEFAULT NULL`,
   ];
 
   for (const sql of MIGRATIONS) {
