@@ -6058,6 +6058,13 @@ textarea.input { resize: vertical; min-height: 80px; }
   margin-top: var(--space-md);
 }
 
+.cb-confirm-all-btn,
+.chat-confirm-all-btn {
+  background: var(--surface);
+  color: var(--primary);
+  border: 1px solid var(--primary);
+}
+
 .cb-preview-dismiss {
   position: absolute;
   top: 8px;

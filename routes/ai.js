@@ -131,14 +131,18 @@ ONLY output the JSON array, nothing else.`,
  * Body: { message, context: { page, entityType?, entityId? }, conversationHistory? }
  */
 router.post('/command', aiRateLimit, asyncHandler(async (req, res) => {
-  const { message, context, conversationHistory } = req.body;
+  const { message, context, conversationHistory, approvedTools } = req.body;
 
   if (!message || typeof message !== 'string' || !message.trim()) {
     return res.status(400).json({ error: 'Message is required' });
   }
 
   try {
-    const result = await processCommand(message.trim(), context, conversationHistory, req.broadcast);
+    const options = {};
+    if (Array.isArray(approvedTools) && approvedTools.length) {
+      options.approvedTools = approvedTools.filter(t => typeof t === 'string');
+    }
+    const result = await processCommand(message.trim(), context, conversationHistory, req.broadcast, options);
 
     // If needs setup or rate limited
     if (result.needsSetup || result.rateLimited) {
@@ -210,7 +214,7 @@ router.post('/command', aiRateLimit, asyncHandler(async (req, res) => {
  * Sends SSE events: text_delta, tool_start, tool_result, text_clear, confirmation, error, done
  */
 router.post('/stream', aiRateLimit, asyncHandler(async (req, res) => {
-  const { message, context, conversationHistory } = req.body;
+  const { message, context, conversationHistory, approvedTools } = req.body;
 
   if (!message || typeof message !== 'string' || !message.trim()) {
     return res.status(400).json({ error: 'Message is required' });
@@ -244,6 +248,11 @@ router.post('/stream', aiRateLimit, asyncHandler(async (req, res) => {
   let aborted = false;
   req.on('close', () => { aborted = true; });
 
+  const options = {};
+  if (Array.isArray(approvedTools) && approvedTools.length) {
+    options.approvedTools = approvedTools.filter(t => typeof t === 'string');
+  }
+
   try {
     await processCommandStream(
       message.trim(),
@@ -252,7 +261,8 @@ router.post('/stream', aiRateLimit, asyncHandler(async (req, res) => {
       req.broadcast,
       (event, data) => {
         if (!aborted) emit(event, data);
-      }
+      },
+      options
     );
   } catch (err) {
     if (!aborted) {

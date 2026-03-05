@@ -814,6 +814,46 @@ IMPORTANT: Always filter dishes/menus with "deleted_at IS NULL" unless specifica
       required: ['sql'],
     },
   },
+
+  // ─── Ingredient Management Tools ──────────────────────────────
+  {
+    name: 'find_duplicate_ingredients',
+    description: 'Find potential duplicate ingredients in the database. Returns groups of ingredients that look like the same thing (e.g. "Olive Oil" and "olive oil, extra virgin"). Use when the user wants to clean up or audit their ingredient list.',
+    autoApprove: true,
+    input_schema: {
+      type: 'object',
+      properties: {
+        threshold: { type: 'string', enum: ['strict', 'moderate', 'loose'], description: 'How aggressively to match. "strict" = near-identical names, "moderate" = likely same ingredient, "loose" = possibly related. Default: moderate.' },
+      },
+      required: [],
+    },
+  },
+  {
+    name: 'merge_ingredients',
+    description: 'Merge two ingredients into one. All dish recipes using the source ingredient will be updated to use the target ingredient instead. The source ingredient is then deleted. Use when the user wants to consolidate duplicate ingredients.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        source_id: { type: 'number', description: 'ID of the ingredient to merge FROM (will be deleted)' },
+        source_name: { type: 'string', description: 'Name of the source ingredient (fuzzy matched if no ID)' },
+        target_id: { type: 'number', description: 'ID of the ingredient to merge INTO (will be kept)' },
+        target_name: { type: 'string', description: 'Name of the target ingredient (fuzzy matched if no ID)' },
+      },
+      required: [],
+    },
+  },
+  {
+    name: 'delete_ingredient',
+    description: 'Delete an ingredient from the system. Only works if the ingredient is not used in any dish recipe. Use merge_ingredients instead if the ingredient is in use.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        ingredient_id: { type: 'number', description: 'ID of the ingredient to delete' },
+        ingredient_name: { type: 'string', description: 'Name of the ingredient (fuzzy matched if no ID)' },
+      },
+      required: [],
+    },
+  },
 ];
 
 /**
@@ -2821,6 +2861,209 @@ const handlers = {
     } catch (err) {
       return { success: false, message: `Query error: ${err.message}` };
     }
+  },
+
+  // ─── Ingredient Management Handlers ────────────────────────────
+
+  find_duplicate_ingredients(input, _opts) {
+    const db = getDb();
+    const all = db.prepare('SELECT id, name, unit_cost, base_unit, category FROM ingredients ORDER BY name COLLATE NOCASE').all();
+
+    if (!all.length) return { success: true, message: 'No ingredients in the database.' };
+
+    // Build usage counts
+    const usageMap = {};
+    const usageRows = db.prepare('SELECT ingredient_id, COUNT(*) as cnt FROM dish_ingredients GROUP BY ingredient_id').all();
+    for (const row of usageRows) usageMap[row.ingredient_id] = row.cnt;
+
+    // Normalize name for comparison
+    function normalize(name) {
+      return name.toLowerCase()
+        .replace(/[,\-()]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+    }
+
+    // Extract core words (remove common qualifiers)
+    const qualifiers = new Set(['fresh', 'dried', 'ground', 'whole', 'organic', 'extra', 'virgin', 'fine', 'coarse', 'large', 'small', 'medium', 'raw', 'unsalted', 'salted', 'frozen', 'canned', 'chopped', 'minced', 'sliced', 'diced']);
+    function coreWords(name) {
+      return normalize(name).split(' ').filter(w => !qualifiers.has(w) && w.length > 1).sort().join(' ');
+    }
+
+    const threshold = input.threshold || 'moderate';
+    const groups = [];
+    const used = new Set();
+
+    for (let i = 0; i < all.length; i++) {
+      if (used.has(all[i].id)) continue;
+      const group = [all[i]];
+      const normI = normalize(all[i].name);
+      const coreI = coreWords(all[i].name);
+
+      for (let j = i + 1; j < all.length; j++) {
+        if (used.has(all[j].id)) continue;
+        const normJ = normalize(all[j].name);
+        const coreJ = coreWords(all[j].name);
+
+        let isMatch = false;
+        if (threshold === 'strict') {
+          // Only near-identical names
+          isMatch = normI === normJ;
+        } else if (threshold === 'moderate') {
+          // Same core words, or one contains the other
+          isMatch = coreI === coreJ || normI.includes(normJ) || normJ.includes(normI);
+        } else {
+          // Loose: share majority of core words
+          const wordsI = coreI.split(' ');
+          const wordsJ = coreJ.split(' ');
+          const shared = wordsI.filter(w => wordsJ.includes(w)).length;
+          const maxLen = Math.max(wordsI.length, wordsJ.length);
+          isMatch = maxLen > 0 && shared / maxLen >= 0.5;
+        }
+
+        if (isMatch) {
+          group.push(all[j]);
+          used.add(all[j].id);
+        }
+      }
+
+      if (group.length > 1) {
+        used.add(all[i].id);
+        groups.push(group);
+      }
+    }
+
+    if (!groups.length) return { success: true, message: 'No duplicate ingredients found.' };
+
+    const lines = groups.map((group, idx) => {
+      const items = group.map(g => {
+        const usage = usageMap[g.id] || 0;
+        return `  - "${g.name}" (ID:${g.id}, ${g.base_unit || 'no unit'}, cost:${g.unit_cost || 0}, used in ${usage} dish${usage !== 1 ? 'es' : ''})`;
+      });
+      return `Group ${idx + 1}:\n${items.join('\n')}`;
+    });
+
+    return {
+      success: true,
+      message: `Found ${groups.length} group${groups.length !== 1 ? 's' : ''} of potential duplicates:\n\n${lines.join('\n\n')}\n\nTo merge, use merge_ingredients with the source (to remove) and target (to keep) ingredient IDs.`,
+    };
+  },
+
+  merge_ingredients(input, opts) {
+    const db = getDb();
+
+    // Resolve source
+    let sourceId = input.source_id;
+    let sourceName = input.source_name;
+    if (!sourceId && sourceName) {
+      const ing = db.prepare("SELECT id, name FROM ingredients WHERE name LIKE ? LIMIT 1").get(`%${sourceName}%`);
+      if (ing) { sourceId = ing.id; sourceName = ing.name; }
+    }
+    if (sourceId && !sourceName) {
+      const ing = db.prepare('SELECT name FROM ingredients WHERE id = ?').get(sourceId);
+      if (ing) sourceName = ing.name;
+    }
+    if (!sourceId) return { description: 'Source ingredient not found', message: 'Could not find the source ingredient to merge from.' };
+
+    // Resolve target
+    let targetId = input.target_id;
+    let targetName = input.target_name;
+    if (!targetId && targetName) {
+      const ing = db.prepare("SELECT id, name FROM ingredients WHERE name LIKE ? LIMIT 1").get(`%${targetName}%`);
+      if (ing) { targetId = ing.id; targetName = ing.name; }
+    }
+    if (targetId && !targetName) {
+      const ing = db.prepare('SELECT name FROM ingredients WHERE id = ?').get(targetId);
+      if (ing) targetName = ing.name;
+    }
+    if (!targetId) return { description: 'Target ingredient not found', message: 'Could not find the target ingredient to merge into.' };
+
+    if (sourceId === targetId) return { description: 'Same ingredient', message: 'Source and target are the same ingredient.' };
+
+    // Count affected recipes
+    const affectedDishes = db.prepare('SELECT COUNT(*) as cnt FROM dish_ingredients WHERE ingredient_id = ?').get(sourceId).cnt;
+
+    if (opts.preview) {
+      return {
+        description: `Merge "${sourceName}" → "${targetName}" (${affectedDishes} recipe${affectedDishes !== 1 ? 's' : ''} affected)`,
+        message: `I'll merge "${sourceName}" into "${targetName}". ${affectedDishes} dish recipe${affectedDishes !== 1 ? 's' : ''} will be updated to use "${targetName}" instead. "${sourceName}" will be deleted.`,
+      };
+    }
+
+    // Save snapshot for undo
+    const sourceData = db.prepare('SELECT * FROM ingredients WHERE id = ?').get(sourceId);
+    const affectedRows = db.prepare('SELECT * FROM dish_ingredients WHERE ingredient_id = ?').all(sourceId);
+    const undoId = saveSnapshot('ingredient', sourceId, 'delete', {
+      ingredient: sourceData,
+      dish_ingredients: affectedRows,
+    });
+
+    // Reassign dish_ingredients from source to target
+    // Handle UNIQUE constraint: if a dish already has the target ingredient, keep the existing one and remove the source entry
+    const dishesWithTarget = new Set(
+      db.prepare('SELECT dish_id FROM dish_ingredients WHERE ingredient_id = ?').all(targetId).map(r => r.dish_id)
+    );
+
+    for (const row of affectedRows) {
+      if (dishesWithTarget.has(row.dish_id)) {
+        // Dish already has target ingredient — just remove the source entry
+        db.prepare('DELETE FROM dish_ingredients WHERE dish_id = ? AND ingredient_id = ?').run(row.dish_id, sourceId);
+      } else {
+        // Update to point to target
+        db.prepare('UPDATE dish_ingredients SET ingredient_id = ? WHERE dish_id = ? AND ingredient_id = ?').run(targetId, row.dish_id, sourceId);
+      }
+    }
+
+    // Delete the source ingredient
+    db.prepare('DELETE FROM ingredients WHERE id = ?').run(sourceId);
+
+    if (opts.broadcast) {
+      opts.broadcast('ingredient_updated', { id: targetId });
+    }
+
+    return {
+      success: true,
+      message: `Merged "${sourceName}" into "${targetName}". ${affectedDishes} recipe${affectedDishes !== 1 ? 's' : ''} updated.`,
+      undoId,
+      entityType: 'ingredient',
+      entityId: targetId,
+    };
+  },
+
+  delete_ingredient(input, opts) {
+    const db = getDb();
+    const resolved = resolveIngredient(db, input);
+    if (!resolved) return { description: 'Ingredient not found', message: 'Could not find that ingredient.' };
+    const { ingredientId, ingredientName } = resolved;
+
+    const usage = db.prepare('SELECT COUNT(*) as cnt FROM dish_ingredients WHERE ingredient_id = ?').get(ingredientId).cnt;
+
+    if (usage > 0) {
+      return {
+        description: `"${ingredientName}" is used in ${usage} dish${usage !== 1 ? 'es' : ''}`,
+        message: `Cannot delete "${ingredientName}" — it's used in ${usage} dish recipe${usage !== 1 ? 's' : ''}. Use merge_ingredients to consolidate it with another ingredient instead.`,
+      };
+    }
+
+    if (opts.preview) {
+      return {
+        description: `Delete ingredient: "${ingredientName}"`,
+        message: `I'll delete "${ingredientName}" from the ingredient list. It's not used in any recipes.`,
+      };
+    }
+
+    const current = db.prepare('SELECT * FROM ingredients WHERE id = ?').get(ingredientId);
+    const undoId = saveSnapshot('ingredient', ingredientId, 'delete', current);
+
+    db.prepare('DELETE FROM ingredients WHERE id = ?').run(ingredientId);
+
+    return {
+      success: true,
+      message: `Ingredient "${ingredientName}" deleted.`,
+      undoId,
+      entityType: 'ingredient',
+      entityId: ingredientId,
+    };
   },
 };
 

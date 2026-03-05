@@ -155,6 +155,14 @@ export const saveAiSettings = (data) => request('/ai/settings', { method: 'POST'
 // AI Streaming (SSE) — returns an object with event handling for progressive rendering
 export function aiCommandStream(data, handlers = {}) {
   const controller = new AbortController();
+  let doneEmitted = false;
+
+  function ensureDone() {
+    if (!doneEmitted && handlers.onDone) {
+      doneEmitted = true;
+      handlers.onDone({});
+    }
+  }
 
   (async () => {
     try {
@@ -171,12 +179,14 @@ export function aiCommandStream(data, handlers = {}) {
       if (res.status === 401) {
         window.location.hash = '#/login';
         window.location.reload();
+        ensureDone();
         return;
       }
 
       if (!res.ok) {
         const err = await res.json().catch(() => ({ error: res.statusText }));
         if (handlers.onError) handlers.onError(err.error || 'Request failed');
+        ensureDone();
         return;
       }
 
@@ -199,7 +209,9 @@ export function aiCommandStream(data, handlers = {}) {
           } else if (line.startsWith('data: ') && currentEvent) {
             try {
               const eventData = JSON.parse(line.slice(6));
-              const handler = handlers['on' + currentEvent.charAt(0).toUpperCase() + currentEvent.slice(1).replace(/_([a-z])/g, (_, c) => c.toUpperCase())];
+              const handlerName = 'on' + currentEvent.charAt(0).toUpperCase() + currentEvent.slice(1).replace(/_([a-z])/g, (_, c) => c.toUpperCase());
+              if (handlerName === 'onDone') doneEmitted = true;
+              const handler = handlers[handlerName];
               if (handler) handler(eventData);
             } catch {}
             currentEvent = null;
@@ -208,14 +220,18 @@ export function aiCommandStream(data, handlers = {}) {
           }
         }
       }
+
+      // Stream ended without a done event from server — ensure cleanup
+      ensureDone();
     } catch (err) {
       if (err.name !== 'AbortError' && handlers.onError) {
         handlers.onError(err.message || 'Stream failed');
       }
+      ensureDone();
     }
   })();
 
-  return { abort: () => controller.abort() };
+  return { abort: () => { controller.abort(); ensureDone(); } };
 }
 
 // AI Chat Conversations

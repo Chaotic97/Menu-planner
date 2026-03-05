@@ -19,6 +19,7 @@ let lastActivityTime = Date.now();
 let isSending = false;
 let showingHistory = false;
 let currentStream = null;
+const sessionApprovedTools = new Set();
 
 const SESSION_TIMEOUT_MS = 60 * 60 * 1000; // 1 hour
 
@@ -201,7 +202,15 @@ function createDrawer() {
     sendBtn.disabled = true;
     input.disabled = true;
 
-    await sendStreamingMessage(text, input, sendBtn);
+    try {
+      await sendStreamingMessage(text, input, sendBtn);
+    } catch {
+      // Guarantee UI recovery if streaming throws
+      isSending = false;
+      sendBtn.disabled = false;
+      input.disabled = false;
+      input.focus();
+    }
   }
 
   input.addEventListener('keydown', (e) => {
@@ -252,11 +261,16 @@ async function sendStreamingMessage(text, input, sendBtn) {
 
   const context = getPageContext();
 
-  currentStream = aiCommandStream({
+  const streamPayload = {
     message: text,
     context,
     conversationHistory: conversationHistory.slice(-10),
-  }, {
+  };
+  if (sessionApprovedTools.size > 0) {
+    streamPayload.approvedTools = [...sessionApprovedTools];
+  }
+
+  currentStream = aiCommandStream(streamPayload, {
     onTextDelta(data) {
       fullText += data.text;
       textEl.innerHTML = renderMarkdown(fullText);
@@ -351,6 +365,7 @@ function appendConfirmation(data, messagesEl) {
     ${data.preview ? `<div class="chat-confirmation-preview">${escapeHtml(data.preview)}</div>` : ''}
     <div class="chat-confirmation-actions">
       <button class="btn btn-primary btn-sm chat-confirm-btn">Confirm</button>
+      <button class="btn btn-primary btn-sm chat-confirm-all-btn" title="Auto-approve this action type for the rest of this session">Confirm All</button>
       <button class="btn btn-secondary btn-sm chat-cancel-btn">Cancel</button>
     </div>
   `;
@@ -358,7 +373,7 @@ function appendConfirmation(data, messagesEl) {
   messagesEl.appendChild(card);
   messagesEl.scrollTop = messagesEl.scrollHeight;
 
-  card.querySelector('.chat-confirm-btn').addEventListener('click', async () => {
+  async function executeConfirmation() {
     card.querySelector('.chat-confirmation-actions').innerHTML = '<span class="chat-tool-spinner"></span> Executing...';
     try {
       const result = await aiConfirm(data.confirmationId);
@@ -389,6 +404,13 @@ function appendConfirmation(data, messagesEl) {
       card.remove();
       appendMessage('error', err.message || 'Failed to execute action');
     }
+  }
+
+  card.querySelector('.chat-confirm-btn').addEventListener('click', executeConfirmation);
+
+  card.querySelector('.chat-confirm-all-btn').addEventListener('click', () => {
+    if (data.toolName) sessionApprovedTools.add(data.toolName);
+    executeConfirmation();
   });
 
   card.querySelector('.chat-cancel-btn').addEventListener('click', () => {
@@ -693,6 +715,7 @@ export function clearChat() {
   lastActivityTime = Date.now();
   showingHistory = false;
   isSending = false;
+  sessionApprovedTools.clear();
   const historyBtn = drawerEl ? drawerEl.querySelector('.chat-drawer-history-btn') : null;
   if (historyBtn) historyBtn.classList.remove('active');
   const messagesEl = document.getElementById('chat-messages');
