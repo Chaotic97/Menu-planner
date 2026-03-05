@@ -12,6 +12,10 @@ globs: ["public/css/**"]
    Section Name
    ============================ */
 ```
+Sub-sections:
+```css
+/* --- Section Name: sub-topic --- */
+```
 
 ## Class naming prefixes
 | Prefix | Feature |

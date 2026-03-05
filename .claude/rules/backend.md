@@ -7,7 +7,11 @@ globs: ["server.js", "db/**", "middleware/**", "routes/**", "services/**"]
 - **CommonJS only** — `require()` / `module.exports`. Never use `import`/`export`.
 
 ## Route handlers
-- Use `asyncHandler` for any route with `await` or that could throw.
+- Use `asyncHandler` for any route with `await` or that could throw:
+  ```js
+  const asyncHandler = require('../middleware/asyncHandler');
+  router.post('/my-thing', asyncHandler(async (req, res) => { ... }));
+  ```
 - Success: `res.json(data)` (200) or `res.status(201).json(data)` for creates.
 - Errors: always `res.status(N).json({ error: 'Human-readable message' })`. The `error` key is what `api.js` reads.
 - Mount new routers in `server.js` under `/api/your-path`.
@@ -25,6 +29,7 @@ globs: ["server.js", "db/**", "middleware/**", "routes/**", "services/**"]
 - `db.prepare(sql).get(p1, p2, ...)` → row or `undefined` (single row SELECT)
 - `db.prepare(sql).all(p1, p2, ...)` → array (multi-row SELECT)
 - `db.prepare(sql).run(p1, p2, ...)` → `{ lastInsertRowid, changes }` (INSERT/UPDATE/DELETE)
+- `db.exec(sql)` → void (schema statements with no params)
 - Params are positional `?`, passed as separate args (not an array).
 - All `dishes` and `menus` queries must include `WHERE deleted_at IS NULL`.
 - Migrations: append to `MIGRATIONS` array in `db/database.js`. Each runs in try/catch.

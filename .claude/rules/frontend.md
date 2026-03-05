@@ -44,9 +44,38 @@ window.addEventListener('hashchange', cleanup);
 5. Add CSS with a feature prefix (e.g. `.mp-`).
 
 ## Architecture notes
-- **Sidebar states**: `expanded` (240px), `collapsed` (64px icon rail), `hidden` (0px). Use `setSidebarState()` in `app.js`.
+- **Sidebar states**: `expanded` (240px), `collapsed` (64px icon rail), `hidden` (0px). Use `setSidebarState()` in `app.js`. State stored on `<html data-sidebar="...">` and in `localStorage('sidebarState')`.
 - **Responsive**: ≥481px sidebar nav; ≤480px bottom tab bar. Do not invent new breakpoints.
-- **Directions vs chefs_notes**: Structured steps in `dish_directions` table. Old `chefs_notes` is legacy fallback. If user adds direction steps, `chefs_notes` is cleared on save.
-- **Tasks vs Shopping**: Separate pages. Tasks (`#/todos`) = prep + custom tasks in `tasks` table. Shopping (`#/shopping`) = computed on-the-fly from menu ingredients, not stored.
 - **Food cost colours**: green ≤30%, yellow 30–35%, red >35%.
-- **Batch yield**: `dishes.batch_yield` (REAL, default 1) = portions per batch. `cost_per_portion = total_cost / batch_yield`. Menu builder: `Math.ceil(target / batchYield)` = required batches.
+
+### Directions vs chefs_notes
+- Structured steps in `dish_directions` (type `'step'`/`'section'`, with `sort_order`). Old `chefs_notes` is legacy fallback.
+- **Dish form**: Drag-and-drop steps UI. If dish has `chefs_notes` but no directions, shows read-only "Legacy Chef's Notes" box.
+- **Dish view**: Renders structured directions when available; falls back to `chefs_notes` with `<br>` newlines.
+- **Prep task generator**: One direction row = one prep task when `dish_directions` exist; falls back to sentence-splitting `chefs_notes`.
+- **On save**: Adding ≥1 direction step clears `chefs_notes`. No steps → `chefs_notes` preserved.
+- **Importers**: Both URL and docx importers return `directions[]` alongside legacy `instructions` string.
+
+### Tasks vs Shopping (split architecture)
+- **Tasks** (`#/todos`, `todoView.js`): Only prep + custom types. Shopping is NOT a task type.
+  - `source='auto'` created by `POST /api/todos/generate/:menuId`. `source='manual'` = user-created/edited.
+  - **Promotion**: Editing content fields of auto task promotes to `manual`. Toggling `completed` does NOT promote.
+  - **Standalone tasks**: `menu_id = NULL` tasks survive independent of any menu.
+  - **Completion**: Sets `completed=1` + `completed_at`. Toast shows 8-second Undo. Completed hidden by default.
+  - **Tabs**: "All Tasks" (by due date), "Prep" (by timing bucket), "By Menu" (menu selector + regenerate).
+- **Shopping** (`#/shopping`, `shoppingList.js`): Computed on-the-fly from menu ingredients via `generateShoppingList()`. NOT in `tasks` table.
+  - `in_stock` flag on ingredients — in-stock items greyed out at bottom, not hidden.
+  - Routes: `#/shopping` (all menus) and `#/menus/:id/shopping` (specific menu).
+  - Legacy endpoints preserved: `GET /api/todos/menu/:id/shopping-list`, `scaled-shopping-list`, `prep-tasks`.
+
+### Collapsible form sections
+- Dish form collapses secondary sections (Allergens, Substitutions, etc.) with localStorage keys prefixed `dish_sec_`.
+- Menu builder collapses "Guest Allergies & Covers" with key `mb_allergy_section`.
+
+### Batch yield (recipe scaling)
+- `dishes.batch_yield` (REAL, default 1) = portions per batch. Accepts any positive number (decimals OK).
+- Dish cost: `cost_per_portion = total_cost / batch_yield`
+- Menu totals: `total_portions = servings * batch_yield`
+- Kitchen print: Ingredients multiplied by `servings` (batch count); includes `base_quantity`, `batch_yield`, `total_portions`
+- Menu builder: `Math.ceil(target / batchYield)` = required batches
+- Dish form input: step 0.5, min 0.5, parsed as float

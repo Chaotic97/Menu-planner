@@ -119,6 +119,9 @@ celery, gluten, crustaceans, eggs, fish, lupin, milk, molluscs, mustard, nuts, p
 - **Deploy**: `git push` → SSH → `git pull && npm install && pm2 restart menu-planner`
 - **Env vars**: SESSION_SECRET, GMAIL_USER, GMAIL_APP_PASSWORD, APP_URL, DB_PATH, UPLOADS_PATH, SESSIONS_PATH, NODE_ENV
 
+## Linting
+ESLint 9 flat config (`eslint.config.js`). Three blocks: backend (`commonjs`, Node globals), frontend (`module`, browser globals), tests (`commonjs`, Node + Jest globals). Key rules: `no-var` (error), `prefer-const` (warn), `eqeqeq` (warn), `no-throw-literal` (error), `no-unused-vars` with `argsIgnorePattern: '^_'`.
+
 ## CI
 GitHub Actions on push/PR to main: Node 18/20/22 matrix → `npm ci` → `npm run lint` → `npm test`
 
