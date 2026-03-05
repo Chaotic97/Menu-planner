@@ -228,6 +228,13 @@ export const deleteConversation = (id) => request(`/ai/conversations/${id}`, { m
 // AI Task Generation
 export const aiGenerateTasks = (menuId) => request(`/ai/generate-tasks/${menuId}`, { method: 'POST', timeout: AI_TIMEOUT });
 
+// Google Calendar
+export const getGoogleCalendarEvents = (month) => request(`/google-calendar/events?month=${month}`);
+export const syncGoogleCalendar = () => request('/google-calendar/sync', { method: 'POST', timeout: 30000 });
+export const getGoogleCalendarSettings = () => request('/google-calendar/settings');
+export const updateGoogleCalendarSettings = (data) => request('/google-calendar/settings', { method: 'PUT', body: data });
+export const createMenuFromGoogleEvent = (eventId) => request(`/google-calendar/events/${eventId}/create-menu`, { method: 'POST' });
+
 // Auth — public endpoints (no 401 redirect)
 async function authRequest(path, options = {}) {
   const url = `${BASE}${path}`;

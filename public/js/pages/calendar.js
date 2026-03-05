@@ -1,4 +1,4 @@
-import { getMenus, createMenu } from '../api.js';
+import { getMenus, createMenu, getGoogleCalendarEvents, syncGoogleCalendar, createMenuFromGoogleEvent, getGoogleCalendarSettings } from '../api.js';
 import { showToast } from '../components/toast.js';
 import { openModal, closeModal } from '../components/modal.js';
 import { escapeHtml } from '../utils/escapeHtml.js';
@@ -19,11 +19,18 @@ function getFirstDayOfWeek(year, month) {
   return new Date(year, month, 1).getDay();
 }
 
+function monthKey(year, month) {
+  return `${year}-${String(month + 1).padStart(2, '0')}`;
+}
+
 export async function renderCalendar(container) {
   const today = new Date();
   let viewYear = today.getFullYear();
   let viewMonth = today.getMonth();
   let menus = [];
+  let gcalEvents = [];
+  let gcalConfigured = false;
+  let syncing = false;
 
   container.innerHTML = '<div class="loading">Loading calendar...</div>';
 
@@ -33,6 +40,24 @@ export async function renderCalendar(container) {
     } catch (err) {
       showToast('Failed to load menus', 'error');
       menus = [];
+    }
+  }
+
+  async function checkGcalConfigured() {
+    try {
+      const settings = await getGoogleCalendarSettings();
+      gcalConfigured = settings.hasApiKey && !!settings.calendarId;
+    } catch {
+      gcalConfigured = false;
+    }
+  }
+
+  async function loadGcalEvents() {
+    if (!gcalConfigured) { gcalEvents = []; return; }
+    try {
+      gcalEvents = await getGoogleCalendarEvents(monthKey(viewYear, viewMonth));
+    } catch {
+      gcalEvents = [];
     }
   }
 
@@ -47,8 +72,18 @@ export async function renderCalendar(container) {
     return map;
   }
 
+  function buildGcalMap() {
+    const map = {};
+    for (const e of gcalEvents) {
+      if (!map[e.start_date]) map[e.start_date] = [];
+      map[e.start_date].push(e);
+    }
+    return map;
+  }
+
   function render() {
     const menuMap = buildMenuMap();
+    const gcalMap = buildGcalMap();
     const daysInMonth = getDaysInMonth(viewYear, viewMonth);
     const firstDay = getFirstDayOfWeek(viewYear, viewMonth);
     const todayStr = toDateStr(today);
@@ -66,7 +101,11 @@ export async function renderCalendar(container) {
       const dateStr = `${viewYear}-${String(viewMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
       const isToday = dateStr === todayStr;
       const dayMenus = menuMap[dateStr] || [];
+      const dayGcalEvents = gcalMap[dateStr] || [];
       const isPast = dateStr < todayStr;
+
+      // Build set of gcal event IDs that are already linked to menus
+      const linkedEventIds = new Set(dayGcalEvents.filter(e => e.menu_id).map(e => e.id));
 
       gridCells += `
         <div class="cal-cell ${isToday ? 'cal-cell--today' : ''} ${isPast ? 'cal-cell--past' : ''}" data-date="${dateStr}">
@@ -74,6 +113,23 @@ export async function renderCalendar(container) {
           ${dayMenus.map(m => `
             <a href="#/menus/${m.id}" class="cal-event" title="${escapeHtml(m.name)}${m.dish_count ? ' (' + m.dish_count + ' dishes)' : ''}">
               ${escapeHtml(m.name)}
+            </a>
+          `).join('')}
+          ${dayGcalEvents.filter(e => !e.menu_id).map(e => `
+            <div class="gc-event" data-event-id="${escapeHtml(e.id)}" title="${escapeHtml(e.summary)}${e.description ? '\n' + escapeHtml(e.description) : ''}">
+              <span class="gc-event-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+              </span>
+              <span class="gc-event-name">${escapeHtml(e.summary)}</span>
+              <button class="gc-create-btn" data-event-id="${escapeHtml(e.id)}" title="Create menu from this event">+</button>
+            </div>
+          `).join('')}
+          ${dayGcalEvents.filter(e => e.menu_id).map(e => `
+            <a href="#/menus/${e.menu_id}" class="cal-event gc-linked" title="${escapeHtml(e.summary)} (linked to menu)">
+              <span class="gc-event-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+              </span>
+              ${escapeHtml(e.menu_name || e.summary)}
             </a>
           `).join('')}
         </div>
@@ -100,6 +156,11 @@ export async function renderCalendar(container) {
         <h2 class="cal-month-title">${escapeHtml(monthName(viewYear, viewMonth))}</h2>
         <button class="btn btn-ghost" id="cal-next" aria-label="Next month">&rarr;</button>
         <button class="btn btn-ghost cal-today-btn" id="cal-today-btn">Today</button>
+        ${gcalConfigured ? `
+          <button class="btn btn-ghost gc-sync-btn" id="gc-sync-btn" title="Sync Google Calendar" ${syncing ? 'disabled' : ''}>
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="${syncing ? 'gc-spinning' : ''}"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+          </button>
+        ` : ''}
       </div>
       <div class="cal-grid">
         ${dayNames.map(d => `<div class="cal-header">${d}</div>`).join('')}
@@ -108,27 +169,68 @@ export async function renderCalendar(container) {
     `;
 
     // Navigation
-    container.querySelector('#cal-prev').addEventListener('click', () => {
+    container.querySelector('#cal-prev').addEventListener('click', async () => {
       viewMonth--;
       if (viewMonth < 0) { viewMonth = 11; viewYear--; }
+      await loadGcalEvents();
       render();
     });
-    container.querySelector('#cal-next').addEventListener('click', () => {
+    container.querySelector('#cal-next').addEventListener('click', async () => {
       viewMonth++;
       if (viewMonth > 11) { viewMonth = 0; viewYear++; }
+      await loadGcalEvents();
       render();
     });
-    container.querySelector('#cal-today-btn').addEventListener('click', () => {
+    container.querySelector('#cal-today-btn').addEventListener('click', async () => {
       viewYear = today.getFullYear();
       viewMonth = today.getMonth();
+      await loadGcalEvents();
       render();
+    });
+
+    // Sync button
+    const syncBtn = container.querySelector('#gc-sync-btn');
+    if (syncBtn) {
+      syncBtn.addEventListener('click', async () => {
+        syncing = true;
+        render();
+        try {
+          const result = await syncGoogleCalendar();
+          showToast(`Synced: ${result.added} new, ${result.updated} updated, ${result.removed} removed`);
+          await loadGcalEvents();
+        } catch (err) {
+          showToast(err.message || 'Sync failed', 'error');
+        } finally {
+          syncing = false;
+          render();
+        }
+      });
+    }
+
+    // Create menu from Google event buttons
+    container.querySelectorAll('.gc-create-btn').forEach(btn => {
+      btn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        const eventId = btn.dataset.eventId;
+        btn.disabled = true;
+        btn.textContent = '...';
+        try {
+          const result = await createMenuFromGoogleEvent(eventId);
+          showToast('Menu created from event');
+          window.location.hash = `#/menus/${result.menuId}`;
+        } catch (err) {
+          showToast(err.message || 'Failed to create menu', 'error');
+          btn.disabled = false;
+          btn.textContent = '+';
+        }
+      });
     });
 
     // Click empty date to create menu
     container.querySelectorAll('.cal-cell[data-date]').forEach(cell => {
       cell.addEventListener('click', (e) => {
-        // Don't trigger if clicking an event link
-        if (e.target.closest('.cal-event')) return;
+        // Don't trigger if clicking an event link, gcal event, or button
+        if (e.target.closest('.cal-event') || e.target.closest('.gc-event') || e.target.closest('.gc-create-btn')) return;
         const dateStr = cell.dataset.date;
         const dayMenus = menuMap[dateStr] || [];
         // If there's exactly one menu, navigate to it
@@ -204,15 +306,17 @@ export async function renderCalendar(container) {
     });
   }
 
-  await loadMenus();
+  await Promise.all([loadMenus(), checkGcalConfigured()]);
+  await loadGcalEvents();
   render();
 
   // Real-time sync
   const syncHandler = async () => {
     await loadMenus();
+    await loadGcalEvents();
     render();
   };
-  const syncEvents = ['sync:menu_created', 'sync:menu_updated', 'sync:menu_deleted'];
+  const syncEvents = ['sync:menu_created', 'sync:menu_updated', 'sync:menu_deleted', 'sync:gcal_synced', 'sync:gcal_menu_linked'];
   for (const evt of syncEvents) window.addEventListener(evt, syncHandler);
   const cleanup = () => {
     for (const evt of syncEvents) window.removeEventListener(evt, syncHandler);

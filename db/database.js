@@ -317,6 +317,19 @@ async function initialize() {
     `CREATE INDEX IF NOT EXISTS idx_dishes_name ON dishes(name)`,
     `CREATE INDEX IF NOT EXISTS idx_ingredients_name ON ingredients(name)`,
     `CREATE INDEX IF NOT EXISTS idx_menus_deleted_at ON menus(deleted_at)`,
+    // Google Calendar integration: cache synced events locally
+    `CREATE TABLE IF NOT EXISTS google_calendar_events (
+      id TEXT PRIMARY KEY,
+      summary TEXT NOT NULL,
+      description TEXT DEFAULT '',
+      start_date TEXT NOT NULL,
+      end_date TEXT,
+      location TEXT DEFAULT '',
+      menu_id INTEGER DEFAULT NULL REFERENCES menus(id) ON DELETE SET NULL,
+      raw_json TEXT,
+      synced_at TEXT DEFAULT (datetime('now'))
+    )`,
+    `CREATE INDEX IF NOT EXISTS idx_gcal_start_date ON google_calendar_events(start_date)`,
   ];
 
   for (const sql of MIGRATIONS) {

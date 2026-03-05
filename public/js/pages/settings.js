@@ -1,4 +1,4 @@
-import { getAllergenKeywords, addAllergenKeyword, deleteAllergenKeyword, changePassword, getDayPhases, updateDayPhases, getNotificationPreferences, updateNotificationPreferences, restoreBackup, getAiSettings, saveAiSettings, getAiUsage } from '../api.js';
+import { getAllergenKeywords, addAllergenKeyword, deleteAllergenKeyword, changePassword, getDayPhases, updateDayPhases, getNotificationPreferences, updateNotificationPreferences, restoreBackup, getAiSettings, saveAiSettings, getAiUsage, getGoogleCalendarSettings, updateGoogleCalendarSettings, syncGoogleCalendar } from '../api.js';
 import { showToast } from '../components/toast.js';
 import { escapeHtml } from '../utils/escapeHtml.js';
 import { restartNotifications } from '../utils/notifications.js';
@@ -81,6 +81,54 @@ export async function renderSettings(container) {
 
             <div class="st-form-actions">
               <button id="ai-save-btn" class="btn btn-primary">Save AI Settings</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="st-section">
+        <button class="st-section-toggle" aria-expanded="true">
+          <span class="st-section-title">Google Calendar</span>
+          <span class="st-chevron" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16"><polyline points="6 9 12 15 18 9"/></svg>
+          </span>
+        </button>
+        <div class="st-section-body">
+          <p class="ak-intro">
+            Pull events from your Google Calendar and create menus from them.
+            Your calendar must be set to "unlisted" in Google Calendar sharing settings.
+          </p>
+          <div class="card" style="padding: var(--space-md);">
+            <h3 class="st-card-heading">Connection</h3>
+            <div class="st-form-group">
+              <label class="st-label" for="gc-api-key">Google API Key</label>
+              <div class="ai-key-row">
+                <input type="password" id="gc-api-key" class="input" placeholder="AIza..." autocomplete="off">
+                <button id="gc-key-toggle" class="btn btn-secondary btn-sm" type="button">Show</button>
+              </div>
+              <p id="gc-key-status" class="ai-key-status"></p>
+            </div>
+            <div class="st-form-group">
+              <label class="st-label" for="gc-calendar-id">Calendar ID</label>
+              <input type="text" id="gc-calendar-id" class="input" placeholder="your.email@gmail.com or calendar ID">
+              <p class="text-muted" style="font-size: var(--text-xs); margin-top: 4px;">Found in Google Calendar &rarr; Settings &rarr; Integrate calendar</p>
+            </div>
+
+            <h3 class="st-card-heading" style="margin-top: var(--space-lg);">Background Sync</h3>
+            <label class="nt-toggle-label">
+              <input type="checkbox" id="gc-sync-enabled" class="nt-checkbox">
+              <span class="nt-toggle-text">Enable automatic background sync</span>
+            </label>
+            <div id="gc-sync-interval-row" class="st-form-group" style="margin-top: var(--space-sm); display: none;">
+              <label class="st-label" for="gc-sync-interval">Sync interval (minutes)</label>
+              <input type="number" id="gc-sync-interval" class="input" style="width: 80px;" min="1" max="60" value="15">
+            </div>
+
+            <div id="gc-last-sync" class="text-muted" style="font-size: var(--text-xs); margin-top: var(--space-sm);"></div>
+
+            <div class="st-form-actions">
+              <button id="gc-save-btn" class="btn btn-primary">Save Google Calendar Settings</button>
+              <button id="gc-test-btn" class="btn btn-secondary" style="margin-left: 8px;">Test Connection</button>
             </div>
           </div>
         </div>
@@ -750,6 +798,109 @@ export async function renderSettings(container) {
 
   await loadAiSettings();
   await loadAiUsage();
+
+  // --- Google Calendar Settings ---
+  const gcApiKey = container.querySelector('#gc-api-key');
+  const gcKeyToggle = container.querySelector('#gc-key-toggle');
+  const gcKeyStatus = container.querySelector('#gc-key-status');
+  const gcCalendarId = container.querySelector('#gc-calendar-id');
+  const gcSyncEnabled = container.querySelector('#gc-sync-enabled');
+  const gcSyncIntervalRow = container.querySelector('#gc-sync-interval-row');
+  const gcSyncInterval = container.querySelector('#gc-sync-interval');
+  const gcLastSync = container.querySelector('#gc-last-sync');
+  const gcSaveBtn = container.querySelector('#gc-save-btn');
+  const gcTestBtn = container.querySelector('#gc-test-btn');
+
+  gcKeyToggle.addEventListener('click', () => {
+    const isPassword = gcApiKey.type === 'password';
+    gcApiKey.type = isPassword ? 'text' : 'password';
+    gcKeyToggle.textContent = isPassword ? 'Hide' : 'Show';
+  });
+
+  gcSyncEnabled.addEventListener('change', () => {
+    gcSyncIntervalRow.style.display = gcSyncEnabled.checked ? '' : 'none';
+  });
+
+  async function loadGcalSettings() {
+    try {
+      const settings = await getGoogleCalendarSettings();
+      if (settings.hasApiKey) {
+        gcApiKey.placeholder = settings.apiKey || 'Key configured';
+        gcKeyStatus.textContent = 'API key is configured';
+        gcKeyStatus.className = 'ai-key-status ai-key-status--ok';
+      } else {
+        gcKeyStatus.textContent = 'No API key set';
+        gcKeyStatus.className = 'ai-key-status ai-key-status--warning';
+      }
+      gcCalendarId.value = settings.calendarId || '';
+      gcSyncEnabled.checked = settings.syncEnabled;
+      gcSyncIntervalRow.style.display = settings.syncEnabled ? '' : 'none';
+      gcSyncInterval.value = settings.syncInterval || 15;
+      if (settings.lastSync) {
+        const d = new Date(settings.lastSync);
+        gcLastSync.textContent = `Last synced: ${d.toLocaleString()}`;
+      } else {
+        gcLastSync.textContent = 'Never synced';
+      }
+    } catch {
+      gcKeyStatus.textContent = 'Failed to load settings';
+      gcKeyStatus.className = 'ai-key-status ai-key-status--warning';
+    }
+  }
+
+  gcSaveBtn.addEventListener('click', async () => {
+    gcSaveBtn.disabled = true;
+    gcSaveBtn.textContent = 'Saving...';
+    const body = {
+      calendarId: gcCalendarId.value.trim(),
+      syncEnabled: gcSyncEnabled.checked,
+      syncInterval: parseInt(gcSyncInterval.value) || 15,
+    };
+    if (gcApiKey.value.trim()) {
+      body.apiKey = gcApiKey.value.trim();
+    }
+    try {
+      await updateGoogleCalendarSettings(body);
+      showToast('Google Calendar settings saved');
+      gcApiKey.value = '';
+      await loadGcalSettings();
+    } catch (err) {
+      showToast(err.message || 'Failed to save', 'error');
+    } finally {
+      gcSaveBtn.disabled = false;
+      gcSaveBtn.textContent = 'Save Google Calendar Settings';
+    }
+  });
+
+  gcTestBtn.addEventListener('click', async () => {
+    gcTestBtn.disabled = true;
+    gcTestBtn.textContent = 'Testing...';
+    try {
+      // Save first if there are unsaved changes
+      const body = {
+        calendarId: gcCalendarId.value.trim(),
+        syncEnabled: gcSyncEnabled.checked,
+        syncInterval: parseInt(gcSyncInterval.value) || 15,
+      };
+      if (gcApiKey.value.trim()) {
+        body.apiKey = gcApiKey.value.trim();
+      }
+      await updateGoogleCalendarSettings(body);
+      gcApiKey.value = '';
+
+      // Now sync
+      const result = await syncGoogleCalendar();
+      showToast(`Connection successful! Found ${result.added + result.updated} events.`);
+      await loadGcalSettings();
+    } catch (err) {
+      showToast(err.message || 'Connection failed', 'error');
+    } finally {
+      gcTestBtn.disabled = false;
+      gcTestBtn.textContent = 'Test Connection';
+    }
+  });
+
+  await loadGcalSettings();
 
   // --- Backup / Restore ---
   const restoreInput = container.querySelector('#st-restore-input');
