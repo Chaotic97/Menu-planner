@@ -3,4 +3,5 @@ uploads/
 sessions/
 *.db
 .env
-.claude/
+.claude/*
+!.claude/rules/
