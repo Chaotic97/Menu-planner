@@ -2952,11 +2952,21 @@ const handlers = {
   merge_ingredients(input, opts) {
     const db = getDb();
 
+    // Resolve ingredient by name: exact match first, then LIKE fallback (prefer shorter names)
+    function resolveByName(name) {
+      // Exact case-insensitive match first
+      let ing = db.prepare("SELECT id, name FROM ingredients WHERE LOWER(name) = LOWER(?)").get(name);
+      if (ing) return ing;
+      // LIKE fallback — prefer shorter names (more likely the canonical one)
+      ing = db.prepare("SELECT id, name FROM ingredients WHERE name LIKE ? ORDER BY LENGTH(name) ASC LIMIT 1").get(`%${name}%`);
+      return ing || null;
+    }
+
     // Resolve source
     let sourceId = input.source_id;
     let sourceName = input.source_name;
     if (!sourceId && sourceName) {
-      const ing = db.prepare("SELECT id, name FROM ingredients WHERE name LIKE ? LIMIT 1").get(`%${sourceName}%`);
+      const ing = resolveByName(sourceName);
       if (ing) { sourceId = ing.id; sourceName = ing.name; }
     }
     if (sourceId && !sourceName) {
@@ -2965,11 +2975,15 @@ const handlers = {
     }
     if (!sourceId) return { description: 'Source ingredient not found', message: 'Could not find the source ingredient to merge from.' };
 
-    // Resolve target
+    // Resolve target — exclude source to prevent same-ingredient matches
     let targetId = input.target_id;
     let targetName = input.target_name;
     if (!targetId && targetName) {
-      const ing = db.prepare("SELECT id, name FROM ingredients WHERE name LIKE ? LIMIT 1").get(`%${targetName}%`);
+      // Exact match first, excluding source
+      let ing = db.prepare("SELECT id, name FROM ingredients WHERE LOWER(name) = LOWER(?) AND id != ?").get(targetName, sourceId);
+      if (!ing) {
+        ing = db.prepare("SELECT id, name FROM ingredients WHERE name LIKE ? AND id != ? ORDER BY LENGTH(name) ASC LIMIT 1").get(`%${targetName}%`, sourceId);
+      }
       if (ing) { targetId = ing.id; targetName = ing.name; }
     }
     if (targetId && !targetName) {

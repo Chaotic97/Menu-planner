@@ -717,6 +717,7 @@ export function openDrawer() {
   checkSessionTimeout();
   updateContextBadge();
   drawerEl.classList.add('chat-drawer-open');
+  document.body.classList.add('chat-drawer-active');
   isOpen = true;
   const input = drawerEl.querySelector('.chat-drawer-input');
   if (input) setTimeout(() => input.focus(), 300);
@@ -725,6 +726,7 @@ export function openDrawer() {
 export function closeDrawer() {
   if (drawerEl) {
     drawerEl.classList.remove('chat-drawer-open');
+    document.body.classList.remove('chat-drawer-active');
     isOpen = false;
   }
 }
