@@ -1,25 +1,12 @@
 const express = require('express');
 const { getDb } = require('../db/database');
-const { calculateDishCost } = require('../services/costCalculator');
+const { calculateDishCost, round2 } = require('../services/costCalculator');
 const { exportSpecialsDocx } = require('../services/specialsExporter');
 const asyncHandler = require('../middleware/asyncHandler');
-
-const { round2 } = require('../services/costCalculator');
 
 const router = express.Router();
 
 const VALID_MENU_TYPES = ['standard', 'event'];
-
-// Helper: compute cost for a single dish
-function getDishCost(db, dishId) {
-  const ingredients = db.prepare(`
-    SELECT di.*, i.name AS ingredient_name, i.unit_cost, i.base_unit
-    FROM dish_ingredients di
-    JOIN ingredients i ON i.id = di.ingredient_id
-    WHERE di.dish_id = ?
-  `).all(dishId);
-  return calculateDishCost(ingredients);
-}
 
 // GET /api/menus - List all menus
 router.get('/', (req, res) => {
@@ -109,9 +96,7 @@ router.get('/:id', (req, res) => {
     ORDER BY md.sort_order, d.category, d.name
   `).all(menu.id);
 
-  // Attach allergens, cost, and substitution count to each dish
-  const allergenStmt = db.prepare('SELECT allergen, source FROM dish_allergens WHERE dish_id = ?');
-  const subsCountStmt = db.prepare('SELECT COUNT(*) AS cnt FROM dish_substitutions WHERE dish_id = ?');
+  // Batch fetch allergens, substitution counts, and costs for all dishes
   const allAllergens = new Set();
   let totalFoodCost = 0;
 
@@ -120,33 +105,67 @@ router.get('/:id', (req, res) => {
     ? menu.guest_allergies.split(',').map(a => a.trim()).filter(Boolean)
     : [];
 
-  for (const dish of menu.dishes) {
-    dish.allergens = allergenStmt.all(dish.id);
-    dish.allergens.forEach(a => allAllergens.add(a.allergen));
+  if (menu.dishes.length > 0) {
+    const dishIds = menu.dishes.map(d => d.id);
+    const ph = dishIds.map(() => '?').join(',');
 
-    // Check for guest allergy conflicts
-    if (guestAllergies.length) {
-      dish.allergy_conflicts = dish.allergens
-        .filter(a => guestAllergies.includes(a.allergen))
-        .map(a => a.allergen);
-    } else {
-      dish.allergy_conflicts = [];
+    // Batch: allergens
+    const allergenRows = db.prepare(
+      `SELECT dish_id, allergen, source FROM dish_allergens WHERE dish_id IN (${ph})`
+    ).all(...dishIds);
+    const allergenMap = {};
+    for (const r of allergenRows) {
+      if (!allergenMap[r.dish_id]) allergenMap[r.dish_id] = [];
+      allergenMap[r.dish_id].push({ allergen: r.allergen, source: r.source });
     }
 
-    // Substitution count
-    const subsRow = subsCountStmt.get(dish.id);
-    dish.substitution_count = subsRow ? subsRow.cnt : 0;
+    // Batch: substitution counts
+    const subsRows = db.prepare(
+      `SELECT dish_id, COUNT(*) AS cnt FROM dish_substitutions WHERE dish_id IN (${ph}) GROUP BY dish_id`
+    ).all(...dishIds);
+    const subsMap = {};
+    for (const r of subsRows) subsMap[r.dish_id] = r.cnt;
 
-    // Cost per serving / portion
-    const costResult = getDishCost(db, dish.id);
-    const batchYield = dish.batch_yield || 1;
-    dish.cost_per_batch = costResult.totalCost;
-    dish.cost_per_portion = round2(costResult.totalCost / batchYield);
-    dish.cost_per_serving = dish.cost_per_portion; // backward compat alias
-    dish.batch_yield = batchYield;
-    dish.total_portions = dish.servings * batchYield;
-    dish.cost_total = round2(costResult.totalCost * dish.servings);
-    totalFoodCost += dish.cost_total;
+    // Batch: ingredients for cost calculation
+    const ingredientRows = db.prepare(
+      `SELECT di.dish_id, di.quantity, di.unit, i.unit_cost, i.base_unit, i.name AS ingredient_name
+       FROM dish_ingredients di
+       JOIN ingredients i ON i.id = di.ingredient_id
+       WHERE di.dish_id IN (${ph})`
+    ).all(...dishIds);
+    const ingredientMap = {};
+    for (const r of ingredientRows) {
+      if (!ingredientMap[r.dish_id]) ingredientMap[r.dish_id] = [];
+      ingredientMap[r.dish_id].push(r);
+    }
+
+    for (const dish of menu.dishes) {
+      dish.allergens = allergenMap[dish.id] || [];
+      dish.allergens.forEach(a => allAllergens.add(a.allergen));
+
+      // Check for guest allergy conflicts
+      if (guestAllergies.length) {
+        dish.allergy_conflicts = dish.allergens
+          .filter(a => guestAllergies.includes(a.allergen))
+          .map(a => a.allergen);
+      } else {
+        dish.allergy_conflicts = [];
+      }
+
+      // Substitution count
+      dish.substitution_count = subsMap[dish.id] || 0;
+
+      // Cost per serving / portion
+      const costResult = calculateDishCost(ingredientMap[dish.id] || []);
+      const batchYield = dish.batch_yield || 1;
+      dish.cost_per_batch = costResult.totalCost;
+      dish.cost_per_portion = round2(costResult.totalCost / batchYield);
+      dish.cost_per_serving = dish.cost_per_portion; // backward compat alias
+      dish.batch_yield = batchYield;
+      dish.total_portions = dish.servings * batchYield;
+      dish.cost_total = round2(costResult.totalCost * dish.servings);
+      totalFoodCost += dish.cost_total;
+    }
   }
 
   menu.all_allergens = Array.from(allAllergens).sort();
@@ -181,46 +200,95 @@ router.get('/:id/kitchen-print', (req, res) => {
     ORDER BY md.sort_order, d.category, d.name
   `).all(menu.id);
 
-  const allergenStmt = db.prepare('SELECT allergen FROM dish_allergens WHERE dish_id = ?');
-  const ingredientStmt = db.prepare(`
-    SELECT di.quantity, di.unit, di.prep_note, i.name AS ingredient_name
-    FROM dish_ingredients di
-    JOIN ingredients i ON i.id = di.ingredient_id
-    WHERE di.dish_id = ?
-    ORDER BY di.sort_order
-  `);
-  const subsStmt = db.prepare('SELECT * FROM dish_substitutions WHERE dish_id = ? ORDER BY allergen');
-  const componentStmt = db.prepare(
-    'SELECT name, sort_order FROM dish_components WHERE dish_id = ? ORDER BY sort_order, id'
-  );
+  if (dishes.length > 0) {
+    const dishIds = dishes.map(d => d.id);
+    const ph = dishIds.map(() => '?').join(',');
 
-  const directionStmt = db.prepare(
-    'SELECT type, text, sort_order FROM dish_directions WHERE dish_id = ? ORDER BY sort_order, id'
-  );
-  const serviceDirectionStmt = db.prepare(
-    'SELECT type, text, sort_order FROM dish_service_directions WHERE dish_id = ? ORDER BY sort_order, id'
-  );
+    // Batch: allergens
+    const allergenRows = db.prepare(
+      `SELECT dish_id, allergen FROM dish_allergens WHERE dish_id IN (${ph})`
+    ).all(...dishIds);
+    const allergenMap = {};
+    for (const r of allergenRows) {
+      if (!allergenMap[r.dish_id]) allergenMap[r.dish_id] = [];
+      allergenMap[r.dish_id].push(r.allergen);
+    }
 
-  for (const dish of dishes) {
-    dish.allergens = allergenStmt.all(dish.id).map(a => a.allergen);
+    // Batch: ingredients
+    const ingredientRows = db.prepare(
+      `SELECT di.dish_id, di.quantity, di.unit, di.prep_note, i.name AS ingredient_name
+       FROM dish_ingredients di
+       JOIN ingredients i ON i.id = di.ingredient_id
+       WHERE di.dish_id IN (${ph})
+       ORDER BY di.sort_order`
+    ).all(...dishIds);
+    const ingredientMap = {};
+    for (const r of ingredientRows) {
+      if (!ingredientMap[r.dish_id]) ingredientMap[r.dish_id] = [];
+      ingredientMap[r.dish_id].push(r);
+    }
 
-    // Scale ingredient quantities by servings (batch count)
-    const rawIngredients = ingredientStmt.all(dish.id);
-    const scaleFactor = dish.servings || 1;
-    dish.ingredients = rawIngredients.map(ing => ({
-      ...ing,
-      base_quantity: ing.quantity,
-      quantity: round2((Number(ing.quantity) || 0) * scaleFactor),
-    }));
+    // Batch: substitutions
+    const subsRows = db.prepare(
+      `SELECT * FROM dish_substitutions WHERE dish_id IN (${ph}) ORDER BY allergen`
+    ).all(...dishIds);
+    const subsMap = {};
+    for (const r of subsRows) {
+      if (!subsMap[r.dish_id]) subsMap[r.dish_id] = [];
+      subsMap[r.dish_id].push(r);
+    }
 
-    dish.substitutions = subsStmt.all(dish.id);
-    dish.components = componentStmt.all(dish.id);
-    dish.directions = directionStmt.all(dish.id);
-    dish.service_directions = serviceDirectionStmt.all(dish.id);
+    // Batch: components
+    const compRows = db.prepare(
+      `SELECT dish_id, name, sort_order FROM dish_components WHERE dish_id IN (${ph}) ORDER BY sort_order, id`
+    ).all(...dishIds);
+    const compMap = {};
+    for (const r of compRows) {
+      if (!compMap[r.dish_id]) compMap[r.dish_id] = [];
+      compMap[r.dish_id].push(r);
+    }
 
-    // Batch yield info for print
-    const batchYield = dish.batch_yield || 1;
-    dish.total_portions = dish.servings * batchYield;
+    // Batch: directions
+    const dirRows = db.prepare(
+      `SELECT dish_id, type, text, sort_order FROM dish_directions WHERE dish_id IN (${ph}) ORDER BY sort_order, id`
+    ).all(...dishIds);
+    const dirMap = {};
+    for (const r of dirRows) {
+      if (!dirMap[r.dish_id]) dirMap[r.dish_id] = [];
+      dirMap[r.dish_id].push(r);
+    }
+
+    // Batch: service directions
+    const svcDirRows = db.prepare(
+      `SELECT dish_id, type, text, sort_order FROM dish_service_directions WHERE dish_id IN (${ph}) ORDER BY sort_order, id`
+    ).all(...dishIds);
+    const svcDirMap = {};
+    for (const r of svcDirRows) {
+      if (!svcDirMap[r.dish_id]) svcDirMap[r.dish_id] = [];
+      svcDirMap[r.dish_id].push(r);
+    }
+
+    for (const dish of dishes) {
+      dish.allergens = allergenMap[dish.id] || [];
+
+      // Scale ingredient quantities by servings (batch count)
+      const rawIngredients = ingredientMap[dish.id] || [];
+      const scaleFactor = dish.servings || 1;
+      dish.ingredients = rawIngredients.map(ing => ({
+        ...ing,
+        base_quantity: ing.quantity,
+        quantity: round2((Number(ing.quantity) || 0) * scaleFactor),
+      }));
+
+      dish.substitutions = subsMap[dish.id] || [];
+      dish.components = compMap[dish.id] || [];
+      dish.directions = dirMap[dish.id] || [];
+      dish.service_directions = svcDirMap[dish.id] || [];
+
+      // Batch yield info for print
+      const batchYield = dish.batch_yield || 1;
+      dish.total_portions = dish.servings * batchYield;
+    }
   }
 
   // Group by category
@@ -544,10 +612,21 @@ router.get('/specials/list', (req, res) => {
 
   const specials = db.prepare(sql).all(...params);
 
-  // Attach allergens
-  const allergenStmt = db.prepare('SELECT allergen FROM dish_allergens WHERE dish_id = ?');
-  for (const s of specials) {
-    s.allergens = allergenStmt.all(s.dish_id).map(a => a.allergen);
+  // Batch attach allergens
+  if (specials.length > 0) {
+    const specialDishIds = [...new Set(specials.map(s => s.dish_id))];
+    const sph = specialDishIds.map(() => '?').join(',');
+    const allergenRows = db.prepare(
+      `SELECT dish_id, allergen FROM dish_allergens WHERE dish_id IN (${sph})`
+    ).all(...specialDishIds);
+    const allergenMap = {};
+    for (const r of allergenRows) {
+      if (!allergenMap[r.dish_id]) allergenMap[r.dish_id] = [];
+      allergenMap[r.dish_id].push(r.allergen);
+    }
+    for (const s of specials) {
+      s.allergens = allergenMap[s.dish_id] || [];
+    }
   }
 
   res.json(specials);

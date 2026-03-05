@@ -319,6 +319,14 @@ async function initialize() {
     `CREATE INDEX IF NOT EXISTS idx_menus_deleted_at ON menus(deleted_at)`,
     // Google Calendar integration: link menus to Google Calendar event IDs
     `ALTER TABLE menus ADD COLUMN gcal_event_id TEXT DEFAULT NULL`,
+    // Performance indexes for foreign keys used in JOINs and WHERE clauses
+    `CREATE INDEX IF NOT EXISTS idx_dish_tags_tag_id ON dish_tags(tag_id)`,
+    `CREATE INDEX IF NOT EXISTS idx_dish_substitutions_dish_id ON dish_substitutions(dish_id)`,
+    `CREATE INDEX IF NOT EXISTS idx_dish_section_headers_dish_id ON dish_section_headers(dish_id)`,
+    `CREATE INDEX IF NOT EXISTS idx_dish_components_dish_id ON dish_components(dish_id)`,
+    `CREATE INDEX IF NOT EXISTS idx_weekly_specials_dish_id ON weekly_specials(dish_id)`,
+    `CREATE INDEX IF NOT EXISTS idx_weekly_specials_week ON weekly_specials(week_start, week_end)`,
+    `CREATE INDEX IF NOT EXISTS idx_tasks_source_dish_id ON tasks(source_dish_id)`,
   ];
 
   for (const sql of MIGRATIONS) {
