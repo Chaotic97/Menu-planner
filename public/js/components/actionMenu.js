@@ -11,6 +11,8 @@
  *   parentEl.appendChild(trigger);
  */
 
+import { escapeHtml } from '../utils/escapeHtml.js';
+
 let openMenu = null;
 
 function closeOpenMenu() {
@@ -68,8 +70,8 @@ export function createActionMenu(items, opts = {}) {
       const btn = document.createElement('button');
       btn.type = 'button';
       btn.className = 'action-menu-item' + (item.danger ? ' action-menu-item--danger' : '');
-      btn.innerHTML = (item.icon ? `<span class="action-menu-icon">${item.icon}</span>` : '') +
-        `<span>${item.label}</span>`;
+      btn.innerHTML = (item.icon ? `<span class="action-menu-icon">${escapeHtml(item.icon)}</span>` : '') +
+        `<span>${escapeHtml(item.label)}</span>`;
       btn.addEventListener('click', (ev) => {
         ev.stopPropagation();
         closeOpenMenu();

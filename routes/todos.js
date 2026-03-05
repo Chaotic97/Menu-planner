@@ -24,7 +24,7 @@ router.get('/menu/:id/shopping-list', (req, res) => {
 // GET /api/todos/menu/:id/scaled-shopping-list?covers=N
 router.get('/menu/:id/scaled-shopping-list', (req, res) => {
   const covers = parseInt(req.query.covers);
-  if (!covers || covers < 1) {
+  if (isNaN(covers) || covers < 1) {
     return res.status(400).json({ error: 'covers parameter is required and must be a positive integer' });
   }
 

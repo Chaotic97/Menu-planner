@@ -6235,9 +6235,6 @@ textarea.input { resize: vertical; min-height: 80px; }
   .cb-preview-buttons {
     flex-wrap: wrap;
   }
-  #app-content.qc-bar-active {
-    padding-bottom: calc(120px + env(safe-area-inset-bottom, 0px));
-  }
 }
 
 /* --- Command Bar: iPad / Tablet --- */
@@ -6838,7 +6835,6 @@ textarea.input { resize: vertical; min-height: 80px; }
   .filter-bar,
   .todo-tabs,
   #print-btn,
-  .qc-bar,
   .no-print { display: none !important; }
 
   body {
