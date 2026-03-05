@@ -22,6 +22,7 @@ let isProcessing = false;
 let currentConfirmationId = null;
 let _currentToolName = null;
 let _commandBarConversationId = null;
+const _sessionApprovedTools = new Set();
 
 /**
  * Context-aware suggested prompts based on current page
@@ -229,7 +230,7 @@ function createBar() {
       submit();
     }
     if (e.key === 'Escape') {
-      if (currentConfirmationId) {
+      if (currentConfirmationId || previewEl?.classList.contains('cb-preview-visible')) {
         dismissPreview();
       } else {
         input.blur();
@@ -321,7 +322,11 @@ async function submitAiCommand(text, input, sendBtn) {
 
   try {
     const context = getPageContext();
-    const result = await aiCommand({ message: text, context });
+    const payload = { message: text, context };
+    if (_sessionApprovedTools.size > 0) {
+      payload.approvedTools = [..._sessionApprovedTools];
+    }
+    const result = await aiCommand(payload);
 
     if (result.needsSetup) {
       showPreviewMessage(result.response, 'warning');
@@ -430,6 +435,7 @@ function showConfirmationPreview(message, preview) {
       ${preview ? `<div class="cb-preview-action">${escapeHtml(preview)}</div>` : ''}
       <div class="cb-preview-buttons">
         <button class="btn btn-primary btn-sm cb-confirm-btn">Confirm</button>
+        <button class="btn btn-primary btn-sm cb-confirm-all-btn" title="Auto-approve this action type for the rest of this session">Confirm All</button>
         <button class="btn btn-secondary btn-sm cb-cancel-btn">Cancel</button>
       </div>
     </div>
@@ -437,6 +443,7 @@ function showConfirmationPreview(message, preview) {
   previewEl.classList.add('cb-preview-visible');
 
   previewEl.querySelector('.cb-confirm-btn')?.addEventListener('click', handleConfirm);
+  previewEl.querySelector('.cb-confirm-all-btn')?.addEventListener('click', handleConfirmAll);
   previewEl.querySelector('.cb-cancel-btn')?.addEventListener('click', dismissPreview);
 }
 
@@ -484,6 +491,16 @@ async function handleConfirm() {
     dismissPreview();
     showToast(err.message || 'Failed to execute action', 'error');
   }
+}
+
+/**
+ * Handle "Confirm All" — approve this action AND auto-approve this tool type for the session
+ */
+async function handleConfirmAll() {
+  if (_currentToolName) {
+    _sessionApprovedTools.add(_currentToolName);
+  }
+  await handleConfirm();
 }
 
 /**

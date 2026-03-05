@@ -129,6 +129,7 @@ AVAILABLE ACTIONS:
 - Analysis: food cost analysis per menu, pricing suggestions, dietary suitability analysis
 - Advisory: dish pairing suggestions, ingredient substitutions, recipe scaling advice, unit conversions
 - Recipe building: add/remove ingredients on dishes, add direction steps/sections, add/remove tags
+- Ingredient management: find duplicate ingredients, merge duplicates (reassigns all recipes), delete unused ingredients
 - Workflow: generate prep tasks for a menu, clean up recipe directions with AI`;
 
   if (context) {
@@ -165,9 +166,14 @@ async function callApi(client, systemPrompt, tools, messages) {
 /**
  * Main entry point: process a user command through Haiku.
  * Supports multi-step tool chaining (up to MAX_TOOL_ROUNDS auto-approved tool calls).
+ * @param {string} message
+ * @param {object} pageContext
+ * @param {Array} conversationHistory
+ * @param {Function} broadcast
+ * @param {object} options - { approvedTools?: string[] } — tools the user has pre-approved for this session
  * Returns: { response, autoExecuted?, toolCall?, preview?, confirmationData?, toolResults? }
  */
-async function processCommand(message, pageContext, conversationHistory, broadcast) {
+async function processCommand(message, pageContext, conversationHistory, broadcast, options = {}) {
   const apiKey = getApiKey();
   if (!apiKey) {
     return { response: 'Please set up your Anthropic API key in Settings to use AI features.', needsSetup: true };
@@ -193,6 +199,11 @@ async function processCommand(message, pageContext, conversationHistory, broadca
   const executedTools = [];
   let totalTokensIn = 0;
   let totalTokensOut = 0;
+  const sessionApproved = new Set(options.approvedTools || []);
+
+  function isEffectivelyAutoApproved(name) {
+    return isAutoApproved(name) || sessionApproved.has(name);
+  }
 
   for (let round = 0; round < MAX_TOOL_ROUNDS + 1; round++) {
     const response = await callApi(client, systemPrompt, tools, messages);
@@ -235,8 +246,8 @@ async function processCommand(message, pageContext, conversationHistory, broadca
       return { response: textResponse };
     }
 
-    // Tool call: check if auto-approved
-    if (isAutoApproved(toolCall.name) && round < MAX_TOOL_ROUNDS) {
+    // Tool call: check if auto-approved (built-in or session-approved)
+    if (isEffectivelyAutoApproved(toolCall.name) && round < MAX_TOOL_ROUNDS) {
       // Execute immediately and feed result back to Haiku
       const result = executeToolHandler(toolCall.name, toolCall.input, { preview: false, pageContext, broadcast });
       executedTools.push({ name: toolCall.name, input: toolCall.input, result });
@@ -256,7 +267,7 @@ async function processCommand(message, pageContext, conversationHistory, broadca
     }
 
     // Auto-approved tool on final allowed round — execute but don't loop
-    if (isAutoApproved(toolCall.name)) {
+    if (isEffectivelyAutoApproved(toolCall.name)) {
       const result = executeToolHandler(toolCall.name, toolCall.input, { preview: false, pageContext, broadcast });
       executedTools.push({ name: toolCall.name, input: toolCall.input, result });
       const toolNames = executedTools.map(t => t.name).join(',');
@@ -319,7 +330,7 @@ async function executeConfirmedAction(confirmationData, broadcast) {
  * @param {Function} broadcast
  * @param {Function} emit - callback(eventType, data) for SSE events
  */
-async function processCommandStream(message, pageContext, conversationHistory, broadcast, emit) {
+async function processCommandStream(message, pageContext, conversationHistory, broadcast, emit, options = {}) {
   const apiKey = getApiKey();
   if (!apiKey) {
     emit('error', { message: 'Please set up your Anthropic API key in Settings to use AI features.' });
@@ -348,6 +359,11 @@ async function processCommandStream(message, pageContext, conversationHistory, b
   const executedTools = [];
   let totalTokensIn = 0;
   let totalTokensOut = 0;
+  const sessionApproved = new Set(options.approvedTools || []);
+
+  function isEffectivelyAutoApproved(name) {
+    return isAutoApproved(name) || sessionApproved.has(name);
+  }
 
   for (let round = 0; round < MAX_TOOL_ROUNDS + 1; round++) {
     let textResponse = '';
@@ -438,8 +454,8 @@ async function processCommandStream(message, pageContext, conversationHistory, b
       return;
     }
 
-    // Tool call: auto-approved?
-    if (isAutoApproved(toolCall.name) && round < MAX_TOOL_ROUNDS) {
+    // Tool call: auto-approved (built-in or session-approved)?
+    if (isEffectivelyAutoApproved(toolCall.name) && round < MAX_TOOL_ROUNDS) {
       const result = executeToolHandler(toolCall.name, toolCall.input, { preview: false, pageContext, broadcast });
       executedTools.push({ name: toolCall.name, input: toolCall.input, result });
       emit('tool_result', { name: toolCall.name, message: result.message });
@@ -461,7 +477,7 @@ async function processCommandStream(message, pageContext, conversationHistory, b
     }
 
     // Auto-approved on final round
-    if (isAutoApproved(toolCall.name)) {
+    if (isEffectivelyAutoApproved(toolCall.name)) {
       const result = executeToolHandler(toolCall.name, toolCall.input, { preview: false, pageContext, broadcast });
       executedTools.push({ name: toolCall.name, input: toolCall.input, result });
       emit('tool_result', { name: toolCall.name, message: result.message });
