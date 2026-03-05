@@ -6702,6 +6702,113 @@ textarea.input { resize: vertical; min-height: 80px; }
 }
 
 /* ============================
+   Google Calendar Events
+   ============================ */
+.gc-event {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 6px;
+  margin-top: 2px;
+  border-radius: var(--radius-sm);
+  background: rgba(66, 133, 244, 0.12);
+  border-left: 3px solid #4285f4;
+  font-size: var(--text-xs);
+  line-height: 1.3;
+  cursor: default;
+  min-height: 22px;
+}
+
+.gc-event-icon {
+  flex-shrink: 0;
+  color: #4285f4;
+  display: flex;
+  align-items: center;
+}
+
+.gc-event-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text);
+}
+
+.gc-create-btn {
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  border: none;
+  border-radius: 50%;
+  background: #4285f4;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.gc-event:hover .gc-create-btn {
+  opacity: 1;
+}
+
+.gc-create-btn:hover {
+  background: #1a73e8;
+}
+
+.gc-create-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.cal-event.gc-linked {
+  background: rgba(66, 133, 244, 0.08);
+  border-left: 3px solid #4285f4;
+}
+
+.cal-event.gc-linked .gc-event-icon {
+  color: #4285f4;
+}
+
+.gc-sync-btn {
+  padding: 4px 8px !important;
+  display: flex;
+  align-items: center;
+}
+
+.gc-sync-btn svg {
+  transition: transform 0.3s;
+}
+
+.gc-spinning {
+  animation: gc-spin 1s linear infinite;
+}
+
+@keyframes gc-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+/* --- Google Calendar: dark mode --- */
+[data-theme="dark"] .gc-event {
+  background: rgba(66, 133, 244, 0.18);
+}
+
+[data-theme="dark"] .gc-create-btn {
+  background: #5a9cf8;
+}
+
+[data-theme="dark"] .gc-create-btn:hover {
+  background: #4285f4;
+}
+
+/* ============================
    Print Styles (consolidated)
    ============================ */
 .no-print { /* markup-level hide for print */ }
