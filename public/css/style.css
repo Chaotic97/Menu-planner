@@ -6844,8 +6844,18 @@ textarea.input { resize: vertical; min-height: 80px; }
   body {
     background: white;
     padding-left: 0 !important;
+    margin: 0;
   }
   #app-content { max-width: none; padding: 0; }
+
+  /* Print-sheet overlay: ensure it spans the full page with no clipping */
+  #ps-print-overlay {
+    position: static !important;
+    overflow: visible !important;
+    width: 100% !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
 
   .tab-content { display: block !important; }
   .tab-content + .tab-content { page-break-before: always; }

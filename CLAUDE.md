@@ -554,8 +554,25 @@ The stored `photo_path` is the relative URL `/uploads/dish-TIMESTAMP.ext` — no
 ### Food cost colour thresholds (Menu Builder UI)
 green ≤30% · yellow 30–35% · red >35%
 
-### Print styles
-All print rules live in a single consolidated `@media print` block at the end of `style.css`. Use the `.no-print` class on any element that should be hidden when printing. Navigation, action menus, filter bars, and interactive controls are hidden automatically.
+### Print system — iOS-critical, do not break
+
+Printing is a core feature used daily in a professional kitchen. The print system (`public/js/utils/printSheet.js`) has been carefully engineered to work on **iOS Safari and iOS PWA mode**, which have unique constraints. **Any change to printing must be tested on a real iOS device before merging.**
+
+**How it works:** `printSheet(html)` injects an overlay `<div>` into the page, hides all siblings, and calls `window.print()`. Six pages use it: dish view (kitchen sheet + service card), menu builder (kitchen print + scaled shopping list), shopping list (purchase order), and todo view (prep sheet).
+
+**iOS constraints — these are non-negotiable rules:**
+
+1. **NEVER use `position: fixed` on the print overlay.** iOS Safari snapshots the viewport for printing *before* applying `@media print` rules. A fixed overlay with `overflow-y: auto` causes iOS to print only the visible viewport — a screenshot, not the full document. The overlay MUST use `position: static` so all content is in normal document flow.
+2. **NEVER use `overflow: auto` or `overflow: scroll` on the overlay or any print container.** iOS will only print content visible in the scroll viewport, clipping everything else.
+3. **NEVER rely solely on `@media print` to change layout.** iOS may not apply these rules during its print snapshot pass. Any layout-critical properties (position, overflow, display) must be set in all media contexts, not just print.
+4. **Always hide siblings unconditionally** (`body > *:not(#ps-print-overlay) { display: none !important; }` in all media, not just `@media print`). iOS re-renders when the user selects a printer and may not apply print-only rules on that pass.
+5. **Always force a layout recalc before `window.print()`** — use `void overlay.offsetHeight` followed by double `requestAnimationFrame` to ensure the browser has fully committed the overlay geometry.
+6. **Always scroll to top** (`window.scrollTo(0, 0)`) before showing the overlay so the preview and print start from the beginning.
+7. **`window.open()` is silently blocked** in iOS Safari and PWA mode — never use it for print. The in-page overlay approach is the only reliable method.
+
+**Print content is self-contained:** Each print function (in dishView, menuBuilder, shoppingList, todoView) builds a complete HTML string with inline `<style>` tags. The styles apply in all media (not wrapped in `@media print`) so iOS renders them during its snapshot. Only the toolbar hide and padding reset go in `@media print`.
+
+**Global print CSS** lives in a single `@media print` block at the end of `style.css`. It includes a belt-and-suspenders `#ps-print-overlay` rule forcing `position: static !important; overflow: visible !important`. Use the `.no-print` class on any element that should be hidden when printing. Navigation, action menus, filter bars, and interactive controls are hidden automatically.
 
 ### Responsive breakpoints
 ≥481px: sidebar nav, no bottom tab bar. ≤480px: bottom tab bar, no sidebar. Use these exact values; do not invent new breakpoints.
