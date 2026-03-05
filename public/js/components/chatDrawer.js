@@ -1,12 +1,15 @@
 /**
- * Chat Drawer — conversational AI panel.
+ * Chat Drawer — conversational AI panel with streaming responses.
  * Slides out from the right with multi-turn conversation support.
+ * Features: markdown rendering, SSE streaming, tool/context indicators.
  * Conversations are saved to the database and persist across sessions.
  * Auto-clears after 1 hour of inactivity. Session viewer for past conversations.
  */
 
-import { aiCommand, getConversations, createConversation, getConversationMessages, addConversationMessage, deleteConversation } from '../api.js';
+import { aiCommandStream, aiConfirm, aiUndo, getConversations, createConversation, getConversationMessages, addConversationMessage, deleteConversation } from '../api.js';
 import { escapeHtml } from '../utils/escapeHtml.js';
+import { renderMarkdown } from '../utils/markdown.js';
+import { showToast } from './toast.js';
 
 let drawerEl = null;
 let isOpen = false;
@@ -15,12 +18,35 @@ let currentConversationId = null;
 let lastActivityTime = Date.now();
 let isSending = false;
 let showingHistory = false;
+let currentStream = null;
 
 const SESSION_TIMEOUT_MS = 60 * 60 * 1000; // 1 hour
 
-/**
- * Check if session has expired and clear if so
- */
+// Tool name → friendly label map
+const TOOL_LABELS = {
+  search_dishes: 'Searching dishes',
+  lookup_dish: 'Looking up dish',
+  lookup_menu: 'Looking up menu',
+  search_ingredients: 'Searching ingredients',
+  search_tasks: 'Searching tasks',
+  search_service_notes: 'Searching notes',
+  get_shopping_list: 'Fetching shopping list',
+  get_system_summary: 'Getting system overview',
+  create_menu: 'Creating menu',
+  create_dish: 'Creating dish',
+  create_task: 'Creating task',
+  add_dish_to_menu: 'Adding dish to menu',
+  add_service_note: 'Adding service note',
+  cleanup_recipe: 'Cleaning up recipe',
+  check_allergens: 'Checking allergens',
+  scale_recipe: 'Scaling recipe',
+  convert_units: 'Converting units',
+};
+
+function getToolLabel(name) {
+  return TOOL_LABELS[name] || name.replace(/_/g, ' ');
+}
+
 function checkSessionTimeout() {
   if (conversationHistory.length === 0) return;
   if (Date.now() - lastActivityTime > SESSION_TIMEOUT_MS) {
@@ -28,16 +54,10 @@ function checkSessionTimeout() {
   }
 }
 
-/**
- * Touch the session (update last activity time)
- */
 function touchSession() {
   lastActivityTime = Date.now();
 }
 
-/**
- * Get current page context
- */
 function getPageContext() {
   const hash = window.location.hash || '';
   const ctx = { page: hash };
@@ -58,8 +78,21 @@ function getPageContext() {
 }
 
 /**
- * Create the drawer element
+ * Get a human-readable context label for the header
  */
+function getContextLabel() {
+  const hash = window.location.hash || '';
+  if (hash.match(/^#\/dishes\/\d+(\/edit)?$/)) return 'Dish';
+  if (hash.match(/^#\/menus\/\d+$/)) return 'Menu';
+  if (hash === '#/dishes' || hash === '#/') return 'Dishes';
+  if (hash === '#/menus') return 'Menus';
+  if (hash === '#/todos') return 'Tasks';
+  if (hash === '#/shopping' || hash.match(/^#\/menus\/\d+\/shopping$/)) return 'Shopping';
+  if (hash === '#/service-notes') return 'Notes';
+  if (hash === '#/specials') return 'Specials';
+  return null;
+}
+
 function createDrawer() {
   if (drawerEl) return drawerEl;
 
@@ -69,7 +102,10 @@ function createDrawer() {
     <div class="chat-drawer-backdrop"></div>
     <div class="chat-drawer-panel">
       <div class="chat-drawer-header">
-        <h3 class="chat-drawer-title">AI Assistant</h3>
+        <div class="chat-drawer-title-row">
+          <h3 class="chat-drawer-title">AI Assistant</h3>
+          <span class="chat-context-badge" id="chat-context-badge"></span>
+        </div>
         <div class="chat-drawer-header-actions">
           <button class="chat-drawer-history-btn" title="Chat history" aria-label="View chat history">
             <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
@@ -141,7 +177,6 @@ function createDrawer() {
     const text = input.value.trim();
     if (!text || isSending) return;
 
-    // Hide history view if showing
     if (showingHistory) hideHistoryView();
 
     input.value = '';
@@ -158,7 +193,6 @@ function createDrawer() {
       }
     }
 
-    // Save user message to DB
     if (currentConversationId) {
       try { await addConversationMessage(currentConversationId, 'user', text); } catch {}
     }
@@ -166,40 +200,8 @@ function createDrawer() {
     isSending = true;
     sendBtn.disabled = true;
     input.disabled = true;
-    appendTypingIndicator();
 
-    try {
-      const context = getPageContext();
-      const result = await aiCommand({
-        message: text,
-        context,
-        conversationHistory: conversationHistory.slice(-10),
-      });
-
-      removeTypingIndicator();
-      conversationHistory.push({ role: 'user', content: text });
-      conversationHistory.push({ role: 'assistant', content: result.response });
-
-      appendMessage('assistant', result.response);
-
-      // Save assistant message to DB
-      if (currentConversationId) {
-        try { await addConversationMessage(currentConversationId, 'assistant', result.response); } catch {}
-      }
-
-      // Handle auto-executed tool side effects
-      if (result.autoExecuted && result.navigateTo) {
-        window.location.hash = result.navigateTo;
-      }
-    } catch (err) {
-      removeTypingIndicator();
-      appendMessage('error', err.message || 'Failed to get response');
-    } finally {
-      isSending = false;
-      sendBtn.disabled = false;
-      input.disabled = false;
-      input.focus();
-    }
+    await sendStreamingMessage(text, input, sendBtn);
   }
 
   input.addEventListener('keydown', (e) => {
@@ -215,14 +217,191 @@ function createDrawer() {
   sendBtn.addEventListener('click', sendMessage);
 
   document.body.appendChild(drawerEl);
+  updateContextBadge();
   return drawerEl;
 }
 
 /**
- * Handle file attachment — show in chat and send to AI
+ * Send a message via SSE streaming with progressive rendering
+ */
+async function sendStreamingMessage(text, input, sendBtn) {
+  const messagesEl = document.getElementById('chat-messages');
+  if (!messagesEl) return;
+
+  // Create the assistant message container for streaming
+  const msgEl = document.createElement('div');
+  msgEl.className = 'chat-msg chat-msg-assistant chat-msg-streaming';
+
+  const toolIndicatorEl = document.createElement('div');
+  toolIndicatorEl.className = 'chat-tool-indicator';
+  toolIndicatorEl.style.display = 'none';
+
+  const textEl = document.createElement('div');
+  textEl.className = 'chat-msg-text';
+
+  const cursorEl = document.createElement('span');
+  cursorEl.className = 'chat-stream-cursor';
+
+  msgEl.appendChild(toolIndicatorEl);
+  msgEl.appendChild(textEl);
+  messagesEl.appendChild(msgEl);
+  messagesEl.scrollTop = messagesEl.scrollHeight;
+
+  let fullText = '';
+  let pendingConfirmation = null;
+
+  const context = getPageContext();
+
+  currentStream = aiCommandStream({
+    message: text,
+    context,
+    conversationHistory: conversationHistory.slice(-10),
+  }, {
+    onTextDelta(data) {
+      fullText += data.text;
+      textEl.innerHTML = renderMarkdown(fullText);
+      textEl.appendChild(cursorEl);
+      messagesEl.scrollTop = messagesEl.scrollHeight;
+    },
+
+    onTextClear() {
+      fullText = '';
+      textEl.innerHTML = '';
+    },
+
+    onToolStart(data) {
+      toolIndicatorEl.style.display = 'flex';
+      toolIndicatorEl.innerHTML = `
+        <span class="chat-tool-spinner"></span>
+        <span class="chat-tool-label">${escapeHtml(getToolLabel(data.name))}</span>
+      `;
+      messagesEl.scrollTop = messagesEl.scrollHeight;
+    },
+
+    onToolResult(data) {
+      toolIndicatorEl.innerHTML = `
+        <svg class="chat-tool-check" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+        <span class="chat-tool-label">${escapeHtml(getToolLabel(data.name))}</span>
+      `;
+    },
+
+    onConfirmation(data) {
+      pendingConfirmation = data;
+    },
+
+    onError(data) {
+      const errorMsg = data.message || 'Something went wrong';
+      if (!fullText) {
+        textEl.innerHTML = `<span class="chat-error-text">${escapeHtml(errorMsg)}</span>`;
+      } else {
+        textEl.innerHTML = renderMarkdown(fullText) + `<br><span class="chat-error-text">${escapeHtml(errorMsg)}</span>`;
+      }
+    },
+
+    onDone(_data) {
+      currentStream = null;
+      cursorEl.remove();
+      msgEl.classList.remove('chat-msg-streaming');
+
+      // Hide tool indicator after a brief delay
+      if (toolIndicatorEl.style.display !== 'none') {
+        setTimeout(() => { toolIndicatorEl.classList.add('chat-tool-done'); }, 500);
+      }
+
+      // Final render with markdown
+      if (fullText) {
+        textEl.innerHTML = renderMarkdown(fullText);
+      }
+
+      // Handle confirmation flow
+      if (pendingConfirmation) {
+        appendConfirmation(pendingConfirmation, messagesEl);
+      }
+
+      // Save to conversation history and DB
+      const responseText = fullText || (pendingConfirmation ? pendingConfirmation.message : '');
+      if (responseText) {
+        conversationHistory.push({ role: 'user', content: text });
+        conversationHistory.push({ role: 'assistant', content: responseText });
+
+        if (currentConversationId) {
+          addConversationMessage(currentConversationId, 'assistant', responseText).catch(() => {});
+        }
+      }
+
+      isSending = false;
+      sendBtn.disabled = false;
+      input.disabled = false;
+      input.focus();
+    },
+  });
+}
+
+/**
+ * Append a confirmation card for actions requiring user approval
+ */
+function appendConfirmation(data, messagesEl) {
+  const card = document.createElement('div');
+  card.className = 'chat-confirmation-card';
+  card.innerHTML = `
+    <div class="chat-confirmation-header">
+      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+      <span>Confirm action</span>
+    </div>
+    ${data.preview ? `<div class="chat-confirmation-preview">${escapeHtml(data.preview)}</div>` : ''}
+    <div class="chat-confirmation-actions">
+      <button class="btn btn-primary btn-sm chat-confirm-btn">Confirm</button>
+      <button class="btn btn-secondary btn-sm chat-cancel-btn">Cancel</button>
+    </div>
+  `;
+
+  messagesEl.appendChild(card);
+  messagesEl.scrollTop = messagesEl.scrollHeight;
+
+  card.querySelector('.chat-confirm-btn').addEventListener('click', async () => {
+    card.querySelector('.chat-confirmation-actions').innerHTML = '<span class="chat-tool-spinner"></span> Executing...';
+    try {
+      const result = await aiConfirm(data.confirmationId);
+      card.remove();
+      if (result.success !== false) {
+        appendMessage('assistant', result.response || 'Done');
+        if (result.undoId) {
+          showToast(result.response || 'Done', 'success', 15000, {
+            label: 'Undo',
+            onClick: async () => {
+              try {
+                await aiUndo(result.undoId);
+                showToast('Undone', 'success');
+                window.dispatchEvent(new Event('hashchange'));
+              } catch (err) {
+                showToast(err.message || 'Undo failed', 'error');
+              }
+            },
+          });
+        }
+        if (result.navigateTo) {
+          window.location.hash = result.navigateTo;
+        }
+      } else {
+        appendMessage('error', result.response || 'Action failed');
+      }
+    } catch (err) {
+      card.remove();
+      appendMessage('error', err.message || 'Failed to execute action');
+    }
+  });
+
+  card.querySelector('.chat-cancel-btn').addEventListener('click', () => {
+    card.remove();
+    appendMessage('assistant', 'Action cancelled.');
+  });
+}
+
+/**
+ * Handle file attachment — show in chat and send to AI via streaming
  */
 async function handleFileAttachment(file, input, sendBtn) {
-  const maxSize = 10 * 1024 * 1024; // 10MB
+  const maxSize = 10 * 1024 * 1024;
   if (file.size > maxSize) {
     appendMessage('error', `File too large (${(file.size / 1024 / 1024).toFixed(1)}MB). Max size is 10MB.`);
     return;
@@ -234,19 +413,19 @@ async function handleFileAttachment(file, input, sendBtn) {
   isSending = true;
   sendBtn.disabled = true;
   input.disabled = true;
-  appendTypingIndicator();
 
   try {
     const text = await extractFileText(file);
     if (!text) {
-      removeTypingIndicator();
       appendMessage('error', 'Could not extract text from this file type.');
+      isSending = false;
+      sendBtn.disabled = false;
+      input.disabled = false;
       return;
     }
 
     const prompt = `The user attached a file: "${file.name}" (${file.type || 'unknown type'}).\n\nFile contents:\n${text.slice(0, 8000)}\n\nAnalyze this document and tell me what you found. If it contains recipes, menus, ingredient lists, or pricing — extract the key information.`;
 
-    // Ensure we have a conversation ID
     if (!currentConversationId) {
       try {
         const conv = await createConversation('');
@@ -258,26 +437,9 @@ async function handleFileAttachment(file, input, sendBtn) {
       try { await addConversationMessage(currentConversationId, 'user', `[Attached: ${file.name}]`); } catch {}
     }
 
-    const context = getPageContext();
-    const result = await aiCommand({
-      message: prompt,
-      context,
-      conversationHistory: conversationHistory.slice(-10),
-    });
-
-    removeTypingIndicator();
-    conversationHistory.push({ role: 'user', content: prompt });
-    conversationHistory.push({ role: 'assistant', content: result.response });
-
-    appendMessage('assistant', result.response);
-
-    if (currentConversationId) {
-      try { await addConversationMessage(currentConversationId, 'assistant', result.response); } catch {}
-    }
+    await sendStreamingMessage(prompt, input, sendBtn);
   } catch (err) {
-    removeTypingIndicator();
     appendMessage('error', err.message || 'Failed to process file');
-  } finally {
     isSending = false;
     sendBtn.disabled = false;
     input.disabled = false;
@@ -285,24 +447,18 @@ async function handleFileAttachment(file, input, sendBtn) {
   }
 }
 
-/**
- * Extract text from various file types
- */
 async function extractFileText(file) {
   const type = file.type || '';
   const name = file.name.toLowerCase();
 
-  // CSV/text files
   if (type.startsWith('text/') || name.endsWith('.csv')) {
     return await file.text();
   }
 
-  // JSON
   if (type === 'application/json' || name.endsWith('.json')) {
     return await file.text();
   }
 
-  // For PDF, images, docx — send to server for extraction
   if (type === 'application/pdf' || name.endsWith('.pdf') ||
       type.startsWith('image/') ||
       name.endsWith('.xlsx') || name.endsWith('.xls') ||
@@ -324,9 +480,6 @@ async function extractFileText(file) {
   return null;
 }
 
-/**
- * Show the history view (list of past conversations)
- */
 async function showHistoryView() {
   const messagesEl = document.getElementById('chat-messages');
   if (!messagesEl) return;
@@ -365,7 +518,6 @@ async function showHistoryView() {
         `).join('')}
       </div>`;
 
-    // Click to load a conversation
     messagesEl.querySelectorAll('.chat-history-item').forEach(item => {
       item.addEventListener('click', (e) => {
         if (e.target.closest('.chat-history-item-delete')) return;
@@ -374,7 +526,6 @@ async function showHistoryView() {
       });
     });
 
-    // Delete buttons
     messagesEl.querySelectorAll('.chat-history-item-delete').forEach(btn => {
       btn.addEventListener('click', async (e) => {
         e.stopPropagation();
@@ -385,7 +536,6 @@ async function showHistoryView() {
           if (currentConversationId === id) {
             clearChat();
           }
-          // Check if list is now empty
           if (!messagesEl.querySelector('.chat-history-item')) {
             messagesEl.innerHTML = `
               <div class="chat-history-empty">
@@ -401,9 +551,6 @@ async function showHistoryView() {
   }
 }
 
-/**
- * Hide history view and restore chat
- */
 function hideHistoryView() {
   showingHistory = false;
   const historyBtn = drawerEl.querySelector('.chat-drawer-history-btn');
@@ -411,9 +558,6 @@ function hideHistoryView() {
   restoreMessages();
 }
 
-/**
- * Load a past conversation into the chat
- */
 async function loadConversation(convId) {
   showingHistory = false;
   const historyBtn = drawerEl.querySelector('.chat-drawer-history-btn');
@@ -434,7 +578,8 @@ async function loadConversation(convId) {
     for (const msg of messages) {
       const el = document.createElement('div');
       el.className = `chat-msg chat-msg-${msg.role}`;
-      el.innerHTML = `<div class="chat-msg-text">${escapeHtml(msg.content)}</div>`;
+      const contentHtml = msg.role === 'assistant' ? renderMarkdown(msg.content) : escapeHtml(msg.content);
+      el.innerHTML = `<div class="chat-msg-text">${contentHtml}</div>`;
       messagesEl.appendChild(el);
     }
     messagesEl.scrollTop = messagesEl.scrollHeight;
@@ -443,9 +588,6 @@ async function loadConversation(convId) {
   }
 }
 
-/**
- * Restore the current conversation messages to the UI
- */
 function restoreMessages() {
   const messagesEl = document.getElementById('chat-messages');
   if (!messagesEl) return;
@@ -463,15 +605,13 @@ function restoreMessages() {
   for (const msg of conversationHistory) {
     const el = document.createElement('div');
     el.className = `chat-msg chat-msg-${msg.role}`;
-    el.innerHTML = `<div class="chat-msg-text">${escapeHtml(msg.content)}</div>`;
+    const contentHtml = msg.role === 'assistant' ? renderMarkdown(msg.content) : escapeHtml(msg.content);
+    el.innerHTML = `<div class="chat-msg-text">${contentHtml}</div>`;
     messagesEl.appendChild(el);
   }
   messagesEl.scrollTop = messagesEl.scrollHeight;
 }
 
-/**
- * Format a date string for display
- */
 function formatDate(dateStr) {
   if (!dateStr) return '';
   const d = new Date(dateStr + 'Z');
@@ -488,61 +628,46 @@ function formatDate(dateStr) {
   return d.toLocaleDateString();
 }
 
-/**
- * Show typing indicator
- */
-function appendTypingIndicator() {
-  const messagesEl = document.getElementById('chat-messages');
-  if (!messagesEl) return;
-
-  const indicator = document.createElement('div');
-  indicator.className = 'chat-msg chat-msg-assistant chat-typing-indicator';
-  indicator.innerHTML = `<div class="chat-msg-text"><span class="chat-typing-dots"><span></span><span></span><span></span></span></div>`;
-  messagesEl.appendChild(indicator);
-  messagesEl.scrollTop = messagesEl.scrollHeight;
-}
-
-/**
- * Remove typing indicator
- */
-function removeTypingIndicator() {
-  const indicator = document.querySelector('.chat-typing-indicator');
-  if (indicator) indicator.remove();
-}
-
-/**
- * Append a message to the chat
- */
 function appendMessage(role, text) {
   const messagesEl = document.getElementById('chat-messages');
   if (!messagesEl) return;
 
-  // Remove welcome message on first real message
   const welcome = messagesEl.querySelector('.chat-drawer-welcome');
   if (welcome) welcome.remove();
 
   const msg = document.createElement('div');
   msg.className = `chat-msg chat-msg-${role}`;
-  msg.innerHTML = `<div class="chat-msg-text">${escapeHtml(text)}</div>`;
+  const contentHtml = role === 'assistant' ? renderMarkdown(text) : escapeHtml(text);
+  msg.innerHTML = `<div class="chat-msg-text">${contentHtml}</div>`;
   messagesEl.appendChild(msg);
   messagesEl.scrollTop = messagesEl.scrollHeight;
 }
 
 /**
- * Open the chat drawer
+ * Update the context badge in the header
  */
+function updateContextBadge() {
+  const badge = document.getElementById('chat-context-badge');
+  if (!badge) return;
+  const label = getContextLabel();
+  if (label) {
+    badge.textContent = label;
+    badge.style.display = 'inline-flex';
+  } else {
+    badge.style.display = 'none';
+  }
+}
+
 export function openDrawer() {
   createDrawer();
   checkSessionTimeout();
+  updateContextBadge();
   drawerEl.classList.add('chat-drawer-open');
   isOpen = true;
   const input = drawerEl.querySelector('.chat-drawer-input');
   if (input) setTimeout(() => input.focus(), 300);
 }
 
-/**
- * Close the chat drawer
- */
 export function closeDrawer() {
   if (drawerEl) {
     drawerEl.classList.remove('chat-drawer-open');
@@ -550,9 +675,6 @@ export function closeDrawer() {
   }
 }
 
-/**
- * Toggle the drawer
- */
 export function toggleDrawer() {
   if (isOpen) {
     closeDrawer();
@@ -561,14 +683,16 @@ export function toggleDrawer() {
   }
 }
 
-/**
- * Clear conversation history and reset UI
- */
 export function clearChat() {
+  if (currentStream) {
+    currentStream.abort();
+    currentStream = null;
+  }
   conversationHistory = [];
   currentConversationId = null;
   lastActivityTime = Date.now();
   showingHistory = false;
+  isSending = false;
   const historyBtn = drawerEl ? drawerEl.querySelector('.chat-drawer-history-btn') : null;
   if (historyBtn) historyBtn.classList.remove('active');
   const messagesEl = document.getElementById('chat-messages');
@@ -580,11 +704,15 @@ export function clearChat() {
       </div>
     `;
   }
+  // Re-enable inputs
+  if (drawerEl) {
+    const inp = drawerEl.querySelector('.chat-drawer-input');
+    const btn = drawerEl.querySelector('.chat-drawer-send');
+    if (inp) inp.disabled = false;
+    if (btn) btn.disabled = false;
+  }
 }
 
-/**
- * Initialize the chat drawer
- */
 export function initChatDrawer() {
   createDrawer();
 
@@ -595,4 +723,7 @@ export function initChatDrawer() {
       toggleDrawer();
     }
   });
+
+  // Update context badge on navigation
+  window.addEventListener('hashchange', updateContextBadge);
 }

@@ -304,11 +304,207 @@ async function executeConfirmedAction(confirmationData, broadcast) {
   return result;
 }
 
+/**
+ * Streaming entry point for chat drawer.
+ * Calls Haiku with streaming enabled and emits SSE events via the callback.
+ * Supports the same agentic tool loop as processCommand.
+ * @param {string} message
+ * @param {object} pageContext
+ * @param {Array} conversationHistory
+ * @param {Function} broadcast
+ * @param {Function} emit - callback(eventType, data) for SSE events
+ */
+async function processCommandStream(message, pageContext, conversationHistory, broadcast, emit) {
+  const apiKey = getApiKey();
+  if (!apiKey) {
+    emit('error', { message: 'Please set up your Anthropic API key in Settings to use AI features.' });
+    emit('done', {});
+    return;
+  }
+
+  const limitCheck = checkUsageLimits();
+  if (!limitCheck.allowed) {
+    emit('error', { message: limitCheck.reason });
+    emit('done', {});
+    return;
+  }
+
+  const client = new Anthropic({ apiKey, timeout: 60 * 1000 });
+  const context = await buildContext(pageContext);
+  const systemPrompt = buildSystemPrompt(context);
+  const tools = getToolDefinitions();
+
+  const messages = [];
+  if (conversationHistory && conversationHistory.length) {
+    messages.push(...conversationHistory);
+  }
+  messages.push({ role: 'user', content: message });
+
+  const executedTools = [];
+  let totalTokensIn = 0;
+  let totalTokensOut = 0;
+
+  for (let round = 0; round < MAX_TOOL_ROUNDS + 1; round++) {
+    let textResponse = '';
+    let toolCall = null;
+    let tokensIn = 0;
+    let tokensOut = 0;
+
+    try {
+      const stream = client.messages.stream({
+        model: MODEL,
+        max_tokens: 1024,
+        system: systemPrompt,
+        tools,
+        messages,
+      });
+
+      for await (const event of stream) {
+        if (event.type === 'content_block_start') {
+          if (event.content_block.type === 'tool_use') {
+            toolCall = { id: event.content_block.id, name: event.content_block.name, input: '' };
+            emit('tool_start', { name: event.content_block.name });
+          }
+        } else if (event.type === 'content_block_delta') {
+          if (event.delta.type === 'text_delta') {
+            textResponse += event.delta.text;
+            emit('text_delta', { text: event.delta.text });
+          } else if (event.delta.type === 'input_json_delta' && toolCall) {
+            toolCall.input += event.delta.partial_json;
+          }
+        } else if (event.type === 'message_delta') {
+          tokensOut = event.usage?.output_tokens || 0;
+        } else if (event.type === 'message_start') {
+          tokensIn = event.message?.usage?.input_tokens || 0;
+        }
+      }
+
+      // Parse tool input JSON if we got one
+      if (toolCall && typeof toolCall.input === 'string') {
+        try {
+          toolCall.input = JSON.parse(toolCall.input);
+        } catch {
+          toolCall.input = {};
+        }
+      }
+    } catch (err) {
+      const isRetryable = err.status >= 500 || err.status === 429;
+      if (isRetryable && round === 0) {
+        // One retry for the streaming call
+        await new Promise(r => setTimeout(r, 2000));
+        try {
+          const response = await callApi(client, systemPrompt, tools, messages);
+          tokensIn = response.usage?.input_tokens || 0;
+          tokensOut = response.usage?.output_tokens || 0;
+          for (const block of response.content) {
+            if (block.type === 'text') {
+              textResponse += block.text;
+              emit('text_delta', { text: block.text });
+            } else if (block.type === 'tool_use') {
+              toolCall = { id: block.id, name: block.name, input: block.input };
+              emit('tool_start', { name: block.name });
+            }
+          }
+        } catch (retryErr) {
+          emit('error', { message: retryErr.message || 'AI request failed' });
+          emit('done', {});
+          return;
+        }
+      } else {
+        emit('error', { message: err.message || 'AI request failed' });
+        emit('done', {});
+        return;
+      }
+    }
+
+    totalTokensIn += tokensIn;
+    totalTokensOut += tokensOut;
+
+    // No tool call — final text response
+    if (!toolCall) {
+      const toolNames = executedTools.map(t => t.name).join(',') || null;
+      trackUsage(totalTokensIn, totalTokensOut, toolNames);
+
+      emit('done', {
+        fullText: textResponse,
+        autoExecuted: executedTools.length > 0,
+        toolResults: executedTools.map(t => ({ name: t.name, result: t.result })),
+      });
+      return;
+    }
+
+    // Tool call: auto-approved?
+    if (isAutoApproved(toolCall.name) && round < MAX_TOOL_ROUNDS) {
+      const result = executeToolHandler(toolCall.name, toolCall.input, { preview: false, pageContext, broadcast });
+      executedTools.push({ name: toolCall.name, input: toolCall.input, result });
+      emit('tool_result', { name: toolCall.name, message: result.message });
+
+      // Build messages for next round
+      const assistantContent = [];
+      if (textResponse) assistantContent.push({ type: 'text', text: textResponse });
+      assistantContent.push({ type: 'tool_use', id: toolCall.id, name: toolCall.name, input: toolCall.input });
+      messages.push({ role: 'assistant', content: assistantContent });
+      messages.push({
+        role: 'user',
+        content: [{ type: 'tool_result', tool_use_id: toolCall.id, content: result.message }],
+      });
+
+      // Reset text for next round
+      textResponse = '';
+      emit('text_clear', {});
+      continue;
+    }
+
+    // Auto-approved on final round
+    if (isAutoApproved(toolCall.name)) {
+      const result = executeToolHandler(toolCall.name, toolCall.input, { preview: false, pageContext, broadcast });
+      executedTools.push({ name: toolCall.name, input: toolCall.input, result });
+      emit('tool_result', { name: toolCall.name, message: result.message });
+
+      const toolNamesStr = executedTools.map(t => t.name).join(',');
+      trackUsage(totalTokensIn, totalTokensOut, toolNamesStr);
+
+      emit('done', {
+        fullText: textResponse || result.message,
+        autoExecuted: true,
+        toolResults: executedTools.map(t => ({ name: t.name, result: t.result })),
+      });
+      return;
+    }
+
+    // Non-auto-approved — needs confirmation
+    const toolNamesStr = executedTools.map(t => t.name).join(',') || null;
+    trackUsage(totalTokensIn, totalTokensOut, toolNamesStr ? toolNamesStr + ',' + toolCall.name : toolCall.name);
+
+    const preview = executeToolHandler(toolCall.name, toolCall.input, { preview: true, pageContext });
+
+    emit('confirmation', {
+      toolName: toolCall.name,
+      preview: preview.description,
+      message: textResponse || preview.message,
+      confirmationData: {
+        toolName: toolCall.name,
+        toolInput: toolCall.input,
+        pageContext,
+      },
+    });
+    emit('done', {});
+    return;
+  }
+
+  trackUsage(totalTokensIn, totalTokensOut, null);
+  emit('error', { message: 'Processing limit reached. Please try again.' });
+  emit('done', {});
+}
+
 module.exports = {
   processCommand,
+  processCommandStream,
   executeConfirmedAction,
   getAiSettings,
   getUsageStats,
   getApiKey,
   checkUsageLimits,
+  buildSystemPrompt,
+  buildContext: require('./aiContext').buildContext,
 };
