@@ -4,6 +4,7 @@ const PUBLIC_PATHS = [
   '/api/auth/setup',
   '/api/auth/forgot',
   '/api/auth/reset',
+  '/api/calendar/callback',
 ];
 
 function authMiddleware(req, res, next) {

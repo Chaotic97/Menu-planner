@@ -231,7 +231,10 @@ export const aiGenerateTasks = (menuId) => request(`/ai/generate-tasks/${menuId}
 // Google Calendar
 export const getCalendarSettings = () => request('/calendar/settings');
 export const saveCalendarSettings = (data) => request('/calendar/settings', { method: 'POST', body: data });
+export const getCalendarAuthUrl = () => request('/calendar/auth-url');
+export const disconnectCalendar = () => request('/calendar/disconnect', { method: 'POST' });
 export const getCalendarEvents = () => request('/calendar/events');
+export const getCalendarList = () => request('/calendar/calendars');
 
 // Auth — public endpoints (no 401 redirect)
 async function authRequest(path, options = {}) {
