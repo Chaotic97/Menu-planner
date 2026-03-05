@@ -4706,6 +4706,18 @@ textarea.input { resize: vertical; min-height: 80px; }
 .chat-drawer-attach:hover {
   color: var(--text);
 }
+/* Visually hide file input but keep it accessible for iOS Safari */
+.chat-drawer-file-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+  padding: 0;
+  margin: -1px;
+}
 
 /* --- Chat Drawer: error messages --- */
 .chat-msg-error .chat-msg-text {
@@ -5020,14 +5032,14 @@ textarea.input { resize: vertical; min-height: 80px; }
 .chat-fab svg {
   pointer-events: none;
 }
-/* When command bar is visible, shift FAB above it */
+/* Hide FAB when command bar is visible — command bar already has AI access */
 .qc-bar-active ~ .chat-fab {
-  bottom: 80px;
+  display: none !important;
 }
 /* Mobile: above bottom nav */
 @media (max-width: 480px) {
   .chat-fab {
-    bottom: 72px;
+    bottom: 80px;
     right: 16px;
     width: 48px;
     height: 48px;
@@ -5035,9 +5047,6 @@ textarea.input { resize: vertical; min-height: 80px; }
   .chat-fab svg {
     width: 22px;
     height: 22px;
-  }
-  .qc-bar-active ~ .chat-fab {
-    bottom: 120px;
   }
 }
 
