@@ -2,6 +2,7 @@
    CSS Reset & Variables
    ============================ */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { overscroll-behavior: none; touch-action: manipulation; }
 
 :root {
   /* --- Brand colours --- */
@@ -118,6 +119,8 @@ body {
   min-height: 100vh;
   min-height: 100dvh;
   -webkit-tap-highlight-color: transparent;
+  overscroll-behavior: none;
+  overflow-x: hidden;
 }
 
 /* ============================
@@ -4943,6 +4946,46 @@ textarea.input { resize: vertical; min-height: 80px; }
   gap: var(--space-sm);
   align-items: center;
   font-size: var(--text-sm);
+  flex-wrap: wrap;
+}
+
+/* --- Chat Drawer: Mobile --- */
+@media (max-width: 480px) {
+  .chat-drawer-panel {
+    width: 100vw;
+    max-width: 100vw;
+  }
+  .chat-drawer-header {
+    padding: var(--space-sm) var(--space-md);
+    padding-top: calc(var(--space-sm) + env(safe-area-inset-top, 0px));
+  }
+  .chat-drawer-input-row {
+    padding: var(--space-sm) var(--space-md);
+    padding-bottom: calc(var(--space-sm) + env(safe-area-inset-bottom, 0px));
+  }
+  .chat-drawer-input {
+    font-size: 16px; /* prevent iOS auto-zoom */
+    min-height: 38px;
+  }
+  .chat-msg {
+    max-width: 90%;
+  }
+  .chat-confirmation-card {
+    max-width: 95%;
+  }
+  .chat-history-item-delete {
+    opacity: 1; /* always visible on touch */
+  }
+}
+
+/* --- Chat Drawer: iPad / Tablet --- */
+@media (min-width: 481px) and (max-width: 1024px) {
+  .chat-drawer-panel {
+    width: 420px;
+  }
+  .chat-drawer-input-row {
+    padding-bottom: calc(var(--space-md) + env(safe-area-inset-bottom, 0px));
+  }
 }
 
 /* ============================
@@ -6156,10 +6199,51 @@ textarea.input { resize: vertical; min-height: 80px; }
 @media (max-width: 480px) {
   .cb-bar {
     bottom: calc(56px + env(safe-area-inset-bottom, 0px));
-    padding-bottom: var(--space-sm);
+    padding: 0 var(--space-sm) var(--space-xs);
+  }
+  .cb-inner {
+    gap: 6px;
+    padding-top: var(--space-xs);
+  }
+  .cb-input {
+    font-size: 16px; /* prevent iOS auto-zoom on focus */
+    min-height: 38px;
+    padding: 6px 12px;
+  }
+  .cb-mode-toggle {
+    width: 34px;
+    height: 34px;
+  }
+  .cb-send {
+    width: 38px;
+    height: 38px;
+  }
+  .cb-chat-toggle {
+    width: 34px;
+    height: 34px;
+  }
+  .cb-suggestions {
+    max-height: 50vh;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .cb-preview-visible {
+    max-height: 40vh;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .cb-preview-buttons {
+    flex-wrap: wrap;
   }
   #app-content.qc-bar-active {
     padding-bottom: calc(120px + env(safe-area-inset-bottom, 0px));
+  }
+}
+
+/* --- Command Bar: iPad / Tablet --- */
+@media (min-width: 481px) and (max-width: 1024px) {
+  .cb-bar {
+    padding-bottom: calc(var(--space-sm) + env(safe-area-inset-bottom, 0px));
   }
 }
 
@@ -6716,6 +6800,23 @@ textarea.input { resize: vertical; min-height: 80px; }
   .cal-event {
     font-size: 10px;
     padding: 1px 4px;
+  }
+}
+
+/* --- Global: iOS input zoom prevention --- */
+@media (max-width: 480px) {
+  input[type="text"],
+  input[type="number"],
+  input[type="email"],
+  input[type="password"],
+  input[type="search"],
+  input[type="tel"],
+  input[type="url"],
+  input[type="date"],
+  input[type="time"],
+  textarea,
+  select {
+    font-size: 16px !important;
   }
 }
 
