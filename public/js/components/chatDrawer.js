@@ -369,6 +369,7 @@ function appendConfirmation(data, messagesEl) {
       <button class="btn btn-primary btn-sm chat-confirm-btn">Confirm</button>
       <button class="btn btn-primary btn-sm chat-confirm-all-btn" title="Auto-approve this action type for the rest of this session">Confirm All</button>
       <button class="btn btn-secondary btn-sm chat-cancel-btn">Cancel</button>
+      <button class="btn btn-sm chat-skip-btn" title="Skip this action and continue with remaining items">Skip</button>
     </div>
   `;
 
@@ -450,6 +451,33 @@ function appendConfirmation(data, messagesEl) {
   card.querySelector('.chat-cancel-btn').addEventListener('click', () => {
     card.remove();
     appendMessage('assistant', 'Action cancelled.');
+  });
+
+  card.querySelector('.chat-skip-btn').addEventListener('click', async () => {
+    card.remove();
+    appendMessage('assistant', 'Action skipped.');
+
+    // Tell the AI to skip this action and continue with the rest
+    const skipText = 'That was wrong — skip it and continue with the remaining items.';
+    appendMessage('user', skipText);
+    conversationHistory.push({ role: 'user', content: skipText });
+    if (currentConversationId) {
+      addConversationMessage(currentConversationId, 'user', skipText).catch(() => {});
+    }
+
+    const input = drawerEl.querySelector('.chat-drawer-input');
+    const sendBtn = drawerEl.querySelector('.chat-drawer-send');
+    isSending = true;
+    if (input) input.disabled = true;
+    if (sendBtn) sendBtn.disabled = true;
+
+    try {
+      await sendStreamingMessage(skipText, input, sendBtn);
+    } catch {
+      isSending = false;
+      if (input) input.disabled = false;
+      if (sendBtn) sendBtn.disabled = false;
+    }
   });
 }
 

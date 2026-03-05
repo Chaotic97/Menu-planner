@@ -4960,6 +4960,14 @@ textarea.input { resize: vertical; min-height: 80px; }
   font-size: var(--text-sm);
   flex-wrap: wrap;
 }
+.chat-skip-btn {
+  background: transparent;
+  color: var(--danger);
+  border: 1px solid var(--danger);
+}
+.chat-skip-btn:hover {
+  background: rgba(var(--danger-rgb), 0.1);
+}
 
 /* --- Chat Drawer: Mobile --- */
 @media (max-width: 480px) {

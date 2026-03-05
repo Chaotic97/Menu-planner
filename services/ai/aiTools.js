@@ -27,7 +27,7 @@ const TOOL_REGISTRY = [
   },
   {
     name: 'create_dish',
-    description: 'Create a new dish in PlateStack. Use when the user wants to add a new dish/recipe.',
+    description: 'Create a new dish in PlateStack. Use when the user wants to add a new dish/recipe. Only create actual food or drink items — never create non-food items like section headers, menu labels, prices, or descriptions as dishes.',
     input_schema: {
       type: 'object',
       properties: {
