@@ -712,12 +712,22 @@ function updateContextBadge() {
   }
 }
 
+let savedScrollY = 0;
+
 export function openDrawer() {
   createDrawer();
   checkSessionTimeout();
   updateContextBadge();
   drawerEl.classList.add('chat-drawer-open');
-  document.body.classList.add('chat-drawer-active');
+
+  // Lock body scroll — position:fixed is required for iOS/iPad
+  savedScrollY = window.scrollY;
+  document.body.style.position = 'fixed';
+  document.body.style.top = `-${savedScrollY}px`;
+  document.body.style.left = '0';
+  document.body.style.right = '0';
+  document.body.style.overflow = 'hidden';
+
   isOpen = true;
   const input = drawerEl.querySelector('.chat-drawer-input');
   if (input) setTimeout(() => input.focus(), 300);
@@ -726,7 +736,15 @@ export function openDrawer() {
 export function closeDrawer() {
   if (drawerEl) {
     drawerEl.classList.remove('chat-drawer-open');
-    document.body.classList.remove('chat-drawer-active');
+
+    // Restore body scroll
+    document.body.style.position = '';
+    document.body.style.top = '';
+    document.body.style.left = '';
+    document.body.style.right = '';
+    document.body.style.overflow = '';
+    window.scrollTo(0, savedScrollY);
+
     isOpen = false;
   }
 }

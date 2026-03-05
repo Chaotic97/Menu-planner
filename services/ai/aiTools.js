@@ -2973,7 +2973,7 @@ const handlers = {
       const ing = db.prepare('SELECT name FROM ingredients WHERE id = ?').get(sourceId);
       if (ing) sourceName = ing.name;
     }
-    if (!sourceId) return { description: 'Source ingredient not found', message: 'Could not find the source ingredient to merge from.' };
+    if (!sourceId) return { success: false, description: 'Source ingredient not found', message: `Could not find source ingredient "${sourceName || input.source_id}". It may have already been merged or deleted. Skip this pair and continue with the next one.` };
 
     // Resolve target — exclude source to prevent same-ingredient matches
     let targetId = input.target_id;
@@ -2990,9 +2990,9 @@ const handlers = {
       const ing = db.prepare('SELECT name FROM ingredients WHERE id = ?').get(targetId);
       if (ing) targetName = ing.name;
     }
-    if (!targetId) return { description: 'Target ingredient not found', message: 'Could not find the target ingredient to merge into.' };
+    if (!targetId) return { success: false, description: 'Target ingredient not found', message: `Could not find target ingredient "${targetName || input.target_id}". It may have already been merged or deleted. Skip this pair and continue with the next one.` };
 
-    if (sourceId === targetId) return { description: 'Same ingredient', message: 'Source and target are the same ingredient.' };
+    if (sourceId === targetId) return { success: false, description: 'Same ingredient', message: `Source and target resolved to the same ingredient (ID ${sourceId}: "${sourceName}"). Skip this pair and continue with the next one.` };
 
     // Count affected recipes
     const affectedDishes = db.prepare('SELECT COUNT(*) as cnt FROM dish_ingredients WHERE ingredient_id = ?').get(sourceId).cnt;
@@ -3047,7 +3047,7 @@ const handlers = {
   delete_ingredient(input, opts) {
     const db = getDb();
     const resolved = resolveIngredient(db, input);
-    if (!resolved) return { description: 'Ingredient not found', message: 'Could not find that ingredient.' };
+    if (!resolved) return { success: false, description: 'Ingredient not found', message: 'Could not find that ingredient. It may have already been deleted. Skip and continue.' };
     const { ingredientId, ingredientName } = resolved;
 
     const usage = db.prepare('SELECT COUNT(*) as cnt FROM dish_ingredients WHERE ingredient_id = ?').get(ingredientId).cnt;

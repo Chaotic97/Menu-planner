@@ -4497,11 +4497,6 @@ textarea.input { resize: vertical; min-height: 80px; }
 /* ============================
    Chat Drawer (Level 2 prep)
    ============================ */
-body.chat-drawer-active {
-  overflow: hidden;
-  touch-action: none;
-}
-
 .chat-drawer {
   display: none;
 }
