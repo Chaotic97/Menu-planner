@@ -4988,6 +4988,59 @@ textarea.input { resize: vertical; min-height: 80px; }
   }
 }
 
+/* --- Chat FAB (always-visible floating button) --- */
+.chat-fab {
+  display: none;
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  z-index: 150;
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  border: none;
+  background: var(--primary);
+  color: white;
+  cursor: pointer;
+  align-items: center;
+  justify-content: center;
+  box-shadow: var(--shadow-lg);
+  transition: transform 0.2s, background 0.2s, opacity 0.2s;
+}
+.chat-fab-visible {
+  display: flex;
+}
+.chat-fab:hover {
+  background: var(--primary-dark);
+  transform: scale(1.08);
+}
+.chat-fab:active {
+  transform: scale(0.95);
+}
+.chat-fab svg {
+  pointer-events: none;
+}
+/* When command bar is visible, shift FAB above it */
+.qc-bar-active ~ .chat-fab {
+  bottom: 80px;
+}
+/* Mobile: above bottom nav */
+@media (max-width: 480px) {
+  .chat-fab {
+    bottom: 72px;
+    right: 16px;
+    width: 48px;
+    height: 48px;
+  }
+  .chat-fab svg {
+    width: 22px;
+    height: 22px;
+  }
+  .qc-bar-active ~ .chat-fab {
+    bottom: 120px;
+  }
+}
+
 /* ============================
    AI Cleanup & Diff (.ai-)
    ============================ */

@@ -12,6 +12,7 @@ import { renderMarkdown } from '../utils/markdown.js';
 import { showToast } from './toast.js';
 
 let drawerEl = null;
+let fabEl = null;
 let isOpen = false;
 let conversationHistory = [];
 let currentConversationId = null;
@@ -729,6 +730,7 @@ export function openDrawer() {
   document.body.style.overflow = 'hidden';
 
   isOpen = true;
+  updateFabVisibility();
   const input = drawerEl.querySelector('.chat-drawer-input');
   if (input) setTimeout(() => input.focus(), 300);
 }
@@ -746,6 +748,7 @@ export function closeDrawer() {
     window.scrollTo(0, savedScrollY);
 
     isOpen = false;
+    updateFabVisibility();
   }
 }
 
@@ -788,8 +791,35 @@ export function clearChat() {
   }
 }
 
+function createFab() {
+  if (fabEl) return;
+  fabEl = document.createElement('button');
+  fabEl.className = 'chat-fab no-print';
+  fabEl.title = 'Open AI chat (Ctrl+Shift+K)';
+  fabEl.setAttribute('aria-label', 'Open AI chat drawer');
+  fabEl.innerHTML = `
+    <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+    </svg>
+  `;
+  fabEl.addEventListener('click', () => toggleDrawer());
+  document.body.appendChild(fabEl);
+}
+
+function updateFabVisibility() {
+  if (!fabEl) return;
+  const hash = window.location.hash || '';
+  if (hash === '#/login' || hash.startsWith('#/reset-password') || isOpen) {
+    fabEl.classList.remove('chat-fab-visible');
+  } else {
+    fabEl.classList.add('chat-fab-visible');
+  }
+}
+
 export function initChatDrawer() {
   createDrawer();
+  createFab();
+  updateFabVisibility();
 
   // Keyboard shortcut: Ctrl/Cmd+Shift+K to toggle drawer
   document.addEventListener('keydown', (e) => {
@@ -800,5 +830,8 @@ export function initChatDrawer() {
   });
 
   // Update context badge on navigation
-  window.addEventListener('hashchange', updateContextBadge);
+  window.addEventListener('hashchange', () => {
+    updateContextBadge();
+    updateFabVisibility();
+  });
 }
