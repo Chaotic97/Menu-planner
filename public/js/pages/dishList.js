@@ -383,6 +383,7 @@ export async function renderDishList(container) {
   window.addEventListener('sync:dish_deleted', onDishChange);
 
   const cleanup = () => {
+    clearTimeout(debounceTimer);
     window.removeEventListener('sync:dish_created', onDishChange);
     window.removeEventListener('sync:dish_updated', onDishChange);
     window.removeEventListener('sync:dish_deleted', onDishChange);

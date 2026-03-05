@@ -85,7 +85,15 @@ function broadcast(type, payload, excludeClientId) {
 
 const wss = new WebSocketServer({ server });
 
+const MAX_WS_CLIENTS = 100;
+
 wss.on('connection', (ws) => {
+  // Reject connections beyond the limit to prevent resource exhaustion
+  if (clients.size >= MAX_WS_CLIENTS) {
+    ws.close(1013, 'Too many connections');
+    return;
+  }
+
   let clientId = null;
 
   ws.on('message', (data) => {

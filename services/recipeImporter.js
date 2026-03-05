@@ -382,15 +382,20 @@ async function importRecipe(url) {
   const chunks = [];
   let totalSize = 0;
 
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    totalSize += value.length;
-    if (totalSize > MAX_RESPONSE_SIZE) {
-      reader.cancel();
-      throw new Error('Response too large. Maximum supported size is 5 MB.');
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      totalSize += value.length;
+      if (totalSize > MAX_RESPONSE_SIZE) {
+        try { reader.cancel(); } catch {}
+        throw new Error('Response too large. Maximum supported size is 5 MB.');
+      }
+      chunks.push(value);
     }
-    chunks.push(value);
+  } catch (e) {
+    try { reader.cancel(); } catch {}
+    throw e;
   }
 
   const html = Buffer.concat(chunks).toString('utf-8');
