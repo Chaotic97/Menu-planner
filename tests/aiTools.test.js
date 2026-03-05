@@ -45,10 +45,10 @@ function getTools() {
 // ─── Tool Definitions ───────────────────────────────────────────────────────
 
 describe('getToolDefinitions', () => {
-  test('returns all 17 tools', () => {
+  test('returns all 55 tools', () => {
     const { getToolDefinitions } = getTools();
     const tools = getToolDefinitions();
-    expect(tools).toHaveLength(17);
+    expect(tools).toHaveLength(56);
   });
 
   test('each tool has name, description, and input_schema', () => {
