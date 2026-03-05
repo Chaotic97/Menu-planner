@@ -11,7 +11,7 @@ const { buildContext } = require('./aiContext');
 
 const MODEL = 'claude-haiku-4-5-20251001';
 const MAX_RETRIES = 3;
-const MAX_TOOL_ROUNDS = 3;
+const MAX_TOOL_ROUNDS = 5;
 
 /**
  * Get the API key from settings table

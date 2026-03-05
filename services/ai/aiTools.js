@@ -779,6 +779,41 @@ const TOOL_REGISTRY = [
       required: ['tag'],
     },
   },
+
+  // ─── Database Query Tool ───────────────────────────────────────
+  {
+    name: 'query_database',
+    description: `Run a read-only SQL query against the PlateStack database. Use this for analytical questions, aggregations, or any data question that other tools can't answer directly. Only SELECT statements are allowed — no mutations.
+
+Available tables and key columns:
+- dishes: id, name, description, category, chefs_notes, suggested_price, is_favorite, batch_yield, deleted_at, created_at, updated_at
+- ingredients: id, name, unit_cost, base_unit, category, in_stock
+- dish_ingredients: dish_id, ingredient_id, quantity, unit, prep_note, sort_order (UNIQUE dish_id+ingredient_id)
+- dish_section_headers: id, dish_id, label, sort_order
+- dish_allergens: dish_id, allergen, source ('auto'/'manual')
+- dish_directions: id, dish_id, type ('step'/'section'), text, sort_order
+- dish_substitutions: dish_id, allergen, original_ingredient, substitute_ingredient, notes
+- dish_tags: dish_id, tag_id
+- tags: id, name
+- menus: id, name, description, is_active, sell_price, expected_covers, guest_allergies, menu_type, event_date, deleted_at, created_at
+- menu_dishes: menu_id, dish_id, sort_order, servings
+- weekly_specials: id, dish_id, week_start, week_end, notes, is_active
+- tasks: id, menu_id, source_dish_id, type ('prep'/'custom'), title, description, priority ('high'/'medium'/'low'), due_date, due_time, completed, completed_at, source ('auto'/'manual'), created_at
+- service_notes: id, date, shift ('all'/'am'/'lunch'/'pm'/'prep'), title, content, created_at
+- allergen_keywords: keyword, allergen
+- ai_usage: id, tokens_in, tokens_out, model, tool_used, created_at
+
+IMPORTANT: Always filter dishes/menus with "deleted_at IS NULL" unless specifically looking for deleted items.`,
+    autoApprove: true,
+    input_schema: {
+      type: 'object',
+      properties: {
+        sql: { type: 'string', description: 'The SELECT query to run. Must be a read-only SELECT statement.' },
+        explanation: { type: 'string', description: 'Brief explanation of what this query answers (for the user)' },
+      },
+      required: ['sql'],
+    },
+  },
 ];
 
 /**
@@ -2720,6 +2755,72 @@ const handlers = {
 
     if (opts.broadcast) opts.broadcast('dish_updated', { id: dishId });
     return { success: true, message: `Removed tag "${tagName}" from "${dishName}".` };
+  },
+
+  // ─── Database Query Handler ────────────────────────────────────
+
+  query_database(input, opts) {
+    const sql = (input.sql || '').trim();
+
+    // Validate: must be a SELECT (read-only)
+    const normalised = sql.replace(/\s+/g, ' ').toLowerCase();
+    const forbidden = ['insert ', 'update ', 'delete ', 'drop ', 'alter ', 'create ', 'replace ', 'attach ', 'detach ', 'pragma ', 'reindex ', 'vacuum'];
+    for (const keyword of forbidden) {
+      if (normalised.includes(keyword)) {
+        return { success: false, message: `Query rejected: "${keyword.trim().toUpperCase()}" statements are not allowed. Only SELECT queries are permitted.` };
+      }
+    }
+    if (!normalised.startsWith('select') && !normalised.startsWith('with')) {
+      return { success: false, message: 'Only SELECT queries (and WITH/CTE) are allowed.' };
+    }
+
+    if (opts.preview) {
+      return {
+        description: input.explanation || 'Run database query',
+        message: `I'll run this query: ${sql}`,
+      };
+    }
+
+    const db = getDb();
+    try {
+      const rows = db.prepare(sql).all();
+
+      // Cap output to avoid flooding the context
+      const maxRows = 50;
+      const truncated = rows.length > maxRows;
+      const display = truncated ? rows.slice(0, maxRows) : rows;
+
+      if (!display.length) {
+        return { success: true, message: input.explanation ? `${input.explanation}: No results found.` : 'Query returned no results.' };
+      }
+
+      // Format as a readable table
+      const columns = Object.keys(display[0]);
+      const lines = display.map(row =>
+        columns.map(col => {
+          const val = row[col];
+          return val === null ? 'NULL' : String(val);
+        }).join(' | ')
+      );
+
+      const header = columns.join(' | ');
+      const separator = columns.map(c => '-'.repeat(Math.max(c.length, 3))).join('-+-');
+      let message = `${header}\n${separator}\n${lines.join('\n')}`;
+
+      if (truncated) {
+        message += `\n\n(Showing ${maxRows} of ${rows.length} total rows)`;
+      } else {
+        message += `\n\n(${rows.length} row${rows.length === 1 ? '' : 's'})`;
+      }
+
+      if (input.explanation) {
+        message = `${input.explanation}:\n\n${message}`;
+      }
+
+      return { success: true, message };
+    } catch (err) {
+      return { success: false, message: `Query error: ${err.message}` };
+    }
   },
 };
 
