@@ -44,14 +44,24 @@ async function extractText(buffer, originalName, mimetype) {
   if (ext === '.xlsx' || ext === '.xls' ||
       type === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' ||
       type === 'application/vnd.ms-excel') {
-    const XLSX = require('xlsx');
-    const workbook = XLSX.read(buffer, { type: 'buffer' });
+    const ExcelJS = require('exceljs');
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(buffer);
     const sheets = [];
-    for (const sheetName of workbook.SheetNames) {
-      const sheet = workbook.Sheets[sheetName];
-      const csv = XLSX.utils.sheet_to_csv(sheet);
-      sheets.push(`[Sheet: ${sheetName}]\n${csv}`);
-    }
+    workbook.eachSheet((worksheet) => {
+      const rows = [];
+      worksheet.eachRow((row) => {
+        const values = row.values.slice(1); // row.values is 1-indexed in ExcelJS
+        rows.push(values.map(v => {
+          if (v == null) return '';
+          const s = String(v);
+          return (s.includes(',') || s.includes('"') || s.includes('\n'))
+            ? '"' + s.replace(/"/g, '""') + '"'
+            : s;
+        }).join(','));
+      });
+      sheets.push(`[Sheet: ${worksheet.name}]\n${rows.join('\n')}`);
+    });
     return { text: sheets.join('\n\n'), type: 'spreadsheet' };
   }
 
