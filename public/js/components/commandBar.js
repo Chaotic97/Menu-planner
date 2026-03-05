@@ -15,11 +15,73 @@ const HIDDEN_ROUTES = [
 
 let barEl = null;
 let previewEl = null;
+let suggestionsEl = null;
 let isVisible = false;
 let isAiMode = true;
 let isProcessing = false;
 let currentConfirmationId = null;
 let _currentToolName = null;
+
+/**
+ * Context-aware suggested prompts based on current page
+ */
+const SUGGESTED_PROMPTS = {
+  '#/dishes': [
+    { icon: '🔍', text: 'Search for a dish', prompt: 'Search dishes: ' },
+    { icon: '➕', text: 'Create a new dish', prompt: 'Create a dish called ' },
+    { icon: '📊', text: 'Get a system overview', prompt: 'Give me an overview of all my data' },
+  ],
+  '#/dishes/:id': [
+    { icon: '🧪', text: 'Check allergens', prompt: 'Check the allergens on this dish' },
+    { icon: '📐', text: 'Scale this recipe', prompt: 'Scale this recipe to 20 portions' },
+    { icon: '🔄', text: 'Convert a unit', prompt: 'Convert 500ml cream to cups' },
+  ],
+  '#/menus': [
+    { icon: '➕', text: 'Create a new menu', prompt: 'Create a menu called ' },
+    { icon: '🔍', text: 'Search menus', prompt: 'Show me all my menus' },
+    { icon: '📊', text: 'Get system overview', prompt: 'Give me an overview of all my data' },
+  ],
+  '#/menus/:id': [
+    { icon: '🍽️', text: 'Add a dish to this menu', prompt: 'Add ' },
+    { icon: '💰', text: 'Check food cost', prompt: 'What is the food cost on this menu?' },
+    { icon: '🛒', text: 'Get shopping list', prompt: 'Get the shopping list for this menu' },
+  ],
+  '#/todos': [
+    { icon: '➕', text: 'Add a task', prompt: 'Create a task: ' },
+    { icon: '📋', text: 'Search tasks', prompt: 'Show me overdue tasks' },
+    { icon: '📊', text: 'Task summary', prompt: 'Give me a summary of my tasks' },
+  ],
+  '#/shopping': [
+    { icon: '🛒', text: 'Get shopping list', prompt: 'Get the shopping list' },
+    { icon: '🔍', text: 'Search ingredients', prompt: 'Search ingredients: ' },
+  ],
+  '#/service-notes': [
+    { icon: '📝', text: 'Add a service note', prompt: 'Add a service note: ' },
+    { icon: '🔍', text: 'Search notes', prompt: 'Search service notes for ' },
+  ],
+  '_default': [
+    { icon: '🔍', text: 'Search dishes', prompt: 'Search dishes: ' },
+    { icon: '➕', text: 'Create a task', prompt: 'Create a task: ' },
+    { icon: '📊', text: 'System overview', prompt: 'Give me an overview of all my data' },
+  ],
+};
+
+function getSuggestionsForPage() {
+  const hash = window.location.hash || '';
+
+  // Specific entity pages
+  if (hash.match(/^#\/dishes\/\d+(\/edit)?$/)) return SUGGESTED_PROMPTS['#/dishes/:id'];
+  if (hash.match(/^#\/menus\/\d+$/)) return SUGGESTED_PROMPTS['#/menus/:id'];
+
+  // List/index pages
+  if (hash === '#/dishes' || hash === '#/' || hash === '') return SUGGESTED_PROMPTS['#/dishes'];
+  if (hash === '#/menus') return SUGGESTED_PROMPTS['#/menus'];
+  if (hash === '#/todos') return SUGGESTED_PROMPTS['#/todos'];
+  if (hash === '#/shopping' || hash.match(/^#\/menus\/\d+\/shopping$/)) return SUGGESTED_PROMPTS['#/shopping'];
+  if (hash === '#/service-notes') return SUGGESTED_PROMPTS['#/service-notes'];
+
+  return SUGGESTED_PROMPTS['_default'];
+}
 
 function shouldShow(hash) {
   if (!hash) return false;
@@ -106,6 +168,30 @@ function createBar() {
   const input = barEl.querySelector('.cb-input');
   const sendBtn = barEl.querySelector('.cb-send');
   const modeToggle = barEl.querySelector('.cb-mode-toggle');
+
+  // Create suggestions dropdown
+  suggestionsEl = document.createElement('div');
+  suggestionsEl.className = 'cb-suggestions';
+  suggestionsEl.id = 'cb-suggestions';
+  barEl.querySelector('.cb-inner').appendChild(suggestionsEl);
+
+  // Show suggestions on focus (when input is empty and in AI mode)
+  input.addEventListener('focus', () => {
+    if (isAiMode && !input.value.trim() && !currentConfirmationId && !isProcessing) {
+      showSuggestions();
+    }
+  });
+  input.addEventListener('input', () => {
+    if (input.value.trim()) {
+      hideSuggestions();
+    } else if (isAiMode && !currentConfirmationId && !isProcessing) {
+      showSuggestions();
+    }
+  });
+  input.addEventListener('blur', () => {
+    // Delay to allow click on suggestion
+    setTimeout(hideSuggestions, 150);
+  });
 
   // Chat drawer toggle
   const chatToggle = barEl.querySelector('.cb-chat-toggle');
@@ -401,6 +487,48 @@ function dismissPreview() {
   _currentToolName = null;
 }
 
+/**
+ * Show context-aware suggested prompts dropdown
+ */
+function showSuggestions() {
+  if (!suggestionsEl || !barEl) return;
+  const suggestions = getSuggestionsForPage();
+  if (!suggestions || !suggestions.length) return;
+
+  suggestionsEl.innerHTML = suggestions.map(s => `
+    <button class="cb-suggestion" data-prompt="${escapeHtml(s.prompt)}" type="button">
+      <span class="cb-suggestion-icon">${s.icon}</span>
+      <span class="cb-suggestion-text">${escapeHtml(s.text)}</span>
+    </button>
+  `).join('');
+
+  suggestionsEl.querySelectorAll('.cb-suggestion').forEach(btn => {
+    btn.addEventListener('mousedown', (e) => {
+      e.preventDefault(); // Prevent blur
+      const prompt = btn.dataset.prompt;
+      const input = barEl.querySelector('.cb-input');
+      if (input) {
+        input.value = prompt;
+        input.focus();
+        // Place cursor at end
+        input.setSelectionRange(prompt.length, prompt.length);
+      }
+      hideSuggestions();
+    });
+  });
+
+  suggestionsEl.classList.add('cb-suggestions-visible');
+}
+
+/**
+ * Hide the suggestions dropdown
+ */
+function hideSuggestions() {
+  if (suggestionsEl) {
+    suggestionsEl.classList.remove('cb-suggestions-visible');
+  }
+}
+
 function syncAppContentPadding(show) {
   const appContent = document.getElementById('app-content');
   if (appContent) {
@@ -416,6 +544,7 @@ export function initCommandBar() {
   window.addEventListener('hashchange', () => {
     updateVisibility(window.location.hash);
     dismissPreview();
+    hideSuggestions();
   });
 
   // Keyboard shortcut: Ctrl/Cmd+K to focus

@@ -152,6 +152,72 @@ export const aiMatchIngredients = (ingredients) => request('/ai/match-ingredient
 export const getAiSettings = () => request('/ai/settings');
 export const saveAiSettings = (data) => request('/ai/settings', { method: 'POST', body: data });
 
+// AI Streaming (SSE) — returns an object with event handling for progressive rendering
+export function aiCommandStream(data, handlers = {}) {
+  const controller = new AbortController();
+
+  (async () => {
+    try {
+      const res = await fetch(`${BASE}/ai/stream`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Client-Id': getClientId(),
+        },
+        body: JSON.stringify(data),
+        signal: controller.signal,
+      });
+
+      if (res.status === 401) {
+        window.location.hash = '#/login';
+        window.location.reload();
+        return;
+      }
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: res.statusText }));
+        if (handlers.onError) handlers.onError(err.error || 'Request failed');
+        return;
+      }
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+
+        let currentEvent = null;
+        for (const line of lines) {
+          if (line.startsWith('event: ')) {
+            currentEvent = line.slice(7).trim();
+          } else if (line.startsWith('data: ') && currentEvent) {
+            try {
+              const eventData = JSON.parse(line.slice(6));
+              const handler = handlers['on' + currentEvent.charAt(0).toUpperCase() + currentEvent.slice(1).replace(/_([a-z])/g, (_, c) => c.toUpperCase())];
+              if (handler) handler(eventData);
+            } catch {}
+            currentEvent = null;
+          } else if (line === '') {
+            currentEvent = null;
+          }
+        }
+      }
+    } catch (err) {
+      if (err.name !== 'AbortError' && handlers.onError) {
+        handlers.onError(err.message || 'Stream failed');
+      }
+    }
+  })();
+
+  return { abort: () => controller.abort() };
+}
+
 // AI Chat Conversations
 export const getConversations = () => request('/ai/conversations');
 export const createConversation = (title) => request('/ai/conversations', { method: 'POST', body: { title } });

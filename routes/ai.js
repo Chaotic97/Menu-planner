@@ -7,7 +7,7 @@ const multer = require('multer');
 const { getDb } = require('../db/database');
 const asyncHandler = require('../middleware/asyncHandler');
 const { createRateLimit } = require('../middleware/rateLimit');
-const { processCommand, executeConfirmedAction, getAiSettings, getUsageStats, getApiKey, checkUsageLimits } = require('../services/ai/aiService');
+const { processCommand, processCommandStream, executeConfirmedAction, getAiSettings, getUsageStats, getApiKey, checkUsageLimits } = require('../services/ai/aiService');
 const { restoreSnapshot, cleanupOldSnapshots } = require('../services/ai/aiHistory');
 const { extractText } = require('../services/textExtractor');
 
@@ -202,6 +202,66 @@ router.post('/command', aiRateLimit, asyncHandler(async (req, res) => {
 
     return res.status(500).json({ error: 'AI request failed. Please try again.' });
   }
+}));
+
+/**
+ * POST /api/ai/stream — SSE streaming endpoint for chat drawer.
+ * Body: { message, context, conversationHistory? }
+ * Sends SSE events: text_delta, tool_start, tool_result, text_clear, confirmation, error, done
+ */
+router.post('/stream', aiRateLimit, asyncHandler(async (req, res) => {
+  const { message, context, conversationHistory } = req.body;
+
+  if (!message || typeof message !== 'string' || !message.trim()) {
+    return res.status(400).json({ error: 'Message is required' });
+  }
+
+  // Set SSE headers
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache',
+    'Connection': 'keep-alive',
+    'X-Accel-Buffering': 'no',
+  });
+
+  let confirmationId = null;
+
+  function emit(event, data) {
+    // Store confirmation if needed
+    if (event === 'confirmation' && data.confirmationData) {
+      confirmationId = generateConfirmationId();
+      pendingActions.set(confirmationId, {
+        data: data.confirmationData,
+        createdAt: Date.now(),
+      });
+      data.confirmationId = confirmationId;
+      delete data.confirmationData;
+    }
+    res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+  }
+
+  // Handle client disconnect
+  let aborted = false;
+  req.on('close', () => { aborted = true; });
+
+  try {
+    await processCommandStream(
+      message.trim(),
+      context,
+      conversationHistory,
+      req.broadcast,
+      (event, data) => {
+        if (!aborted) emit(event, data);
+      }
+    );
+  } catch (err) {
+    if (!aborted) {
+      emit('error', { message: err.message || 'AI request failed' });
+      emit('done', {});
+    }
+  }
+
+  if (!aborted) res.end();
 }));
 
 /**
