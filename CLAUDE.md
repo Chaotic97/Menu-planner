@@ -569,6 +569,7 @@ Printing is a core feature used daily in a professional kitchen. The print syste
 5. **Always force a layout recalc before `window.print()`** — use `void overlay.offsetHeight` followed by double `requestAnimationFrame` to ensure the browser has fully committed the overlay geometry.
 6. **Always scroll to top** (`window.scrollTo(0, 0)`) before showing the overlay so the preview and print start from the beginning.
 7. **`window.open()` is silently blocked** in iOS Safari and PWA mode — never use it for print. The in-page overlay approach is the only reliable method.
+8. **NEVER use `afterprint` for cleanup on iOS.** iOS Safari fires `afterprint` when the share sheet dismisses — *before* the user selects a printer and iOS does its second render pass. If you clean up the overlay on `afterprint`, iOS will print the underlying app page instead of the overlay content. On iOS, the Close button is the only reliable cleanup path. Desktop browsers can use `afterprint` safely.
 
 **Print content is self-contained:** Each print function (in dishView, menuBuilder, shoppingList, todoView) builds a complete HTML string with inline `<style>` tags. The styles apply in all media (not wrapped in `@media print`) so iOS renders them during its snapshot. Only the toolbar hide and padding reset go in `@media print`.
 

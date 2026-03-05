@@ -20,7 +20,8 @@
  *  6. Before calling window.print(), explicitly force a synchronous layout
  *     recalc (read offsetHeight) so iOS has the final geometry committed.
  *  7. At @media print the toolbar hides and padding is removed.
- *  8. Clean up on afterprint (with fallback timeout).
+ *  8. Clean up: on desktop via afterprint; on iOS via the Close button only
+ *     (afterprint fires too early on iOS — before printer selection completes).
  */
 export function printSheet(html) {
   const styleMatch = html.match(/<style[^>]*>([\s\S]*?)<\/style>/i);
@@ -153,10 +154,17 @@ export function printSheet(html) {
     triggerPrint();
   });
 
-  // afterprint fires on iOS Safari 13+ after the print dialog is dismissed.
-  // Slight delay lets iOS finish its final render pass.
-  window.addEventListener('afterprint', () => setTimeout(cleanup, 300), { once: true });
-  // Safety fallback in case afterprint never fires (e.g. older iOS WebView).
+  // afterprint is unreliable on iOS Safari: it fires when the share-sheet
+  // dismisses (before the user picks a printer and iOS does its second render
+  // pass). If we clean up at that point, iOS prints the underlying app page
+  // instead of the overlay. On desktop browsers afterprint is fine, so we
+  // only use it there. The Close button is always the primary exit path.
+  const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+    (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  if (!isIOS) {
+    window.addEventListener('afterprint', () => setTimeout(cleanup, 300), { once: true });
+  }
+  // Safety fallback in case afterprint never fires or user forgets Close btn.
   setTimeout(cleanup, 120000);
 
   // Trigger print with robust timing for iOS.
