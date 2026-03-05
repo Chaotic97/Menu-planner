@@ -129,42 +129,7 @@ async function start() {
   app.use('/api/notifications', require('./routes/notifications'));
   app.use('/api/settings', require('./routes/settings'));
   app.use('/api/ai', require('./routes/ai'));
-  app.use('/api/google-calendar', require('./routes/googleCalendar'));
-
-  // --- Google Calendar background sync ---
-  const { syncEvents: gcalSync, getCalendarSettings: getGcalSettings } = require('./services/googleCalendar');
-  let gcalSyncTimer = null;
-
-  function startGcalSync() {
-    stopGcalSync();
-    const db = getDb();
-    const settings = getGcalSettings(db);
-    if (!settings.syncEnabled || !settings.hasApiKey || !settings.calendarId) return;
-
-    const intervalMs = (settings.syncInterval || 15) * 60 * 1000;
-    gcalSyncTimer = setInterval(async () => {
-      try {
-        const result = await gcalSync(db);
-        console.log(`Google Calendar sync: +${result.added} ~${result.updated} -${result.removed}`);
-        broadcast('gcal_synced', result);
-      } catch (err) {
-        console.error('Google Calendar background sync error:', err.message);
-      }
-    }, intervalMs);
-    console.log(`Google Calendar background sync every ${settings.syncInterval}m`);
-  }
-
-  function stopGcalSync() {
-    if (gcalSyncTimer) { clearInterval(gcalSyncTimer); gcalSyncTimer = null; }
-  }
-
-  // Make restartGcalSync available to route handlers
-  app.use((req, _res, next) => {
-    req.restartGcalSync = startGcalSync;
-    next();
-  });
-
-  startGcalSync();
+  app.use('/api/calendar', require('./routes/calendar'));
 
   // Global error handler — catches unhandled errors from async routes
   app.use((err, req, res, _next) => {

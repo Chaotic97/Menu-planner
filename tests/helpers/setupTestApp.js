@@ -240,6 +240,7 @@ async function createTestApp() {
     `ALTER TABLE menus ADD COLUMN menu_type TEXT DEFAULT 'event'`,
     `ALTER TABLE menus ADD COLUMN event_date TEXT DEFAULT NULL`,
     `CREATE INDEX IF NOT EXISTS idx_menus_menu_type ON menus(menu_type)`,
+    `ALTER TABLE menus ADD COLUMN gcal_event_id TEXT DEFAULT NULL`,
   ];
 
   for (const sql of MIGRATIONS) {
