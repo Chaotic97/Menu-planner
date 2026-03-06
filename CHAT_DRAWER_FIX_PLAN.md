@@ -112,50 +112,64 @@ Based on user interview (iOS Safari/PWA user) and full code audit of chatDrawer.
 
 ---
 
-## Priority 5: General Polish & Animations
+## Priority 5: Polish & Animations
 
-### 5A. Improve message appearance animations
+### 5A. Message bubble entrance animations
 **Files**: `public/css/style.css`
-**Problem**: Messages just pop into existence with no transition.
+**Problem**: Messages just pop into existence with no transition. Tool/confirmation cards also appear abruptly.
 **Fix**:
-- Add subtle fade-in + slide-up animation for new messages
-- Keep it fast (150-200ms) so it doesn't feel sluggish
+- Add subtle fade-in + slide-up animation for new messages (user and assistant)
+- Tool indicator cards and confirmation cards get a similar but slightly different entrance (fade + scale from 0.95)
+- Keep all animations fast (150-200ms) to feel snappy not sluggish
 - Use `transform` and `opacity` only (GPU-accelerated, safe on iOS)
-- Apply via `.chat-msg-appear` class added on creation, removed after animation
+- Apply via `.chat-msg-enter` class, use `animationend` to clean up
 
 ### 5B. Throttle streaming text re-renders
 **Files**: `public/js/components/chatDrawer.js`
-**Problem**: Every `onTextDelta` re-renders the ENTIRE accumulated markdown text. This is O(n²) and causes visible lag on long responses.
+**Problem**: Every `onTextDelta` re-renders the ENTIRE accumulated markdown text. This is O(n²) and causes visible lag on long responses, making the streaming feel janky.
 **Fix**:
 - Batch text deltas with a 50ms throttle before calling `renderMarkdown()`
 - Use `requestAnimationFrame` to ensure renders align with display refresh
 - Only the final render on `onDone` needs to be immediate
+- This also improves the "streaming text feel" — fewer full re-renders means less flicker
+
+### 5C. Button and interaction micro-animations
+**Files**: `public/css/style.css`
+**Problem**: Send button, confirm/cancel buttons, and attachment chips have flat interactions with no tactile feedback.
+**Fix**:
+- Send button: subtle scale-down on `:active` (0.92), smooth background transition on hover
+- Stop button: pulse animation while active (subtle opacity oscillation)
+- Confirm/Cancel/Skip buttons on tool cards: scale + shadow lift on hover, press-down on active
+- Attachment chip: smooth slide-in on attach, slide-out on remove
+- All transitions use `cubic-bezier(0.4, 0, 0.2, 1)` for a natural feel
+- Keep all durations under 200ms — kitchen staff tapping quickly shouldn't feel delayed
 
 ---
 
 ## Implementation Order
 
 ```
-Phase A — Quick wins, immediately visible improvement:
+Phase A — Quick wins + visual polish (CSS):
   1B  Thinking dots on send
   1A  Fix duplicate tool indicators
   1D  Stop generating button
   3A  iOS scroll rubber-banding fix
   3B  Messages getting cut off
+  5A  Message bubble entrance animations
+  5C  Button & interaction micro-animations
 
-Phase B — Reliability:
+Phase B — Reliability + streaming polish (JS):
   1C  onDone cleanup / isSending recovery
   1E  Watchdog improvement
   1F  Agentic loop reliability + progress events
+  5B  Streaming text render throttle (smoother feel)
 
 Phase C — Message persistence:
   2A  Message deduplication + DOM rebuild fix
   2B  Persistence retry + error handling
 
-Phase D — Polish:
-  4A  File upload progress
-  5A  Message animations
-  5B  Streaming throttle
+Phase D — File upload:
+  4A  File upload progress indicator
 ```
 
 ---
@@ -168,7 +182,7 @@ Phase D — Polish:
 | `public/js/api.js` | 1C, 1F | onDone cleanup paths, progress event handler |
 | `services/ai/aiService.js` | 1F | Per-round timeout, progress event emission |
 | `routes/ai.js` | 1F | Pass progress events through SSE |
-| `public/css/style.css` | 1B, 1D, 3A, 3B, 4A, 5A | Thinking dots, stop button, scroll fixes, message overflow, upload progress, animations |
+| `public/css/style.css` | 1B, 1D, 3A, 3B, 4A, 5A, 5C | Thinking dots, stop button, scroll fixes, message overflow, upload progress, message animations, button micro-animations |
 
 ---
 
