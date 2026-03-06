@@ -116,17 +116,24 @@ async function buildContext(pageContext) {
     }
   }
 
-  // For any page, provide a summary of available dishes and menus for fuzzy matching
+  // For any page, provide a summary of available dishes and menus for fuzzy matching.
+  // Cap list sizes to keep context window manageable (~4K chars max for lists).
+  const MAX_DISH_LIST = 40;
+  const MAX_MENU_LIST = 15;
+
   if (!pageContext.entityType || pageContext.entityType !== 'dish') {
     const dishCount = db.prepare('SELECT COUNT(*) as cnt FROM dishes WHERE deleted_at IS NULL').get();
     parts.push(`Total dishes in system: ${dishCount.cnt}`);
 
-    // Provide dish names for fuzzy matching when needed
     const dishes = db.prepare(
-      'SELECT id, name, category FROM dishes WHERE deleted_at IS NULL ORDER BY name LIMIT 50'
+      `SELECT id, name, category FROM dishes WHERE deleted_at IS NULL ORDER BY name LIMIT ${MAX_DISH_LIST}`
     ).all();
     if (dishes.length) {
-      parts.push('Available dishes: ' + dishes.map(d => `"${d.name}" (ID:${d.id})`).join(', '));
+      const dishList = dishes.map(d => `"${d.name}" (ID:${d.id})`).join(', ');
+      parts.push('Available dishes: ' + dishList);
+      if (dishCount.cnt > MAX_DISH_LIST) {
+        parts.push(`(${dishCount.cnt - MAX_DISH_LIST} more dishes not shown — use search_dishes to find others)`);
+      }
     }
   }
 
@@ -134,7 +141,7 @@ async function buildContext(pageContext) {
   parts.push(`Total menus: ${menuCount.cnt}`);
 
   const menus = db.prepare(
-    'SELECT id, name, menu_type, event_date FROM menus WHERE deleted_at IS NULL ORDER BY event_date DESC, name LIMIT 20'
+    `SELECT id, name, menu_type, event_date FROM menus WHERE deleted_at IS NULL ORDER BY event_date DESC, name LIMIT ${MAX_MENU_LIST}`
   ).all();
   if (menus.length) {
     parts.push('Available menus: ' + menus.map(m => {
@@ -144,6 +151,9 @@ async function buildContext(pageContext) {
       label += ')';
       return label;
     }).join(', '));
+    if (menuCount.cnt > MAX_MENU_LIST) {
+      parts.push(`(${menuCount.cnt - MAX_MENU_LIST} more menus not shown — use list_menus to see all)`);
+    }
   }
 
   return parts.join('\n');
