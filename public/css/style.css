@@ -4688,6 +4688,53 @@ textarea.input { resize: vertical; min-height: 80px; }
   40% { transform: scale(1); opacity: 1; }
 }
 
+/* --- Chat Drawer: attachment indicator bar --- */
+.chat-drawer-attachment-bar {
+  padding: var(--space-xs) var(--space-md) 0;
+  border-top: 1px solid var(--border);
+}
+.chat-drawer-attachment-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px 4px 10px;
+  background: rgba(var(--primary-rgb), 0.1);
+  border: 1px solid rgba(var(--primary-rgb), 0.25);
+  border-radius: 16px;
+  font-size: 0.8rem;
+  color: var(--text);
+  max-width: 100%;
+}
+.chat-drawer-attachment-chip svg:first-child {
+  flex-shrink: 0;
+  color: var(--primary);
+}
+.chat-drawer-attachment-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+.chat-drawer-attachment-remove {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border: none;
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  border-radius: 50%;
+  flex-shrink: 0;
+  padding: 0;
+  transition: color 0.15s, background 0.15s;
+}
+.chat-drawer-attachment-remove:hover {
+  color: var(--danger);
+  background: rgba(var(--danger-rgb), 0.1);
+}
+
 /* --- Chat Drawer: file attachment --- */
 .chat-drawer-attach {
   width: 36px;
