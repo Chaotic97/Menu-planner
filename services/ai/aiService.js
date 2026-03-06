@@ -398,6 +398,11 @@ async function processCommandStream(message, pageContext, conversationHistory, b
   }
 
   for (let round = 0; round < MAX_TOOL_ROUNDS + 1; round++) {
+    // Emit progress event so the client can show step numbers (1F)
+    if (round > 0) {
+      emit('progress', { round });
+    }
+
     let textResponse = '';
     let toolCall = null;
     let tokensIn = 0;
