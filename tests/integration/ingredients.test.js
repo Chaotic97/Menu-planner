@@ -207,6 +207,83 @@ describe('GET /api/ingredients/:id/allergens', () => {
   });
 });
 
+// ─── INGREDIENT ALLERGEN MANAGEMENT ──────────────────────────────────────────
+
+describe('POST /api/ingredients/:id/allergens', () => {
+  let ingredientId;
+
+  beforeAll(async () => {
+    const res = await agent
+      .post('/api/ingredients')
+      .send({ name: 'Plain Water' })
+      .expect(201);
+    ingredientId = res.body.id;
+  });
+
+  test('adds manual allergen to ingredient', async () => {
+    await agent
+      .post(`/api/ingredients/${ingredientId}/allergens`)
+      .send({ allergen: 'nuts', action: 'add' })
+      .expect(200);
+
+    const res = await agent.get(`/api/ingredients/${ingredientId}/allergens`).expect(200);
+    expect(res.body.allergens).toContain('nuts');
+  });
+
+  test('removes allergen from ingredient', async () => {
+    await agent
+      .post(`/api/ingredients/${ingredientId}/allergens`)
+      .send({ allergen: 'nuts', action: 'remove' })
+      .expect(200);
+
+    const res = await agent.get(`/api/ingredients/${ingredientId}/allergens`).expect(200);
+    expect(res.body.allergens).not.toContain('nuts');
+  });
+
+  test('rejects invalid allergen', async () => {
+    await agent
+      .post(`/api/ingredients/${ingredientId}/allergens`)
+      .send({ allergen: 'chocolate', action: 'add' })
+      .expect(400);
+  });
+
+  test('rejects invalid action', async () => {
+    await agent
+      .post(`/api/ingredients/${ingredientId}/allergens`)
+      .send({ allergen: 'nuts', action: 'toggle' })
+      .expect(400);
+  });
+
+  test('returns 404 for non-existent ingredient', async () => {
+    await agent
+      .post('/api/ingredients/99999/allergens')
+      .send({ allergen: 'nuts', action: 'add' })
+      .expect(404);
+  });
+});
+
+describe('ingredient allergens flow to dishes', () => {
+  test('auto-detected ingredient allergens appear on dish', async () => {
+    // Create a dish with a milk ingredient (butter → milk allergen)
+    const created = await agent.post('/api/dishes').send({
+      name: 'Allergen Flow Test',
+      ingredients: [{ name: 'Butter', quantity: 100, unit: 'g' }],
+    }).expect(201);
+
+    const dish = await agent.get(`/api/dishes/${created.body.id}`).expect(200);
+    expect(dish.body.allergens.some(a => a.allergen === 'milk')).toBe(true);
+  });
+
+  test('ingredient list returns allergens per ingredient', async () => {
+    await agent.post('/api/ingredients').send({ name: 'Fresh Shrimp' }).expect(201);
+
+    const list = await agent.get('/api/ingredients?search=Fresh Shrimp').expect(200);
+    const shrimp = list.body.find(i => i.name === 'Fresh Shrimp');
+    expect(shrimp.allergens).toBeDefined();
+    expect(shrimp.allergens.some(a => a.allergen === 'crustaceans')).toBe(true);
+  });
+});
+
 // ─── EXISTENCE CHECKS ──────────────────────────────────────────────────────
 
 describe('PUT /api/ingredients/:id existence check', () => {

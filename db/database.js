@@ -343,6 +343,28 @@ async function initialize() {
     `ALTER TABLE menu_dishes ADD COLUMN course_id INTEGER DEFAULT NULL REFERENCES menu_courses(id) ON DELETE SET NULL`,
     `ALTER TABLE menu_dishes ADD COLUMN notes TEXT DEFAULT ''`,
     `CREATE INDEX IF NOT EXISTS idx_menu_dishes_course_id ON menu_dishes(course_id)`,
+    // Ingredient-level allergens: move allergen tracking from dish to ingredient
+    `CREATE TABLE IF NOT EXISTS ingredient_allergens (
+      ingredient_id INTEGER NOT NULL REFERENCES ingredients(id) ON DELETE CASCADE,
+      allergen      TEXT NOT NULL CHECK(allergen IN (
+                        'celery','gluten','crustaceans','eggs','fish','lupin',
+                        'milk','molluscs','mustard','nuts','peanuts',
+                        'sesame','soy','sulphites'
+                    )),
+      source        TEXT DEFAULT 'auto' CHECK(source IN ('auto','manual')),
+      PRIMARY KEY (ingredient_id, allergen)
+    )`,
+    `CREATE INDEX IF NOT EXISTS idx_ingredient_allergens_ingredient_id ON ingredient_allergens(ingredient_id)`,
+    // Migrate existing auto-detected dish_allergens to ingredient_allergens
+    // For each dish allergen with source='auto', find ingredients that match and assign
+    `INSERT OR IGNORE INTO ingredient_allergens (ingredient_id, allergen, source)
+     SELECT DISTINCT i.id, da.allergen, 'auto'
+     FROM dish_allergens da
+     JOIN dish_ingredients di ON di.dish_id = da.dish_id
+     JOIN ingredients i ON i.id = di.ingredient_id
+     JOIN allergen_keywords ak ON da.allergen = ak.allergen
+     WHERE da.source = 'auto'
+       AND LOWER(i.name) LIKE '%' || LOWER(ak.keyword) || '%'`,
   ];
 
   for (const sql of MIGRATIONS) {

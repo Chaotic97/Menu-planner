@@ -36,9 +36,10 @@ export async function renderDishView(container, dishId) {
       } else {
         const qty = row.quantity ? `<span class="dv-ing-qty">${row.quantity} ${escapeHtml(row.unit)}</span>` : '';
         const prep = row.prep_note ? `<span class="dv-ing-prep">${escapeHtml(row.prep_note)}</span>` : '';
+        const ingAllergens = row.allergens && row.allergens.length ? renderAllergenBadges(row.allergens, true) : '';
         html += `
           <div class="dv-ing-row">
-            <span class="dv-ing-name">${escapeHtml(row.ingredient_name)}</span>
+            <span class="dv-ing-name">${escapeHtml(row.ingredient_name)}${ingAllergens ? ' ' + ingAllergens : ''}</span>
             <span class="dv-ing-right">${qty}${prep}</span>
           </div>`;
       }

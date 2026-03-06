@@ -1,15 +1,33 @@
 import { getDish, createDish, updateDish, uploadDishPhoto, deleteDishPhoto, getIngredients, duplicateDish, updateDishAllergen, aiCleanupRecipe, aiConfirm, aiUndo } from '../api.js';
-import { renderAllergenBadges } from '../components/allergenBadges.js';
 import { showToast } from '../components/toast.js';
 import { openLightbox } from '../components/lightbox.js';
 import { createActionMenu } from '../components/actionMenu.js';
 import { makeCollapsible, collapsibleHeader } from '../components/collapsible.js';
 import { CATEGORIES } from '../data/categories.js';
 import { UNITS } from '../data/units.js';
-import { loadAllergenKeywords, detectAllergensClient } from '../data/allergenKeywords.js';
+import { loadAllergenKeywords, detectAllergensClient, ALLERGEN_INFO } from '../data/allergenKeywords.js';
 import { escapeHtml } from '../utils/escapeHtml.js';
 import { convertUnit as rawConvert, compatibleUnits } from '../utils/unitConversion.js';
 import { ALLERGEN_LIST, capitalize } from '../data/allergens.js';
+
+/** Render allergen badges grouped by source ingredient */
+function renderAllergenBadgesWithSource(allergens) {
+  if (!allergens || !allergens.length) return '';
+  // Group by allergen, collect ingredient names
+  const grouped = {};
+  for (const a of allergens) {
+    const name = typeof a === 'string' ? a : a.allergen;
+    if (!grouped[name]) grouped[name] = [];
+    if (a.ingredient_name) grouped[name].push(a.ingredient_name);
+  }
+  return '<div class="allergen-badges">' + Object.entries(grouped).map(([allergen, ingredients]) => {
+    const info = ALLERGEN_INFO[allergen] || { label: allergen, color: '#999' };
+    const title = ingredients.length
+      ? `${escapeHtml(info.label)} (from: ${ingredients.map(n => escapeHtml(n)).join(', ')})`
+      : escapeHtml(info.label);
+    return `<span class="allergen-badge" style="background:${info.color}" title="${title}">${escapeHtml(info.label)}</span>`;
+  }).join('') + '</div>';
+}
 
 function convertUnit(qty, fromUnit, toUnit) {
   const result = rawConvert(qty, fromUnit, toUnit);
@@ -188,16 +206,16 @@ export async function renderDishForm(container, dishId) {
             ${collapsibleHeader('Allergens', dish && dish.allergens && dish.allergens.length ? `${dish.allergens.length} detected` : '')}
             <div class="collapsible-section__body">
               <div style="margin-bottom:8px;">
-                <span class="text-muted" style="font-size:0.83rem;">Auto-detected from ingredients:</span>
+                <span class="text-muted" style="font-size:0.83rem;">From ingredients:</span>
                 <div id="allergen-preview" style="margin-top:4px;min-height:24px;">
-                  ${dish ? renderAllergenBadges(dish.allergens.filter(a => a.source === 'auto')) : '<span class="text-muted">Add ingredients to detect allergens</span>'}
+                  ${dish ? renderAllergenBadgesWithSource(dish.allergens.filter(a => a.ingredient_name)) : '<span class="text-muted">Add ingredients to detect allergens</span>'}
                 </div>
               </div>
               <div>
-                <span class="text-muted" style="font-size:0.83rem;">Manual tags — click to toggle:</span>
+                <span class="text-muted" style="font-size:0.83rem;">Dish-level manual tags — click to toggle:</span>
                 <div class="allergen-toggle-grid" id="allergen-manual-toggles" style="margin-top:6px;">
                   ${ALLERGEN_LIST.map(a => {
-                    const isManual = dish && dish.allergens.some(al => al.allergen === a && al.source === 'manual');
+                    const isManual = dish && dish.allergens.some(al => al.allergen === a && al.source === 'manual' && !al.ingredient_name);
                     return `<button type="button" class="allergen-toggle ${isManual ? 'active' : ''}" data-allergen="${a}">${capitalize(a)}</button>`;
                   }).join('')}
                 </div>
@@ -614,9 +632,17 @@ export async function renderDishForm(container, dishId) {
       return;
     }
 
-    const detected = detectAllergensClient(names, allergenKeywords);
-    if (detected.length) {
-      allergenPreview.innerHTML = renderAllergenBadges(detected);
+    // Detect per-ingredient and build allergens with source info
+    const allergenEntries = [];
+    for (const name of names) {
+      const detected = detectAllergensClient([name], allergenKeywords);
+      for (const allergen of detected) {
+        allergenEntries.push({ allergen, ingredient_name: name });
+      }
+    }
+
+    if (allergenEntries.length) {
+      allergenPreview.innerHTML = renderAllergenBadgesWithSource(allergenEntries);
     } else {
       allergenPreview.innerHTML = '<span class="text-muted">No allergens detected</span>';
     }

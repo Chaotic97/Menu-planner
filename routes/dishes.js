@@ -3,7 +3,7 @@ const multer = require('multer');
 const path = require('path');
 const sharp = require('sharp');
 const { getDb } = require('../db/database');
-const { updateDishAllergens, getAllergenKeywords, addAllergenKeyword, deleteAllergenKeyword } = require('../services/allergenDetector');
+const { updateDishAllergens, getDishAllergens, getDishAllergensBatch, getAllergenKeywords, addAllergenKeyword, deleteAllergenKeyword } = require('../services/allergenDetector');
 const { calculateDishCost, calculateFoodCostPercent, suggestPrice, round2 } = require('../services/costCalculator');
 const { importRecipe } = require('../services/recipeImporter');
 const { importDocx } = require('../services/docxImporter');
@@ -87,15 +87,8 @@ router.get('/', (req, res) => {
     const dishIds = dishes.map(d => d.id);
     const placeholders = dishIds.map(() => '?').join(',');
 
-    // Batch fetch allergens
-    const allergenRows = db.prepare(
-      `SELECT dish_id, allergen, source FROM dish_allergens WHERE dish_id IN (${placeholders})`
-    ).all(...dishIds);
-    const allergenMap = {};
-    for (const row of allergenRows) {
-      if (!allergenMap[row.dish_id]) allergenMap[row.dish_id] = [];
-      allergenMap[row.dish_id].push({ allergen: row.allergen, source: row.source });
-    }
+    // Batch fetch allergens (aggregated from ingredient_allergens + dish manual)
+    const allergenMap = getDishAllergensBatch(dishIds);
 
     // Batch fetch tags
     const tagRows = db.prepare(
@@ -136,14 +129,28 @@ router.get('/:id', (req, res) => {
     'SELECT id, label, sort_order FROM dish_section_headers WHERE dish_id = ? ORDER BY sort_order'
   ).all(dish.id);
 
+  // Attach per-ingredient allergens
+  const ingredientIds = ingRows.map(r => r.ingredient_id).filter(Boolean);
+  const ingAllergenMap = {};
+  if (ingredientIds.length) {
+    const iph = ingredientIds.map(() => '?').join(',');
+    const iaRows = db.prepare(
+      `SELECT ingredient_id, allergen, source FROM ingredient_allergens WHERE ingredient_id IN (${iph})`
+    ).all(...ingredientIds);
+    for (const r of iaRows) {
+      if (!ingAllergenMap[r.ingredient_id]) ingAllergenMap[r.ingredient_id] = [];
+      ingAllergenMap[r.ingredient_id].push({ allergen: r.allergen, source: r.source });
+    }
+  }
+
   // Merge into a single ordered list (sections interspersed with ingredients)
   dish.ingredients = [
-    ...ingRows.map(r => ({ ...r, row_type: 'ingredient' })),
+    ...ingRows.map(r => ({ ...r, row_type: 'ingredient', allergens: ingAllergenMap[r.ingredient_id] || [] })),
     ...sectionRows.map(r => ({ ...r, row_type: 'section' })),
   ].sort((a, b) => a.sort_order - b.sort_order || a.id - b.id);
 
-  // Get allergens
-  dish.allergens = db.prepare('SELECT allergen, source FROM dish_allergens WHERE dish_id = ?').all(dish.id);
+  // Get allergens (aggregated from ingredient_allergens + dish-level manual)
+  dish.allergens = getDishAllergens(dish.id);
 
   // Get tags
   dish.tags = db.prepare(`
@@ -338,6 +345,17 @@ router.post('/:id/duplicate', (req, res) => {
     }
 
     updateDishAllergens(newId);
+
+    // Copy dish-level manual allergen overrides
+    const manualAllergens = db.prepare(
+      "SELECT allergen FROM dish_allergens WHERE dish_id = ? AND source = 'manual'"
+    ).all(req.params.id);
+    const insertAllergen = db.prepare(
+      "INSERT OR IGNORE INTO dish_allergens (dish_id, allergen, source) VALUES (?, ?, 'manual')"
+    );
+    for (const a of manualAllergens) {
+      insertAllergen.run(newId, a.allergen);
+    }
 
     db.exec('COMMIT');
     req.broadcast('dish_created', { id: newId }, req.headers['x-client-id']);
