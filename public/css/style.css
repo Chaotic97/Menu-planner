@@ -7071,6 +7071,18 @@ textarea.input { resize: vertical; min-height: 80px; }
   }
 }
 
+.il-allergen-auto-label,
+.il-allergen-manual-label {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  margin-bottom: 4px;
+}
+
+.il-allergen-manual-label {
+  margin-top: 4px;
+}
+
 /* ============================
    Calendar Page
    ============================ */

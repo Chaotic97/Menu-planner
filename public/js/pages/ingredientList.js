@@ -1,7 +1,8 @@
-import { getIngredients, updateIngredient, updateIngredientStock } from '../api.js';
+import { getIngredients, updateIngredient, updateIngredientStock, updateIngredientAllergen } from '../api.js';
 import { escapeHtml } from '../utils/escapeHtml.js';
 import { showToast } from '../components/toast.js';
 import { openModal, closeModal } from '../components/modal.js';
+import { ALLERGEN_LIST, capitalize } from '../data/allergens.js';
 
 const CATEGORIES = [
   'produce', 'protein', 'dairy', 'dry goods', 'spices',
@@ -172,6 +173,10 @@ export async function renderIngredientList(container) {
   }
 
   function openEditModal(ing) {
+    const allergens = ing.allergens || [];
+    const autoAllergens = allergens.filter(a => a.source === 'auto');
+    const manualAllergens = allergens.filter(a => a.source === 'manual');
+
     const html = `
       <form id="il-edit-form" class="il-edit-form">
         <div class="st-form-group">
@@ -194,6 +199,22 @@ export async function renderIngredientList(container) {
             ${CATEGORIES.map(c => `<option value="${c}"${(ing.category || 'other') === c ? ' selected' : ''}>${escapeHtml(c)}</option>`).join('')}
           </select>
         </div>
+        <div class="st-form-group">
+          <label class="st-label">Allergens</label>
+          ${autoAllergens.length ? `
+            <div class="il-allergen-auto-label">Auto-detected:</div>
+            <div class="allergen-badges" style="margin-bottom:8px">
+              ${autoAllergens.map(a => `<span class="allergen-badge">${escapeHtml(capitalize(a.allergen))}</span>`).join('')}
+            </div>
+          ` : ''}
+          <div class="il-allergen-manual-label">Manual overrides:</div>
+          <div class="allergen-toggle-grid" id="il-allergen-toggles">
+            ${ALLERGEN_LIST.filter(a => !autoAllergens.some(aa => aa.allergen === a)).map(a => {
+              const isManual = manualAllergens.some(ma => ma.allergen === a);
+              return `<button type="button" class="allergen-toggle${isManual ? ' active' : ''}" data-allergen="${a}">${capitalize(a)}</button>`;
+            }).join('')}
+          </div>
+        </div>
         <div class="st-form-actions">
           <button type="submit" class="btn btn-primary">Save</button>
           <button type="button" class="btn btn-secondary" id="il-edit-cancel">Cancel</button>
@@ -207,6 +228,24 @@ export async function renderIngredientList(container) {
     const cancelBtn = overlay.querySelector('#il-edit-cancel');
 
     cancelBtn.addEventListener('click', closeModal);
+
+    // Allergen toggle handler
+    const allergenGrid = overlay.querySelector('#il-allergen-toggles');
+    if (allergenGrid) {
+      allergenGrid.addEventListener('click', async (e) => {
+        const btn = e.target.closest('.allergen-toggle');
+        if (!btn) return;
+        const allergen = btn.dataset.allergen;
+        const isActive = btn.classList.contains('active');
+        try {
+          await updateIngredientAllergen(ing.id, { allergen, action: isActive ? 'remove' : 'add' });
+          btn.classList.toggle('active');
+          showToast(isActive ? `Removed ${allergen}` : `Added ${allergen}`);
+        } catch (err) {
+          showToast(err.message || 'Failed to update allergen', 'error');
+        }
+      });
+    }
 
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
