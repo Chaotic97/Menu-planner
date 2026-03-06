@@ -26,7 +26,8 @@ const sessionApprovedTools = new Set();
 
 const SESSION_TIMEOUT_MS = 60 * 60 * 1000; // 1 hour
 const MAX_HISTORY_LENGTH = 100; // Cap in-memory history to prevent unbounded growth
-const SENDING_WATCHDOG_MS = 90 * 1000; // 90s max for any single AI interaction
+const SENDING_WATCHDOG_MS = 60 * 1000; // 60s max for any single AI interaction
+const STREAM_THROTTLE_MS = 50; // Batch streaming text re-renders
 
 // Tool name → friendly label map
 const TOOL_LABELS = {
@@ -53,9 +54,12 @@ function getToolLabel(name) {
   return TOOL_LABELS[name] || name.replace(/_/g, ' ');
 }
 
+/** Track the last user message for retry functionality */
+let lastUserMessage = '';
+
 /**
  * Set the sending state and arm/disarm the watchdog timer.
- * If sending gets stuck for >90s, auto-recover to prevent permanent lockout.
+ * Swaps send button ↔ stop button. If stuck for >60s, auto-recover with inline retry.
  */
 function setSending(active) {
   isSending = active;
@@ -63,32 +67,132 @@ function setSending(active) {
     clearTimeout(sendingWatchdog);
     sendingWatchdog = null;
   }
+
+  // Swap send ↔ stop button
+  if (drawerEl) {
+    const inputRow = drawerEl.querySelector('.chat-drawer-input-row');
+    if (inputRow) {
+      const sendBtn = inputRow.querySelector('.chat-drawer-send');
+      const stopBtn = inputRow.querySelector('.chat-drawer-stop');
+      if (active) {
+        if (sendBtn) sendBtn.style.display = 'none';
+        if (!stopBtn) {
+          const btn = document.createElement('button');
+          btn.className = 'chat-drawer-stop';
+          btn.title = 'Stop generating';
+          btn.setAttribute('aria-label', 'Stop generating');
+          btn.innerHTML = `<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>`;
+          btn.addEventListener('click', stopGenerating);
+          inputRow.appendChild(btn);
+        }
+      } else {
+        if (stopBtn) stopBtn.remove();
+        if (sendBtn) sendBtn.style.display = '';
+      }
+    }
+  }
+
   if (active) {
     sendingWatchdog = setTimeout(() => {
       console.warn('Chat drawer: sending watchdog fired — auto-recovering from stuck state');
-      isSending = false;
-      sendingWatchdog = null;
-      if (currentStream) {
-        currentStream.abort();
-        currentStream = null;
-      }
-      if (drawerEl) {
-        const inp = drawerEl.querySelector('.chat-drawer-input');
-        const btn = drawerEl.querySelector('.chat-drawer-send');
-        if (inp) inp.disabled = false;
-        if (btn) btn.disabled = false;
-      }
-      const messagesEl = document.getElementById('chat-messages');
-      if (messagesEl) {
-        // Remove streaming cursor if stuck
-        const cursor = messagesEl.querySelector('.chat-stream-cursor');
-        if (cursor) cursor.remove();
-        const streamingMsg = messagesEl.querySelector('.chat-msg-streaming');
-        if (streamingMsg) streamingMsg.classList.remove('chat-msg-streaming');
-      }
-      appendMessage('error', 'The assistant took too long to respond. Please try again.');
+      cleanupSendingState();
+      // Inline error with retry button instead of just a toast
+      appendErrorWithRetry('The assistant took too long to respond.');
     }, SENDING_WATCHDOG_MS);
   }
+}
+
+/**
+ * Stop the current AI generation.
+ */
+function stopGenerating() {
+  if (currentStream) {
+    currentStream.abort();
+    currentStream = null;
+  }
+  cleanupSendingState();
+  // Mark the current streaming message as stopped
+  const messagesEl = document.getElementById('chat-messages');
+  if (messagesEl) {
+    const streamingMsg = messagesEl.querySelector('.chat-msg-streaming');
+    if (streamingMsg) {
+      const textEl = streamingMsg.querySelector('.chat-msg-text');
+      if (textEl) {
+        const stopped = document.createElement('span');
+        stopped.className = 'chat-error-text';
+        stopped.textContent = ' [Stopped]';
+        textEl.appendChild(stopped);
+      }
+      streamingMsg.classList.remove('chat-msg-streaming');
+    }
+  }
+}
+
+/**
+ * Reset all sending-related state. Used by watchdog and stop button.
+ */
+function cleanupSendingState() {
+  isSending = false;
+  if (sendingWatchdog) {
+    clearTimeout(sendingWatchdog);
+    sendingWatchdog = null;
+  }
+  if (currentStream) {
+    currentStream.abort();
+    currentStream = null;
+  }
+  if (drawerEl) {
+    const inp = drawerEl.querySelector('.chat-drawer-input');
+    const sendBtn = drawerEl.querySelector('.chat-drawer-send');
+    const stopBtn = drawerEl.querySelector('.chat-drawer-stop');
+    if (inp) inp.disabled = false;
+    if (sendBtn) { sendBtn.disabled = false; sendBtn.style.display = ''; }
+    if (stopBtn) stopBtn.remove();
+  }
+  const messagesEl = document.getElementById('chat-messages');
+  if (messagesEl) {
+    const cursor = messagesEl.querySelector('.chat-stream-cursor');
+    if (cursor) cursor.remove();
+    const streamingMsg = messagesEl.querySelector('.chat-msg-streaming');
+    if (streamingMsg) streamingMsg.classList.remove('chat-msg-streaming');
+    // Remove any lingering thinking indicators
+    const thinking = messagesEl.querySelector('.chat-thinking-indicator');
+    if (thinking) thinking.remove();
+  }
+}
+
+/**
+ * Append an error message with an inline Retry button.
+ */
+function appendErrorWithRetry(errorMsg) {
+  const messagesEl = document.getElementById('chat-messages');
+  if (!messagesEl) return;
+
+  const welcome = messagesEl.querySelector('.chat-drawer-welcome');
+  if (welcome) welcome.remove();
+
+  const msg = document.createElement('div');
+  msg.className = 'chat-msg chat-msg-error chat-msg-enter';
+  msg.innerHTML = `<div class="chat-msg-text"><div class="chat-inline-error">
+    <span>${escapeHtml(errorMsg)}</span>
+    <button class="chat-retry-btn">Retry</button>
+  </div></div>`;
+
+  msg.querySelector('.chat-retry-btn').addEventListener('click', () => {
+    msg.remove();
+    if (lastUserMessage && drawerEl) {
+      const input = drawerEl.querySelector('.chat-drawer-input');
+      if (input) {
+        input.value = lastUserMessage;
+        const sendBtn = drawerEl.querySelector('.chat-drawer-send');
+        if (sendBtn) sendBtn.click();
+      }
+    }
+  });
+
+  msg.addEventListener('animationend', () => msg.classList.remove('chat-msg-enter'));
+  messagesEl.appendChild(msg);
+  messagesEl.scrollTop = messagesEl.scrollHeight;
 }
 
 function checkSessionTimeout() {
@@ -235,7 +339,12 @@ function createDrawer() {
     const attachment = pendingAttachment;
 
     // Need either text or attachment to send
-    if ((!userText && !attachment) || isSending) return;
+    if (!userText && !attachment) return;
+
+    // Safety net: if isSending is stuck, force-reset before proceeding (1C)
+    if (isSending) {
+      cleanupSendingState();
+    }
 
     if (showingHistory) hideHistoryView();
 
@@ -251,6 +360,10 @@ function createDrawer() {
       appendMessage('user', userText);
     }
     touchSession();
+    lastUserMessage = userText;
+
+    // Show thinking indicator immediately (1B)
+    showThinkingIndicator();
 
     // Ensure we have a conversation ID
     if (!currentConversationId) {
@@ -328,6 +441,34 @@ function createDrawer() {
 }
 
 /**
+ * Show a thinking indicator (animated dots) while waiting for first token.
+ */
+function showThinkingIndicator() {
+  const messagesEl = document.getElementById('chat-messages');
+  if (!messagesEl) return;
+  // Remove any existing thinking indicator
+  const existing = messagesEl.querySelector('.chat-thinking-indicator');
+  if (existing) existing.remove();
+
+  const indicator = document.createElement('div');
+  indicator.className = 'chat-msg chat-msg-assistant chat-thinking-indicator chat-msg-enter';
+  indicator.innerHTML = `<div class="chat-msg-text"><div class="chat-typing-dots"><span></span><span></span><span></span></div></div>`;
+  indicator.addEventListener('animationend', () => indicator.classList.remove('chat-msg-enter'));
+  messagesEl.appendChild(indicator);
+  messagesEl.scrollTop = messagesEl.scrollHeight;
+}
+
+/**
+ * Remove the thinking indicator.
+ */
+function removeThinkingIndicator() {
+  const messagesEl = document.getElementById('chat-messages');
+  if (!messagesEl) return;
+  const indicator = messagesEl.querySelector('.chat-thinking-indicator');
+  if (indicator) indicator.remove();
+}
+
+/**
  * Send a message via SSE streaming with progressive rendering
  */
 async function sendStreamingMessage(text, input, sendBtn) {
@@ -336,7 +477,8 @@ async function sendStreamingMessage(text, input, sendBtn) {
 
   // Create the assistant message container for streaming
   const msgEl = document.createElement('div');
-  msgEl.className = 'chat-msg chat-msg-assistant chat-msg-streaming';
+  msgEl.className = 'chat-msg chat-msg-assistant chat-msg-streaming chat-msg-enter';
+  msgEl.addEventListener('animationend', () => msgEl.classList.remove('chat-msg-enter'));
 
   const toolIndicatorEl = document.createElement('div');
   toolIndicatorEl.className = 'chat-tool-indicator';
@@ -350,11 +492,33 @@ async function sendStreamingMessage(text, input, sendBtn) {
 
   msgEl.appendChild(toolIndicatorEl);
   msgEl.appendChild(textEl);
-  messagesEl.appendChild(msgEl);
-  messagesEl.scrollTop = messagesEl.scrollHeight;
+
+  // Don't append yet — wait for first real content to replace thinking indicator
 
   let fullText = '';
   let pendingConfirmation = null;
+  let firstContentReceived = false;
+  let throttleTimer = null;
+  let throttledText = '';
+
+  function ensureMsgInDom() {
+    if (!firstContentReceived) {
+      firstContentReceived = true;
+      removeThinkingIndicator();
+      messagesEl.appendChild(msgEl);
+    }
+  }
+
+  function flushThrottledRender() {
+    if (throttledText !== fullText) {
+      throttledText = fullText;
+      requestAnimationFrame(() => {
+        textEl.innerHTML = renderMarkdown(fullText);
+        textEl.appendChild(cursorEl);
+        messagesEl.scrollTop = messagesEl.scrollHeight;
+      });
+    }
+  }
 
   const context = getPageContext();
 
@@ -369,19 +533,31 @@ async function sendStreamingMessage(text, input, sendBtn) {
 
   currentStream = aiCommandStream(streamPayload, {
     onTextDelta(data) {
+      ensureMsgInDom();
       fullText += data.text;
-      textEl.innerHTML = renderMarkdown(fullText);
-      textEl.appendChild(cursorEl);
-      messagesEl.scrollTop = messagesEl.scrollHeight;
+      // Throttle renders to reduce flicker (5B)
+      if (!throttleTimer) {
+        throttleTimer = setTimeout(() => {
+          throttleTimer = null;
+          flushThrottledRender();
+        }, STREAM_THROTTLE_MS);
+      }
     },
 
     onTextClear() {
       fullText = '';
+      throttledText = '';
       textEl.innerHTML = '';
     },
 
     onToolStart(data) {
+      ensureMsgInDom();
+      // Remove any existing tool indicator to prevent duplicates (1A)
+      const existing = msgEl.querySelector('.chat-tool-indicator');
+      if (existing && existing !== toolIndicatorEl) existing.remove();
+
       toolIndicatorEl.style.display = 'flex';
+      toolIndicatorEl.classList.remove('chat-tool-done');
       toolIndicatorEl.innerHTML = `
         <span class="chat-tool-spinner"></span>
         <span class="chat-tool-label">${escapeHtml(getToolLabel(data.name))}</span>
@@ -396,24 +572,58 @@ async function sendStreamingMessage(text, input, sendBtn) {
       `;
     },
 
+    onProgress(data) {
+      // Show step progress from agentic loop (1F)
+      if (data.round !== undefined) {
+        const label = toolIndicatorEl.querySelector('.chat-progress-label');
+        if (label) {
+          label.textContent = `Step ${data.round + 1}...`;
+        } else {
+          const span = document.createElement('span');
+          span.className = 'chat-progress-label';
+          span.textContent = `Step ${data.round + 1}...`;
+          toolIndicatorEl.appendChild(span);
+        }
+      }
+    },
+
     onConfirmation(data) {
       pendingConfirmation = data;
     },
 
     onError(data) {
-      // data may be an object {message: ...} from SSE error events,
-      // or a plain string from HTTP-level / network errors in api.js
+      ensureMsgInDom();
       const errorMsg = (typeof data === 'string' ? data : data.message) || 'Something went wrong';
       if (!fullText) {
         textEl.innerHTML = `<span class="chat-error-text">${escapeHtml(errorMsg)}</span>`;
       } else {
         textEl.innerHTML = renderMarkdown(fullText) + `<br><span class="chat-error-text">${escapeHtml(errorMsg)}</span>`;
       }
+      // Run the same cleanup as onDone on error (1C)
+      cleanupSendingState();
+      if (input) input.disabled = false;
+      if (sendBtn) sendBtn.disabled = false;
     },
 
     onDone(_data) {
+      // Clear any pending throttle timer
+      if (throttleTimer) {
+        clearTimeout(throttleTimer);
+        throttleTimer = null;
+      }
+
       currentStream = null;
       try { cursorEl.remove(); } catch {}
+
+      // If no content was received at all, still ensure the msg is in DOM
+      if (!firstContentReceived) {
+        removeThinkingIndicator();
+        // Only add to DOM if we have something to show
+        if (fullText || pendingConfirmation) {
+          messagesEl.appendChild(msgEl);
+        }
+      }
+
       msgEl.classList.remove('chat-msg-streaming');
 
       // Hide tool indicator after a brief delay
@@ -421,7 +631,7 @@ async function sendStreamingMessage(text, input, sendBtn) {
         setTimeout(() => { toolIndicatorEl.classList.add('chat-tool-done'); }, 500);
       }
 
-      // Final render with markdown
+      // Final immediate render with markdown (5B)
       if (fullText) {
         try { textEl.innerHTML = renderMarkdown(fullText); } catch {}
       }
@@ -442,15 +652,15 @@ async function sendStreamingMessage(text, input, sendBtn) {
           conversationHistory = conversationHistory.slice(-MAX_HISTORY_LENGTH);
         }
 
+        // Persist with retry on failure (2B)
         if (currentConversationId) {
-          addConversationMessage(currentConversationId, 'assistant', responseText).catch(() => {});
+          persistMessage(currentConversationId, 'assistant', responseText, msgEl);
         }
       }
 
       setSending(false);
-      sendBtn.disabled = false;
-      input.disabled = false;
-      input.focus();
+      if (sendBtn) sendBtn.disabled = false;
+      if (input) { input.disabled = false; input.focus(); }
     },
   });
 }
@@ -460,7 +670,8 @@ async function sendStreamingMessage(text, input, sendBtn) {
  */
 function appendConfirmation(data, messagesEl) {
   const card = document.createElement('div');
-  card.className = 'chat-confirmation-card';
+  card.className = 'chat-confirmation-card chat-msg-enter';
+  card.addEventListener('animationend', () => card.classList.remove('chat-msg-enter'));
   card.innerHTML = `
     <div class="chat-confirmation-header">
       <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
@@ -606,28 +817,38 @@ async function stageAttachment(file) {
     return;
   }
 
+  // Show attachment chip in loading state immediately (4A)
+  const bar = document.getElementById('chat-attachment-bar');
+  const nameEl = document.getElementById('chat-attachment-name');
+  const chip = bar ? bar.querySelector('.chat-drawer-attachment-chip') : null;
+  if (bar && nameEl) {
+    nameEl.textContent = 'Extracting text...';
+    bar.style.display = '';
+    if (chip) chip.classList.add('chat-attachment-loading');
+  }
+
   // Pre-extract text so send is fast
   let extractedText = null;
   try {
     extractedText = await extractFileText(file);
     if (!extractedText) {
+      if (bar) bar.style.display = 'none';
+      if (chip) chip.classList.remove('chat-attachment-loading');
       appendMessage('error', 'Could not extract text from this file type.');
       return;
     }
   } catch (err) {
+    if (bar) bar.style.display = 'none';
+    if (chip) chip.classList.remove('chat-attachment-loading');
     appendMessage('error', err.message || 'Failed to process file');
     return;
   }
 
   pendingAttachment = { file, extractedText };
 
-  // Show attachment chip
-  const bar = document.getElementById('chat-attachment-bar');
-  const nameEl = document.getElementById('chat-attachment-name');
-  if (bar && nameEl) {
-    nameEl.textContent = file.name;
-    bar.style.display = '';
-  }
+  // Update chip to ready state
+  if (nameEl) nameEl.textContent = file.name;
+  if (chip) chip.classList.remove('chat-attachment-loading');
 }
 
 /**
@@ -739,6 +960,7 @@ function hideHistoryView() {
   showingHistory = false;
   const historyBtn = drawerEl.querySelector('.chat-drawer-history-btn');
   if (historyBtn) historyBtn.classList.remove('active');
+  // Always restore from conversationHistory since history view replaced the DOM
   restoreMessages();
 }
 
@@ -749,6 +971,11 @@ async function loadConversation(convId) {
 
   const messagesEl = document.getElementById('chat-messages');
   if (!messagesEl) return;
+
+  // If reloading the same conversation, don't rebuild DOM (2A)
+  if (convId === currentConversationId && messagesEl.querySelector('.chat-msg')) {
+    return;
+  }
 
   messagesEl.innerHTML = '<div class="chat-history-loading">Loading...</div>';
 
@@ -762,6 +989,7 @@ async function loadConversation(convId) {
     for (const msg of messages) {
       const el = document.createElement('div');
       el.className = `chat-msg chat-msg-${msg.role}`;
+      if (msg.id) el.setAttribute('data-message-id', msg.id);
       const contentHtml = msg.role === 'assistant' ? renderMarkdown(msg.content) : escapeHtml(msg.content);
       el.innerHTML = `<div class="chat-msg-text">${contentHtml}</div>`;
       messagesEl.appendChild(el);
@@ -820,11 +1048,31 @@ function appendMessage(role, text) {
   if (welcome) welcome.remove();
 
   const msg = document.createElement('div');
-  msg.className = `chat-msg chat-msg-${role}`;
+  msg.className = `chat-msg chat-msg-${role} chat-msg-enter`;
   const contentHtml = role === 'assistant' ? renderMarkdown(text) : escapeHtml(text);
   msg.innerHTML = `<div class="chat-msg-text">${contentHtml}</div>`;
+  msg.addEventListener('animationend', () => msg.classList.remove('chat-msg-enter'));
   messagesEl.appendChild(msg);
   messagesEl.scrollTop = messagesEl.scrollHeight;
+}
+
+/**
+ * Persist a message to the database with one retry on failure (2B).
+ * Marks the message element with an unsaved indicator if both attempts fail.
+ */
+async function persistMessage(conversationId, role, content, msgEl) {
+  try {
+    await addConversationMessage(conversationId, role, content);
+  } catch {
+    // Retry once after 2s
+    try {
+      await new Promise(r => setTimeout(r, 2000));
+      await addConversationMessage(conversationId, role, content);
+    } catch {
+      // Both attempts failed — mark as unsaved
+      if (msgEl) msgEl.classList.add('chat-msg-unsaved');
+    }
+  }
 }
 
 /**
