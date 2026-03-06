@@ -256,7 +256,19 @@ async function processCommand(message, pageContext, conversationHistory, broadca
     // Tool call: check if auto-approved (built-in or session-approved)
     if (isEffectivelyAutoApproved(toolCall.name) && round < MAX_TOOL_ROUNDS) {
       // Execute immediately and feed result back to Haiku
-      const result = executeToolHandler(toolCall.name, toolCall.input, { preview: false, pageContext, broadcast });
+      let result;
+      try {
+        result = executeToolHandler(toolCall.name, toolCall.input, { preview: false, pageContext, broadcast });
+      } catch (toolErr) {
+        console.error(`Tool ${toolCall.name} failed:`, toolErr);
+        const errorMessage = `Tool error: ${toolErr.message || 'execution failed'}`;
+        messages.push({ role: 'assistant', content: response.content });
+        messages.push({
+          role: 'user',
+          content: [{ type: 'tool_result', tool_use_id: toolCall.id, content: errorMessage, is_error: true }],
+        });
+        continue;
+      }
       executedTools.push({ name: toolCall.name, input: toolCall.input, result });
 
       // Append assistant message (with tool_use) + tool_result for next round
@@ -275,7 +287,14 @@ async function processCommand(message, pageContext, conversationHistory, broadca
 
     // Auto-approved tool on final allowed round — execute but don't loop
     if (isEffectivelyAutoApproved(toolCall.name)) {
-      const result = executeToolHandler(toolCall.name, toolCall.input, { preview: false, pageContext, broadcast });
+      let result;
+      try {
+        result = executeToolHandler(toolCall.name, toolCall.input, { preview: false, pageContext, broadcast });
+      } catch (toolErr) {
+        console.error(`Tool ${toolCall.name} failed on final round:`, toolErr);
+        trackUsage(totalTokensIn, totalTokensOut, null);
+        return { response: `Action failed: ${toolErr.message || 'unknown error'}` };
+      }
       executedTools.push({ name: toolCall.name, input: toolCall.input, result });
       const toolNames = executedTools.map(t => t.name).join(',');
       trackUsage(totalTokensIn, totalTokensOut, toolNames);
@@ -470,7 +489,26 @@ async function processCommandStream(message, pageContext, conversationHistory, b
 
     // Tool call: auto-approved (built-in or session-approved)?
     if (isEffectivelyAutoApproved(toolCall.name) && round < MAX_TOOL_ROUNDS) {
-      const result = executeToolHandler(toolCall.name, toolCall.input, { preview: false, pageContext, broadcast });
+      let result;
+      try {
+        result = executeToolHandler(toolCall.name, toolCall.input, { preview: false, pageContext, broadcast });
+      } catch (toolErr) {
+        console.error(`Tool ${toolCall.name} failed:`, toolErr);
+        // Feed the error back to the model so it can recover
+        const errorMessage = `Tool error: ${toolErr.message || 'execution failed'}`;
+        emit('tool_result', { name: toolCall.name, message: errorMessage });
+        const assistantContent = [];
+        if (textResponse) assistantContent.push({ type: 'text', text: textResponse });
+        assistantContent.push({ type: 'tool_use', id: toolCall.id, name: toolCall.name, input: toolCall.input });
+        messages.push({ role: 'assistant', content: assistantContent });
+        messages.push({
+          role: 'user',
+          content: [{ type: 'tool_result', tool_use_id: toolCall.id, content: errorMessage, is_error: true }],
+        });
+        textResponse = '';
+        emit('text_clear', {});
+        continue;
+      }
       executedTools.push({ name: toolCall.name, input: toolCall.input, result });
       emit('tool_result', { name: toolCall.name, message: result.message });
 
@@ -492,7 +530,17 @@ async function processCommandStream(message, pageContext, conversationHistory, b
 
     // Auto-approved on final round
     if (isEffectivelyAutoApproved(toolCall.name)) {
-      const result = executeToolHandler(toolCall.name, toolCall.input, { preview: false, pageContext, broadcast });
+      let result;
+      try {
+        result = executeToolHandler(toolCall.name, toolCall.input, { preview: false, pageContext, broadcast });
+      } catch (toolErr) {
+        console.error(`Tool ${toolCall.name} failed on final round:`, toolErr);
+        const toolNamesStr = executedTools.map(t => t.name).join(',') || null;
+        trackUsage(totalTokensIn, totalTokensOut, toolNamesStr);
+        emit('error', { message: `Action failed: ${toolErr.message || 'unknown error'}` });
+        emit('done', {});
+        return;
+      }
       executedTools.push({ name: toolCall.name, input: toolCall.input, result });
       emit('tool_result', { name: toolCall.name, message: result.message });
 

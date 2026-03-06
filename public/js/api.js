@@ -153,6 +153,9 @@ export const getAiSettings = () => request('/ai/settings');
 export const saveAiSettings = (data) => request('/ai/settings', { method: 'POST', body: data });
 
 // AI Streaming (SSE) — returns an object with event handling for progressive rendering
+// Includes: 120s overall timeout, one auto-retry on network errors, safe handler invocation
+const SSE_TIMEOUT = 120000; // 2 minutes overall timeout for streaming
+
 export function aiCommandStream(data, handlers = {}) {
   const controller = new AbortController();
   let doneEmitted = false;
@@ -160,76 +163,121 @@ export function aiCommandStream(data, handlers = {}) {
   function ensureDone() {
     if (!doneEmitted && handlers.onDone) {
       doneEmitted = true;
-      handlers.onDone({});
+      try { handlers.onDone({}); } catch (e) { console.error('onDone handler error:', e); }
+    }
+  }
+
+  function safeCall(handlerName, eventData) {
+    try {
+      const handler = handlers[handlerName];
+      if (handler) handler(eventData);
+    } catch (e) {
+      console.error(`SSE handler ${handlerName} error:`, e);
+    }
+  }
+
+  async function processStream(signal) {
+    const res = await fetch(`${BASE}/ai/stream`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Client-Id': getClientId(),
+      },
+      body: JSON.stringify(data),
+      signal,
+    });
+
+    if (res.status === 401) {
+      window.location.hash = '#/login';
+      window.location.reload();
+      return;
+    }
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: res.statusText }));
+      if (handlers.onError) safeCall('onError', err.error || 'Request failed');
+      return;
+    }
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+
+      let currentEvent = null;
+      for (const line of lines) {
+        if (line.startsWith('event: ')) {
+          currentEvent = line.slice(7).trim();
+        } else if (line.startsWith('data: ') && currentEvent) {
+          try {
+            const eventData = JSON.parse(line.slice(6));
+            const handlerName = 'on' + currentEvent.charAt(0).toUpperCase() + currentEvent.slice(1).replace(/_([a-z])/g, (_, c) => c.toUpperCase());
+            if (handlerName === 'onDone') doneEmitted = true;
+            safeCall(handlerName, eventData);
+          } catch (parseErr) {
+            console.warn('SSE parse error for event', currentEvent, ':', parseErr.message);
+          }
+          currentEvent = null;
+        } else if (line === '') {
+          currentEvent = null;
+        }
+      }
     }
   }
 
   (async () => {
+    // Overall timeout — prevents stuck UI if stream stalls
+    const timeoutId = setTimeout(() => controller.abort(), SSE_TIMEOUT);
+
     try {
-      const res = await fetch(`${BASE}/ai/stream`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Client-Id': getClientId(),
-        },
-        body: JSON.stringify(data),
-        signal: controller.signal,
-      });
-
-      if (res.status === 401) {
-        window.location.hash = '#/login';
-        window.location.reload();
+      await processStream(controller.signal);
+      ensureDone();
+    } catch (err) {
+      if (err.name === 'AbortError') {
+        // Could be manual abort or timeout — check if user initiated
+        if (!doneEmitted && handlers.onError) {
+          safeCall('onError', 'Request timed out. Please try again.');
+        }
         ensureDone();
         return;
       }
 
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({ error: res.statusText }));
-        if (handlers.onError) handlers.onError(err.error || 'Request failed');
-        ensureDone();
-        return;
-      }
+      // Network error (e.g. Safari "Load failed") — retry once
+      const isNetworkError = !err.status && (
+        err.message === 'Load failed' ||
+        err.message === 'Failed to fetch' ||
+        err.message === 'NetworkError when attempting to fetch resource.' ||
+        err.name === 'TypeError'
+      );
 
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = '';
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n');
-        buffer = lines.pop() || '';
-
-        let currentEvent = null;
-        for (const line of lines) {
-          if (line.startsWith('event: ')) {
-            currentEvent = line.slice(7).trim();
-          } else if (line.startsWith('data: ') && currentEvent) {
-            try {
-              const eventData = JSON.parse(line.slice(6));
-              const handlerName = 'on' + currentEvent.charAt(0).toUpperCase() + currentEvent.slice(1).replace(/_([a-z])/g, (_, c) => c.toUpperCase());
-              if (handlerName === 'onDone') doneEmitted = true;
-              const handler = handlers[handlerName];
-              if (handler) handler(eventData);
-            } catch (parseErr) {
-              console.warn('SSE parse error for event', currentEvent, ':', parseErr.message);
-            }
-            currentEvent = null;
-          } else if (line === '') {
-            currentEvent = null;
+      if (isNetworkError) {
+        try {
+          await new Promise(r => setTimeout(r, 1500));
+          await processStream(controller.signal);
+          ensureDone();
+          return;
+        } catch (retryErr) {
+          if (retryErr.name !== 'AbortError' && handlers.onError) {
+            safeCall('onError', 'Connection failed. Check your network and try again.');
           }
+          ensureDone();
+          return;
         }
       }
 
-      // Stream ended without a done event from server — ensure cleanup
-      ensureDone();
-    } catch (err) {
-      if (err.name !== 'AbortError' && handlers.onError) {
-        handlers.onError(err.message || 'Stream failed');
+      if (handlers.onError) {
+        safeCall('onError', err.message || 'Stream failed');
       }
       ensureDone();
+    } finally {
+      clearTimeout(timeoutId);
     }
   })();
 
