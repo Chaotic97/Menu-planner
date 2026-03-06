@@ -141,20 +141,94 @@ See the [Database Tables section in CLAUDE.md](../CLAUDE.md) for the full table 
 - `tasks` — Prep and custom tasks with priority and timing
 - `service_notes` — Daily kitchen notes by shift
 
-### Production data access (DigitalOcean)
+### Production workflow (DigitalOcean)
 
-Claude Desktop **cannot connect to the live server** — MCP only works with local files. To analyze production data, pull a snapshot first:
+Claude Desktop **cannot connect to the live server** — MCP only works with local files. The workflow is: pull a snapshot, work on it locally, then push it back when you're done.
 
-**Option A — In-app backup**
-1. Open PlateStack Settings in the browser.
-2. Use the backup/export feature to download the `.db` file.
+#### Step 1 — Pull the production database
 
-**Option B — SCP from the server**
+**Option A — SCP (recommended)**
 ```bash
-scp user@platestack.app:/path/to/menu-planner.db ~/Desktop/platestack-backup.db
+scp user@platestack.app:/path/to/menu-planner.db ~/platestack-prod.db
 ```
 
-**Then:**
-1. Update your `claude_desktop_config.json` to point at the downloaded file (or keep a second MCP entry for production snapshots).
-2. Restart Claude Desktop.
-3. Query freely — it's a read-only snapshot, so no conflict risk with the live server.
+**Option B — In-app backup**
+1. Open PlateStack Settings in the browser (on the live site).
+2. Click the backup/export button to download the `.db` file.
+3. Move it to a known location, e.g. `~/platestack-prod.db`.
+
+#### Step 2 — Point Claude Desktop at the local copy
+
+Set up your MCP config to use a **fixed local path** so you only need to do this once:
+
+```json
+{
+  "mcpServers": {
+    "platestack-prod": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@anthropic-ai/mcp-server-sqlite",
+        "/Users/you/platestack-prod.db"
+      ]
+    }
+  }
+}
+```
+
+Restart Claude Desktop after adding this entry. Future syncs just overwrite the same file — no config changes needed.
+
+#### Step 3 — Query and make changes
+
+Use Claude Desktop to read and write the local copy. Since it's a snapshot, there's no conflict with the live server. Make whatever changes you need.
+
+#### Step 4 — Push changes back to production
+
+When you're done editing locally and want to upload the modified database back to the live server:
+
+**Option A — SCP upload + PM2 restart**
+```bash
+# Upload the modified database to the server
+scp ~/platestack-prod.db user@platestack.app:/path/to/menu-planner.db
+
+# SSH in and restart so the server loads the new file into memory
+ssh user@platestack.app "pm2 restart menu-planner"
+```
+
+**Option B — In-app restore**
+1. Open PlateStack Settings on the live site.
+2. Use the restore/import feature to upload your modified `.db` file.
+3. Restart the server (`pm2 restart menu-planner` via SSH) — the restore endpoint writes the file to disk but the server needs a restart to load it into memory.
+
+> **Warning**: Restoring overwrites the production database entirely. Any changes made on the live site between your pull (Step 1) and push (Step 4) will be lost. Do this during quiet periods or when you're confident no one else is using the app.
+
+#### Automating the pull step
+
+To avoid manually running SCP each time, create a sync script:
+
+```bash
+#!/bin/bash
+# sync-platestack.sh — Pull latest production DB for Claude Desktop
+set -e
+
+LOCAL_DB=~/platestack-prod.db
+REMOTE="user@platestack.app:/path/to/menu-planner.db"
+
+echo "Pulling production database..."
+rsync -az "$REMOTE" "$LOCAL_DB"
+echo "Done — $(date). Claude Desktop will use the fresh copy on next query."
+```
+
+```bash
+chmod +x sync-platestack.sh
+```
+
+For fully hands-off sync, schedule it with cron (e.g. every 4 hours):
+
+```bash
+crontab -e
+# Add this line:
+0 */4 * * * /path/to/sync-platestack.sh >> /tmp/platestack-sync.log 2>&1
+```
+
+This keeps your local copy reasonably fresh so you can open Claude Desktop and start querying without thinking about it.
