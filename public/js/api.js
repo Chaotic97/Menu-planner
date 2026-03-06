@@ -71,6 +71,7 @@ export const createIngredient = (data) => request('/ingredients', { method: 'POS
 export const updateIngredient = (id, data) => request(`/ingredients/${id}`, { method: 'PUT', body: data });
 export const updateIngredientStock = (id, inStock) => request(`/ingredients/${id}/stock`, { method: 'PUT', body: { in_stock: inStock } });
 export const clearAllStock = () => request('/ingredients/clear-stock', { method: 'POST' });
+export const updateIngredientAllergen = (id, data) => request(`/ingredients/${id}/allergens`, { method: 'POST', body: data });
 
 // Menus
 export const getMenus = () => request('/menus');

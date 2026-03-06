@@ -1,6 +1,7 @@
 const express = require('express');
 const { getDb } = require('../db/database');
 const { calculateDishCost, round2 } = require('../services/costCalculator');
+const { getDishAllergensBatch } = require('../services/allergenDetector');
 const { exportSpecialsDocx } = require('../services/specialsExporter');
 const asyncHandler = require('../middleware/asyncHandler');
 
@@ -129,15 +130,8 @@ router.get('/:id', (req, res) => {
     const dishIds = menu.dishes.map(d => d.id);
     const ph = dishIds.map(() => '?').join(',');
 
-    // Batch: allergens
-    const allergenRows = db.prepare(
-      `SELECT dish_id, allergen, source FROM dish_allergens WHERE dish_id IN (${ph})`
-    ).all(...dishIds);
-    const allergenMap = {};
-    for (const r of allergenRows) {
-      if (!allergenMap[r.dish_id]) allergenMap[r.dish_id] = [];
-      allergenMap[r.dish_id].push({ allergen: r.allergen, source: r.source });
-    }
+    // Batch: allergens (aggregated from ingredient_allergens + dish manual)
+    const allergenMap = getDishAllergensBatch(dishIds);
 
     // Batch: substitution counts
     const subsRows = db.prepare(
@@ -227,14 +221,11 @@ router.get('/:id/kitchen-print', (req, res) => {
     const dishIds = dishes.map(d => d.id);
     const ph = dishIds.map(() => '?').join(',');
 
-    // Batch: allergens
-    const allergenRows = db.prepare(
-      `SELECT dish_id, allergen FROM dish_allergens WHERE dish_id IN (${ph})`
-    ).all(...dishIds);
+    // Batch: allergens (aggregated from ingredient_allergens + dish manual)
+    const allergenBatchMap = getDishAllergensBatch(dishIds);
     const allergenMap = {};
-    for (const r of allergenRows) {
-      if (!allergenMap[r.dish_id]) allergenMap[r.dish_id] = [];
-      allergenMap[r.dish_id].push(r.allergen);
+    for (const id of dishIds) {
+      allergenMap[id] = (allergenBatchMap[id] || []).map(a => a.allergen);
     }
 
     // Batch: ingredients
@@ -797,14 +788,10 @@ router.get('/specials/list', (req, res) => {
   // Batch attach allergens
   if (specials.length > 0) {
     const specialDishIds = [...new Set(specials.map(s => s.dish_id))];
-    const sph = specialDishIds.map(() => '?').join(',');
-    const allergenRows = db.prepare(
-      `SELECT dish_id, allergen FROM dish_allergens WHERE dish_id IN (${sph})`
-    ).all(...specialDishIds);
+    const allergenBatch = getDishAllergensBatch(specialDishIds);
     const allergenMap = {};
-    for (const r of allergenRows) {
-      if (!allergenMap[r.dish_id]) allergenMap[r.dish_id] = [];
-      allergenMap[r.dish_id].push(r.allergen);
+    for (const id of specialDishIds) {
+      allergenMap[id] = (allergenBatch[id] || []).map(a => a.allergen);
     }
     for (const s of specials) {
       s.allergens = allergenMap[s.dish_id] || [];

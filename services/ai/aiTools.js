@@ -6,6 +6,7 @@
 
 const { getDb } = require('../../db/database');
 const { saveSnapshot } = require('./aiHistory');
+const { getDishAllergens, getDishAllergensBatch } = require('../allergenDetector');
 
 // ─── Tool Definitions (sent to Haiku) ────────────────────────────
 
@@ -824,7 +825,8 @@ Available tables and key columns:
 - ingredients: id, name, unit_cost, base_unit, category, in_stock
 - dish_ingredients: dish_id, ingredient_id, quantity, unit, prep_note, sort_order (UNIQUE dish_id+ingredient_id)
 - dish_section_headers: id, dish_id, label, sort_order
-- dish_allergens: dish_id, allergen, source ('auto'/'manual')
+- ingredient_allergens: ingredient_id, allergen, source ('auto'/'manual') — allergens are tracked per ingredient
+- dish_allergens: dish_id, allergen, source ('manual') — dish-level manual overrides only
 - dish_directions: id, dish_id, type ('step'/'section'), text, sort_order
 - dish_substitutions: dish_id, allergen, original_ingredient, substitute_ingredient, notes
 - dish_tags: dish_id, tag_id
@@ -1193,7 +1195,7 @@ const handlers = {
       `SELECT i.name FROM dish_ingredients di JOIN ingredients i ON di.ingredient_id = i.id WHERE di.dish_id = ?`
     ).all(dishId);
 
-    const currentAllergens = db.prepare('SELECT allergen, source FROM dish_allergens WHERE dish_id = ?').all(dishId);
+    const currentAllergens = getDishAllergens(dishId);
 
     if (opts.preview) {
       return {
@@ -1314,7 +1316,7 @@ const handlers = {
        WHERE di.dish_id = ? ORDER BY di.sort_order`
     ).all(dish.id);
 
-    const allergens = db.prepare('SELECT allergen, source FROM dish_allergens WHERE dish_id = ?').all(dish.id);
+    const allergens = getDishAllergens(dish.id);
 
     const directions = db.prepare(
       'SELECT type, text FROM dish_directions WHERE dish_id = ? ORDER BY sort_order'
@@ -1339,7 +1341,7 @@ const handlers = {
     }
 
     if (allergens.length) {
-      parts.push('Allergens: ' + allergens.map(a => `${a.allergen} (${a.source})`).join(', '));
+      parts.push('Allergens: ' + allergens.map(a => `${a.allergen} (${a.source})${a.ingredient_name ? ' [from: ' + a.ingredient_name + ']' : ''}`).join(', '));
     }
 
     if (directions.length) {
@@ -1862,12 +1864,11 @@ const handlers = {
   },
 
   get_dish_allergens(input, opts) {
-    const db = getDb();
-    const resolved = resolveDish(db, input);
+    const resolved = resolveDish(getDb(), input);
     if (!resolved) return { success: true, message: 'Dish not found.' };
     const { dishId, dishName } = resolved;
 
-    const allergens = db.prepare('SELECT allergen, source FROM dish_allergens WHERE dish_id = ? ORDER BY allergen').all(dishId);
+    const allergens = getDishAllergens(dishId);
 
     if (!allergens.length) {
       const message = `"${dishName}" has no allergens flagged.`;
@@ -1875,11 +1876,15 @@ const handlers = {
       return { success: true, message };
     }
 
-    const auto = allergens.filter(a => a.source === 'auto');
-    const manual = allergens.filter(a => a.source === 'manual');
+    const fromIngredients = allergens.filter(a => a.ingredient_name);
+    const manualDish = allergens.filter(a => !a.ingredient_name && a.source === 'manual');
     const parts = [`Allergens for "${dishName}":`];
-    if (auto.length) parts.push(`Auto-detected: ${auto.map(a => a.allergen).join(', ')}`);
-    if (manual.length) parts.push(`Manually added: ${manual.map(a => a.allergen).join(', ')}`);
+    if (fromIngredients.length) {
+      parts.push(`From ingredients: ${fromIngredients.map(a => `${a.allergen} (${a.ingredient_name})`).join(', ')}`);
+    }
+    if (manualDish.length) {
+      parts.push(`Manually added (dish-level): ${manualDish.map(a => a.allergen).join(', ')}`);
+    }
 
     const message = parts.join('\n');
     if (opts.preview) return { description: `Allergens: "${dishName}"`, message };
@@ -1902,9 +1907,15 @@ const handlers = {
       return { success: true, message: `Menu "${menuName}" has no dishes.` };
     }
 
+    const dishIds = dishes.map(d => d.id);
+    const dishNameMap = {};
+    for (const d of dishes) dishNameMap[d.id] = d.name;
+
+    const batchAllergens = getDishAllergensBatch(dishIds);
+
     const allergenMap = {};
     for (const d of dishes) {
-      const allergens = db.prepare('SELECT allergen FROM dish_allergens WHERE dish_id = ?').all(d.id);
+      const allergens = batchAllergens[d.id] || [];
       for (const a of allergens) {
         if (!allergenMap[a.allergen]) allergenMap[a.allergen] = [];
         allergenMap[a.allergen].push(d.name);
@@ -1918,8 +1929,7 @@ const handlers = {
         parts.push(`- ${allergen}: ${allergenMap[allergen].join(', ')}`);
       }
       parts.push(`\nAllergen-free dishes: ${dishes.filter(d => {
-        const a = db.prepare('SELECT COUNT(*) as cnt FROM dish_allergens WHERE dish_id = ?').get(d.id);
-        return a.cnt === 0;
+        return !(batchAllergens[d.id] && batchAllergens[d.id].length);
       }).map(d => d.name).join(', ') || 'none'}`);
     } else {
       parts.push('No allergens detected on any dish.');
@@ -2499,10 +2509,14 @@ const handlers = {
       db.prepare('INSERT INTO dish_directions (dish_id, type, text, sort_order) VALUES (?, ?, ?, ?)').run(newId, dir.type, dir.text, dir.sort_order);
     }
 
-    // Copy allergens
-    const allergens = db.prepare('SELECT * FROM dish_allergens WHERE dish_id = ?').all(dishId);
-    for (const a of allergens) {
-      db.prepare('INSERT INTO dish_allergens (dish_id, allergen, source) VALUES (?, ?, ?)').run(newId, a.allergen, a.source);
+    // Run ingredient allergen detection for the new dish
+    const { updateDishAllergens: detectAllergens } = require('../allergenDetector');
+    detectAllergens(newId);
+
+    // Copy dish-level manual allergen overrides
+    const manualAllergens = db.prepare("SELECT allergen FROM dish_allergens WHERE dish_id = ? AND source = 'manual'").all(dishId);
+    for (const a of manualAllergens) {
+      db.prepare("INSERT OR IGNORE INTO dish_allergens (dish_id, allergen, source) VALUES (?, ?, 'manual')").run(newId, a.allergen);
     }
 
     // Copy tags
@@ -2654,7 +2668,7 @@ const handlers = {
       const ingredients = db.prepare(
         'SELECT i.name FROM dish_ingredients di JOIN ingredients i ON di.ingredient_id = i.id WHERE di.dish_id = ?'
       ).all(d.id);
-      const allergens = db.prepare('SELECT allergen FROM dish_allergens WHERE dish_id = ?').all(d.id);
+      const allergens = getDishAllergens(d.id);
       menuData.push({
         name: d.name,
         category: d.category,
