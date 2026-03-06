@@ -8,13 +8,20 @@ PlateStack stores all data in a single SQLite file (`menu-planner.db`). Claude D
 - [Node.js](https://nodejs.org/) v18+ (you already have this if you run PlateStack)
 - The PlateStack database file on disk (created automatically when you first run `npm start`)
 
+## Limitation: Local Only
+
+MCP is a **local protocol** — Claude Desktop spawns the SQLite MCP server as a child process on your machine. It can only open database files on your local filesystem. There is no way to point it at a remote server (e.g. the live DigitalOcean droplet) directly.
+
+To work with production data, you need to download a copy of the database first (see [Production Data Access](#production-digitalocean) below).
+
 ## How It Works
 
 ```
 Claude Desktop  ──MCP protocol──▶  SQLite MCP Server  ──file I/O──▶  menu-planner.db
+                    (local child process)                  (local file)
 ```
 
-Claude Desktop communicates with a lightweight MCP (Model Context Protocol) server process that reads and writes the SQLite database file directly. This is a local connection — no network, no API keys, no server required.
+Claude Desktop communicates with a lightweight MCP (Model Context Protocol) server process that reads and writes the SQLite database file directly. Everything runs on your machine — no network, no API keys, no server required.
 
 ## Setup
 
@@ -134,10 +141,20 @@ See the [Database Tables section in CLAUDE.md](../CLAUDE.md) for the full table 
 - `tasks` — Prep and custom tasks with priority and timing
 - `service_notes` — Daily kitchen notes by shift
 
-### Production (DigitalOcean)
+### Production data access (DigitalOcean)
 
-On the production server, the database lives at the path specified by `DB_PATH` in the environment. Since MCP is a local protocol, Claude Desktop can only connect to a database file on your local machine. To analyze production data:
+Claude Desktop **cannot connect to the live server** — MCP only works with local files. To analyze production data, pull a snapshot first:
 
-1. Download a backup: visit PlateStack Settings and use the backup/export feature, or `scp` the file from the server.
-2. Point the MCP config at the downloaded `.db` file.
-3. Query freely — it's a snapshot, so no conflict risk.
+**Option A — In-app backup**
+1. Open PlateStack Settings in the browser.
+2. Use the backup/export feature to download the `.db` file.
+
+**Option B — SCP from the server**
+```bash
+scp user@platestack.app:/path/to/menu-planner.db ~/Desktop/platestack-backup.db
+```
+
+**Then:**
+1. Update your `claude_desktop_config.json` to point at the downloaded file (or keep a second MCP entry for production snapshots).
+2. Restart Claude Desktop.
+3. Query freely — it's a read-only snapshot, so no conflict risk with the live server.
