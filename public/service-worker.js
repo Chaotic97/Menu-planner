@@ -1,4 +1,4 @@
-const CACHE_NAME = 'platestack-v3';
+const CACHE_NAME = 'platestack-v4';
 const API_CACHE_NAME = 'platestack-api-v1';
 
 // Core app shell to pre-cache
@@ -6,6 +6,9 @@ const PRECACHE_URLS = [
   '/',
   '/css/style.css',
   '/favicon.svg',
+  '/icon-192.png',
+  '/icon-512.png',
+  '/apple-touch-icon.png',
   '/manifest.json',
 ];
 
