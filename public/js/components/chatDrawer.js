@@ -21,10 +21,12 @@ let isSending = false;
 let showingHistory = false;
 let currentStream = null;
 let pendingAttachment = null; // { file, extractedText }
+let sendingWatchdog = null; // Watchdog timer to auto-recover from stuck state
 const sessionApprovedTools = new Set();
 
 const SESSION_TIMEOUT_MS = 60 * 60 * 1000; // 1 hour
 const MAX_HISTORY_LENGTH = 100; // Cap in-memory history to prevent unbounded growth
+const SENDING_WATCHDOG_MS = 90 * 1000; // 90s max for any single AI interaction
 
 // Tool name → friendly label map
 const TOOL_LABELS = {
@@ -49,6 +51,44 @@ const TOOL_LABELS = {
 
 function getToolLabel(name) {
   return TOOL_LABELS[name] || name.replace(/_/g, ' ');
+}
+
+/**
+ * Set the sending state and arm/disarm the watchdog timer.
+ * If sending gets stuck for >90s, auto-recover to prevent permanent lockout.
+ */
+function setSending(active) {
+  isSending = active;
+  if (sendingWatchdog) {
+    clearTimeout(sendingWatchdog);
+    sendingWatchdog = null;
+  }
+  if (active) {
+    sendingWatchdog = setTimeout(() => {
+      console.warn('Chat drawer: sending watchdog fired — auto-recovering from stuck state');
+      isSending = false;
+      sendingWatchdog = null;
+      if (currentStream) {
+        currentStream.abort();
+        currentStream = null;
+      }
+      if (drawerEl) {
+        const inp = drawerEl.querySelector('.chat-drawer-input');
+        const btn = drawerEl.querySelector('.chat-drawer-send');
+        if (inp) inp.disabled = false;
+        if (btn) btn.disabled = false;
+      }
+      const messagesEl = document.getElementById('chat-messages');
+      if (messagesEl) {
+        // Remove streaming cursor if stuck
+        const cursor = messagesEl.querySelector('.chat-stream-cursor');
+        if (cursor) cursor.remove();
+        const streamingMsg = messagesEl.querySelector('.chat-msg-streaming');
+        if (streamingMsg) streamingMsg.classList.remove('chat-msg-streaming');
+      }
+      appendMessage('error', 'The assistant took too long to respond. Please try again.');
+    }, SENDING_WATCHDOG_MS);
+  }
 }
 
 function checkSessionTimeout() {
@@ -222,7 +262,7 @@ function createDrawer() {
       }
     }
 
-    isSending = true;
+    setSending(true);
     sendBtn.disabled = true;
     input.disabled = true;
 
@@ -235,7 +275,7 @@ function createDrawer() {
           fileText = await extractFileText(attachment.file);
           if (!fileText) {
             appendMessage('error', 'Could not extract text from this file type.');
-            isSending = false;
+            setSending(false);
             sendBtn.disabled = false;
             input.disabled = false;
             return;
@@ -263,7 +303,7 @@ function createDrawer() {
       await sendStreamingMessage(prompt, input, sendBtn);
     } catch {
       // Guarantee UI recovery if streaming throws
-      isSending = false;
+      setSending(false);
       sendBtn.disabled = false;
       input.disabled = false;
       input.focus();
@@ -373,7 +413,7 @@ async function sendStreamingMessage(text, input, sendBtn) {
 
     onDone(_data) {
       currentStream = null;
-      cursorEl.remove();
+      try { cursorEl.remove(); } catch {}
       msgEl.classList.remove('chat-msg-streaming');
 
       // Hide tool indicator after a brief delay
@@ -383,7 +423,7 @@ async function sendStreamingMessage(text, input, sendBtn) {
 
       // Final render with markdown
       if (fullText) {
-        textEl.innerHTML = renderMarkdown(fullText);
+        try { textEl.innerHTML = renderMarkdown(fullText); } catch {}
       }
 
       // Handle confirmation flow
@@ -407,7 +447,7 @@ async function sendStreamingMessage(text, input, sendBtn) {
         }
       }
 
-      isSending = false;
+      setSending(false);
       sendBtn.disabled = false;
       input.disabled = false;
       input.focus();
@@ -441,7 +481,20 @@ function appendConfirmation(data, messagesEl) {
   async function executeConfirmation(shouldResume = false) {
     card.querySelector('.chat-confirmation-actions').innerHTML = '<span class="chat-tool-spinner"></span> Executing...';
     try {
-      const result = await aiConfirm(data.confirmationId);
+      // Retry once on network errors (e.g. Safari "Load failed")
+      let result;
+      try {
+        result = await aiConfirm(data.confirmationId);
+      } catch (firstErr) {
+        const msg = firstErr.message || '';
+        const isNetwork = msg === 'Load failed' || msg === 'Failed to fetch' || msg.includes('NetworkError');
+        if (isNetwork) {
+          await new Promise(r => setTimeout(r, 1500));
+          result = await aiConfirm(data.confirmationId);
+        } else {
+          throw firstErr;
+        }
+      }
       card.remove();
       if (result.success !== false) {
         const responseText = result.response || 'Done';
@@ -482,14 +535,14 @@ function appendConfirmation(data, messagesEl) {
 
           const input = drawerEl.querySelector('.chat-drawer-input');
           const sendBtn = drawerEl.querySelector('.chat-drawer-send');
-          isSending = true;
+          setSending(true);
           if (input) input.disabled = true;
           if (sendBtn) sendBtn.disabled = true;
 
           try {
             await sendStreamingMessage(resumeText, input, sendBtn);
           } catch {
-            isSending = false;
+            setSending(false);
             if (input) input.disabled = false;
             if (sendBtn) sendBtn.disabled = false;
           }
@@ -529,14 +582,14 @@ function appendConfirmation(data, messagesEl) {
 
     const input = drawerEl.querySelector('.chat-drawer-input');
     const sendBtn = drawerEl.querySelector('.chat-drawer-send');
-    isSending = true;
+    setSending(true);
     if (input) input.disabled = true;
     if (sendBtn) sendBtn.disabled = true;
 
     try {
       await sendStreamingMessage(skipText, input, sendBtn);
     } catch {
-      isSending = false;
+      setSending(false);
       if (input) input.disabled = false;
       if (sendBtn) sendBtn.disabled = false;
     }
@@ -819,7 +872,7 @@ export function closeDrawer() {
     if (currentStream) {
       currentStream.abort();
       currentStream = null;
-      isSending = false;
+      setSending(false);
       const inp = drawerEl.querySelector('.chat-drawer-input');
       const btn = drawerEl.querySelector('.chat-drawer-send');
       if (inp) inp.disabled = false;
@@ -856,7 +909,7 @@ export function clearChat() {
   currentConversationId = null;
   lastActivityTime = Date.now();
   showingHistory = false;
-  isSending = false;
+  setSending(false);
   sessionApprovedTools.clear();
   clearPendingAttachment();
   const historyBtn = drawerEl ? drawerEl.querySelector('.chat-drawer-history-btn') : null;
