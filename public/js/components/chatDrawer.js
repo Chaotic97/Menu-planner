@@ -20,6 +20,7 @@ let lastActivityTime = Date.now();
 let isSending = false;
 let showingHistory = false;
 let currentStream = null;
+let pendingAttachment = null; // { file, extractedText }
 const sessionApprovedTools = new Set();
 
 const SESSION_TIMEOUT_MS = 60 * 60 * 1000; // 1 hour
@@ -127,6 +128,15 @@ function createDrawer() {
           <p class="chat-drawer-welcome-hint">I can search your data, look up details, create tasks, and more.</p>
         </div>
       </div>
+      <div class="chat-drawer-attachment-bar" id="chat-attachment-bar" style="display:none;">
+        <div class="chat-drawer-attachment-chip">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/></svg>
+          <span class="chat-drawer-attachment-name" id="chat-attachment-name"></span>
+          <button class="chat-drawer-attachment-remove" id="chat-attachment-remove" title="Remove attachment" aria-label="Remove attachment">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
+        </div>
+      </div>
       <div class="chat-drawer-input-row">
         <label class="chat-drawer-attach" title="Attach file" aria-label="Attach file">
           <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/></svg>
@@ -172,18 +182,33 @@ function createDrawer() {
   fileInput.addEventListener('change', () => {
     const file = fileInput.files[0];
     if (!file) return;
-    handleFileAttachment(file, input, sendBtn);
+    stageAttachment(file);
     fileInput.value = '';
   });
 
+  const removeAttachBtn = drawerEl.querySelector('#chat-attachment-remove');
+  removeAttachBtn.addEventListener('click', clearPendingAttachment);
+
   async function sendMessage() {
-    const text = input.value.trim();
-    if (!text || isSending) return;
+    const userText = input.value.trim();
+    const attachment = pendingAttachment;
+
+    // Need either text or attachment to send
+    if ((!userText && !attachment) || isSending) return;
 
     if (showingHistory) hideHistoryView();
 
     input.value = '';
-    appendMessage('user', text);
+    clearPendingAttachment();
+
+    // Show user message in chat
+    if (attachment && userText) {
+      appendMessage('user', `[Attached: ${escapeHtml(attachment.file.name)}]\n${escapeHtml(userText)}`);
+    } else if (attachment) {
+      appendMessage('user', `[Attached: ${escapeHtml(attachment.file.name)}]`);
+    } else {
+      appendMessage('user', userText);
+    }
     touchSession();
 
     // Ensure we have a conversation ID
@@ -196,16 +221,45 @@ function createDrawer() {
       }
     }
 
-    if (currentConversationId) {
-      try { await addConversationMessage(currentConversationId, 'user', text); } catch {}
-    }
-
     isSending = true;
     sendBtn.disabled = true;
     input.disabled = true;
 
     try {
-      await sendStreamingMessage(text, input, sendBtn);
+      let prompt;
+      if (attachment) {
+        // Extract text if not already done (pre-extraction failed or skipped)
+        let fileText = attachment.extractedText;
+        if (!fileText) {
+          fileText = await extractFileText(attachment.file);
+          if (!fileText) {
+            appendMessage('error', 'Could not extract text from this file type.');
+            isSending = false;
+            sendBtn.disabled = false;
+            input.disabled = false;
+            return;
+          }
+        }
+
+        const fileHeader = `The user attached a file: "${attachment.file.name}" (${attachment.file.type || 'unknown type'}).\n\nFile contents:\n${fileText.slice(0, 8000)}`;
+        if (userText) {
+          prompt = `${fileHeader}\n\nUser's message: ${userText}`;
+        } else {
+          prompt = `${fileHeader}\n\nAnalyze this document and tell me what you found. If it contains recipes, menus, ingredient lists, or pricing — extract the key information.`;
+        }
+
+        if (currentConversationId) {
+          const persistMsg = userText ? `[Attached: ${attachment.file.name}]\n${userText}` : `[Attached: ${attachment.file.name}]`;
+          try { await addConversationMessage(currentConversationId, 'user', persistMsg); } catch {}
+        }
+      } else {
+        prompt = userText;
+        if (currentConversationId) {
+          try { await addConversationMessage(currentConversationId, 'user', userText); } catch {}
+        }
+      }
+
+      await sendStreamingMessage(prompt, input, sendBtn);
     } catch {
       // Guarantee UI recovery if streaming throws
       isSending = false;
@@ -482,53 +536,46 @@ function appendConfirmation(data, messagesEl) {
 }
 
 /**
- * Handle file attachment — show in chat and send to AI via streaming
+ * Stage a file attachment — show indicator chip and wait for user to send.
  */
-async function handleFileAttachment(file, input, sendBtn) {
+async function stageAttachment(file) {
   const maxSize = 10 * 1024 * 1024;
   if (file.size > maxSize) {
     appendMessage('error', `File too large (${(file.size / 1024 / 1024).toFixed(1)}MB). Max size is 10MB.`);
     return;
   }
 
-  appendMessage('user', `[Attached: ${escapeHtml(file.name)}]`);
-  touchSession();
-
-  isSending = true;
-  sendBtn.disabled = true;
-  input.disabled = true;
-
+  // Pre-extract text so send is fast
+  let extractedText = null;
   try {
-    const text = await extractFileText(file);
-    if (!text) {
+    extractedText = await extractFileText(file);
+    if (!extractedText) {
       appendMessage('error', 'Could not extract text from this file type.');
-      isSending = false;
-      sendBtn.disabled = false;
-      input.disabled = false;
       return;
     }
-
-    const prompt = `The user attached a file: "${file.name}" (${file.type || 'unknown type'}).\n\nFile contents:\n${text.slice(0, 8000)}\n\nAnalyze this document and tell me what you found. If it contains recipes, menus, ingredient lists, or pricing — extract the key information.`;
-
-    if (!currentConversationId) {
-      try {
-        const conv = await createConversation('');
-        currentConversationId = conv.id;
-      } catch {}
-    }
-
-    if (currentConversationId) {
-      try { await addConversationMessage(currentConversationId, 'user', `[Attached: ${file.name}]`); } catch {}
-    }
-
-    await sendStreamingMessage(prompt, input, sendBtn);
   } catch (err) {
     appendMessage('error', err.message || 'Failed to process file');
-    isSending = false;
-    sendBtn.disabled = false;
-    input.disabled = false;
-    input.focus();
+    return;
   }
+
+  pendingAttachment = { file, extractedText };
+
+  // Show attachment chip
+  const bar = document.getElementById('chat-attachment-bar');
+  const nameEl = document.getElementById('chat-attachment-name');
+  if (bar && nameEl) {
+    nameEl.textContent = file.name;
+    bar.style.display = '';
+  }
+}
+
+/**
+ * Clear any pending attachment and hide the indicator.
+ */
+function clearPendingAttachment() {
+  pendingAttachment = null;
+  const bar = document.getElementById('chat-attachment-bar');
+  if (bar) bar.style.display = 'none';
 }
 
 async function extractFileText(file) {
@@ -800,6 +847,7 @@ export function clearChat() {
   showingHistory = false;
   isSending = false;
   sessionApprovedTools.clear();
+  clearPendingAttachment();
   const historyBtn = drawerEl ? drawerEl.querySelector('.chat-drawer-history-btn') : null;
   if (historyBtn) historyBtn.classList.remove('active');
   const messagesEl = document.getElementById('chat-messages');
