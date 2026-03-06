@@ -192,7 +192,13 @@ async function processCommand(message, pageContext, conversationHistory, broadca
 
   const messages = [];
   if (conversationHistory && conversationHistory.length) {
-    messages.push(...conversationHistory);
+    // Validate and sanitize history entries to prevent malformed API calls
+    for (const entry of conversationHistory) {
+      if (entry && typeof entry.role === 'string' && entry.content &&
+          (entry.role === 'user' || entry.role === 'assistant')) {
+        messages.push({ role: entry.role, content: entry.content });
+      }
+    }
   }
   messages.push({ role: 'user', content: message });
 
@@ -353,7 +359,13 @@ async function processCommandStream(message, pageContext, conversationHistory, b
 
   const messages = [];
   if (conversationHistory && conversationHistory.length) {
-    messages.push(...conversationHistory);
+    // Validate and sanitize history entries to prevent malformed API calls
+    for (const entry of conversationHistory) {
+      if (entry && typeof entry.role === 'string' && entry.content &&
+          (entry.role === 'user' || entry.role === 'assistant')) {
+        messages.push({ role: entry.role, content: entry.content });
+      }
+    }
   }
   messages.push({ role: 'user', content: message });
 
@@ -405,7 +417,8 @@ async function processCommandStream(message, pageContext, conversationHistory, b
       if (toolCall && typeof toolCall.input === 'string') {
         try {
           toolCall.input = JSON.parse(toolCall.input);
-        } catch {
+        } catch (parseErr) {
+          console.warn(`Failed to parse tool input JSON for ${toolCall.name}:`, parseErr.message);
           toolCall.input = {};
         }
       }

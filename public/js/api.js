@@ -213,7 +213,9 @@ export function aiCommandStream(data, handlers = {}) {
               if (handlerName === 'onDone') doneEmitted = true;
               const handler = handlers[handlerName];
               if (handler) handler(eventData);
-            } catch {}
+            } catch (parseErr) {
+              console.warn('SSE parse error for event', currentEvent, ':', parseErr.message);
+            }
             currentEvent = null;
           } else if (line === '') {
             currentEvent = null;
@@ -233,6 +235,9 @@ export function aiCommandStream(data, handlers = {}) {
 
   return { abort: () => { controller.abort(); ensureDone(); } };
 }
+
+// AI File Extraction
+export const aiExtractText = (formData) => request('/ai/extract-text', { method: 'POST', body: formData, timeout: AI_TIMEOUT });
 
 // AI Chat Conversations
 export const getConversations = () => request('/ai/conversations');

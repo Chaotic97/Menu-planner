@@ -65,6 +65,38 @@ function restoreSnapshot(historyId, broadcast) {
     return { success: true, message: `Undone: ${entity_type} removed` };
   }
 
+  if (action_type === 'delete' && previous_data) {
+    // Undo a delete = restore the entity from snapshot
+    if (entity_type === 'dish') {
+      db.prepare('UPDATE dishes SET deleted_at = NULL WHERE id = ?').run(entity_id);
+      if (broadcast) broadcast('dish_created', { id: entity_id });
+    } else if (entity_type === 'menu') {
+      db.prepare('UPDATE menus SET deleted_at = NULL WHERE id = ?').run(entity_id);
+      if (broadcast) broadcast('menu_created', { id: entity_id });
+    } else if (entity_type === 'task') {
+      // Task was hard-deleted, re-insert from snapshot
+      db.prepare(
+        'INSERT INTO tasks (id, menu_id, source_dish_id, type, title, description, priority, due_date, due_time, completed, completed_at, source, sort_order) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+      ).run(
+        previous_data.id, previous_data.menu_id || null, previous_data.source_dish_id || null,
+        previous_data.type || 'custom', previous_data.title, previous_data.description || '',
+        previous_data.priority || 'medium', previous_data.due_date || null, previous_data.due_time || null,
+        previous_data.completed || 0, previous_data.completed_at || null,
+        previous_data.source || 'manual', previous_data.sort_order || 0
+      );
+      if (broadcast) broadcast('task_created', { id: entity_id });
+    } else if (entity_type === 'service_note') {
+      db.prepare(
+        'INSERT INTO service_notes (id, date, shift, title, content) VALUES (?, ?, ?, ?, ?)'
+      ).run(
+        previous_data.id, previous_data.date, previous_data.shift || 'all',
+        previous_data.title, previous_data.content || ''
+      );
+      if (broadcast) broadcast('service_note_created', { id: entity_id });
+    }
+    return { success: true, message: `Undone: ${entity_type} restored` };
+  }
+
   if (action_type === 'update' && previous_data) {
     // Undo an update = restore previous data
     if (entity_type === 'dish') {
@@ -84,15 +116,19 @@ function restoreSnapshot(historyId, broadcast) {
 }
 
 /**
- * Restore a dish to previous state (directions, ingredients, etc.)
+ * Restore a dish to previous state (all saved fields + directions)
  */
 function restoreDish(dishId, data) {
   const db = getDb();
 
-  // Restore basic fields if present
+  // Restore all snapshotted fields
   if (data.name !== undefined) {
-    db.prepare('UPDATE dishes SET name = ?, description = ?, category = ?, chefs_notes = ? WHERE id = ?')
-      .run(data.name, data.description || '', data.category || '', data.chefs_notes || '', dishId);
+    db.prepare(
+      'UPDATE dishes SET name = ?, description = ?, category = ?, chefs_notes = ?, suggested_price = ?, batch_yield = ?, is_favorite = ? WHERE id = ?'
+    ).run(
+      data.name, data.description || '', data.category || '', data.chefs_notes || '',
+      data.suggested_price ?? null, data.batch_yield ?? 1, data.is_favorite ?? 0, dishId
+    );
   }
 
   // Restore directions if present
@@ -106,13 +142,18 @@ function restoreDish(dishId, data) {
 }
 
 /**
- * Restore a menu to previous state
+ * Restore a menu to previous state (all saved fields)
  */
 function restoreMenu(menuId, data) {
   const db = getDb();
   if (data.name !== undefined) {
-    db.prepare('UPDATE menus SET name = ?, description = ? WHERE id = ?')
-      .run(data.name, data.description || '', menuId);
+    db.prepare(
+      'UPDATE menus SET name = ?, description = ?, sell_price = ?, expected_covers = ?, guest_allergies = ?, menu_type = ?, event_date = ? WHERE id = ?'
+    ).run(
+      data.name, data.description || '', data.sell_price ?? null,
+      data.expected_covers ?? null, data.guest_allergies || '',
+      data.menu_type || 'event', data.event_date || null, menuId
+    );
   }
 }
 

@@ -6,7 +6,7 @@
  * Auto-clears after 1 hour of inactivity. Session viewer for past conversations.
  */
 
-import { aiCommandStream, aiConfirm, aiUndo, getConversations, createConversation, getConversationMessages, addConversationMessage, deleteConversation } from '../api.js';
+import { aiCommandStream, aiConfirm, aiUndo, aiExtractText, getConversations, createConversation, getConversationMessages, addConversationMessage, deleteConversation } from '../api.js';
 import { escapeHtml } from '../utils/escapeHtml.js';
 import { renderMarkdown } from '../utils/markdown.js';
 import { showToast } from './toast.js';
@@ -24,6 +24,7 @@ let pendingAttachment = null; // { file, extractedText }
 const sessionApprovedTools = new Set();
 
 const SESSION_TIMEOUT_MS = 60 * 60 * 1000; // 1 hour
+const MAX_HISTORY_LENGTH = 100; // Cap in-memory history to prevent unbounded growth
 
 // Tool name → friendly label map
 const TOOL_LABELS = {
@@ -360,7 +361,9 @@ async function sendStreamingMessage(text, input, sendBtn) {
     },
 
     onError(data) {
-      const errorMsg = data.message || 'Something went wrong';
+      // data may be an object {message: ...} from SSE error events,
+      // or a plain string from HTTP-level / network errors in api.js
+      const errorMsg = (typeof data === 'string' ? data : data.message) || 'Something went wrong';
       if (!fullText) {
         textEl.innerHTML = `<span class="chat-error-text">${escapeHtml(errorMsg)}</span>`;
       } else {
@@ -393,6 +396,11 @@ async function sendStreamingMessage(text, input, sendBtn) {
       if (responseText) {
         conversationHistory.push({ role: 'user', content: text });
         conversationHistory.push({ role: 'assistant', content: responseText });
+
+        // Trim oldest entries to prevent unbounded memory growth
+        if (conversationHistory.length > MAX_HISTORY_LENGTH) {
+          conversationHistory = conversationHistory.slice(-MAX_HISTORY_LENGTH);
+        }
 
         if (currentConversationId) {
           addConversationMessage(currentConversationId, 'assistant', responseText).catch(() => {});
@@ -596,15 +604,7 @@ async function extractFileText(file) {
       name.endsWith('.docx') || name.endsWith('.doc')) {
     const formData = new FormData();
     formData.append('file', file);
-    const res = await fetch('/api/ai/extract-text', {
-      method: 'POST',
-      body: formData,
-    });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({ error: 'Extraction failed' }));
-      throw new Error(err.error || 'File extraction failed');
-    }
-    const data = await res.json();
+    const data = await aiExtractText(formData);
     return data.text;
   }
 
@@ -814,6 +814,17 @@ export function openDrawer() {
 export function closeDrawer() {
   if (drawerEl) {
     drawerEl.classList.remove('chat-drawer-open');
+
+    // Abort any in-flight stream so it doesn't keep processing in the background
+    if (currentStream) {
+      currentStream.abort();
+      currentStream = null;
+      isSending = false;
+      const inp = drawerEl.querySelector('.chat-drawer-input');
+      const btn = drawerEl.querySelector('.chat-drawer-send');
+      if (inp) inp.disabled = false;
+      if (btn) btn.disabled = false;
+    }
 
     // Restore body scroll
     document.body.style.position = '';
