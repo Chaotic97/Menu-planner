@@ -241,6 +241,27 @@ async function createTestApp() {
     `ALTER TABLE menus ADD COLUMN event_date TEXT DEFAULT NULL`,
     `CREATE INDEX IF NOT EXISTS idx_menus_menu_type ON menus(menu_type)`,
     `ALTER TABLE menus ADD COLUMN gcal_event_id TEXT DEFAULT NULL`,
+    `CREATE INDEX IF NOT EXISTS idx_dish_tags_tag_id ON dish_tags(tag_id)`,
+    `CREATE INDEX IF NOT EXISTS idx_dish_substitutions_dish_id ON dish_substitutions(dish_id)`,
+    `CREATE INDEX IF NOT EXISTS idx_dish_section_headers_dish_id ON dish_section_headers(dish_id)`,
+    `CREATE INDEX IF NOT EXISTS idx_dish_components_dish_id ON dish_components(dish_id)`,
+    `CREATE INDEX IF NOT EXISTS idx_weekly_specials_dish_id ON weekly_specials(dish_id)`,
+    `CREATE INDEX IF NOT EXISTS idx_weekly_specials_week ON weekly_specials(week_start, week_end)`,
+    `CREATE INDEX IF NOT EXISTS idx_tasks_source_dish_id ON tasks(source_dish_id)`,
+    // Menu courses / sections
+    `CREATE TABLE IF NOT EXISTS menu_courses (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      menu_id INTEGER NOT NULL REFERENCES menus(id) ON DELETE CASCADE,
+      name TEXT NOT NULL,
+      notes TEXT DEFAULT '',
+      sort_order INTEGER DEFAULT 0,
+      created_at TEXT DEFAULT (datetime('now'))
+    )`,
+    `CREATE INDEX IF NOT EXISTS idx_menu_courses_menu_id ON menu_courses(menu_id)`,
+    `ALTER TABLE menus ADD COLUMN service_style TEXT DEFAULT 'alacarte'`,
+    `ALTER TABLE menu_dishes ADD COLUMN course_id INTEGER DEFAULT NULL REFERENCES menu_courses(id) ON DELETE SET NULL`,
+    `ALTER TABLE menu_dishes ADD COLUMN notes TEXT DEFAULT ''`,
+    `CREATE INDEX IF NOT EXISTS idx_menu_dishes_course_id ON menu_dishes(course_id)`,
   ];
 
   for (const sql of MIGRATIONS) {

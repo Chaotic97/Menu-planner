@@ -538,3 +538,304 @@ describe('Menu dish existence checks', () => {
     expect(m.total_food_cost).toBe(0);
   });
 });
+
+// ─── SERVICE STYLE ──────────────────────────────────────────────────────────
+
+describe('Service style (coursed / alacarte)', () => {
+  test('creates a menu with service_style', async () => {
+    const res = await agent
+      .post('/api/menus')
+      .send({ name: 'Coursed Menu', service_style: 'coursed' })
+      .expect(201);
+
+    const detail = await agent.get(`/api/menus/${res.body.id}`).expect(200);
+    expect(detail.body.service_style).toBe('coursed');
+  });
+
+  test('defaults to alacarte service_style', async () => {
+    const res = await agent
+      .post('/api/menus')
+      .send({ name: 'Default Style Menu' })
+      .expect(201);
+
+    const detail = await agent.get(`/api/menus/${res.body.id}`).expect(200);
+    expect(detail.body.service_style).toBe('alacarte');
+  });
+
+  test('rejects invalid service_style', async () => {
+    await agent
+      .post('/api/menus')
+      .send({ name: 'Bad Style', service_style: 'invalid' })
+      .expect(400);
+  });
+
+  test('updates service_style', async () => {
+    const menu = await agent.post('/api/menus').send({ name: 'Style Update' }).expect(201);
+    await agent
+      .put(`/api/menus/${menu.body.id}`)
+      .send({ service_style: 'coursed' })
+      .expect(200);
+
+    const detail = await agent.get(`/api/menus/${menu.body.id}`).expect(200);
+    expect(detail.body.service_style).toBe('coursed');
+  });
+});
+
+// ─── MENU COURSES ──────────────────────────────────────────────────────────
+
+describe('Menu courses/sections', () => {
+  let menuId;
+
+  beforeAll(async () => {
+    const menu = await agent
+      .post('/api/menus')
+      .send({ name: 'Course Test Menu', service_style: 'coursed' })
+      .expect(201);
+    menuId = menu.body.id;
+  });
+
+  test('creates a course', async () => {
+    const res = await agent
+      .post(`/api/menus/${menuId}/courses`)
+      .send({ name: 'Starter', notes: 'Light dishes' })
+      .expect(201);
+
+    expect(res.body.id).toBeDefined();
+    expect(res.body.name).toBe('Starter');
+  });
+
+  test('rejects course without name', async () => {
+    await agent
+      .post(`/api/menus/${menuId}/courses`)
+      .send({ notes: 'No name' })
+      .expect(400);
+  });
+
+  test('lists courses', async () => {
+    await agent.post(`/api/menus/${menuId}/courses`).send({ name: 'Main' }).expect(201);
+
+    const res = await agent.get(`/api/menus/${menuId}/courses`).expect(200);
+    expect(res.body.length).toBeGreaterThanOrEqual(2);
+    expect(res.body[0].name).toBe('Starter');
+  });
+
+  test('updates course name and notes', async () => {
+    const courses = await agent.get(`/api/menus/${menuId}/courses`).expect(200);
+    const courseId = courses.body[0].id;
+
+    await agent
+      .put(`/api/menus/${menuId}/courses/${courseId}`)
+      .send({ name: 'Appetizer', notes: 'Updated notes' })
+      .expect(200);
+
+    const updated = await agent.get(`/api/menus/${menuId}/courses`).expect(200);
+    const course = updated.body.find(c => c.id === courseId);
+    expect(course.name).toBe('Appetizer');
+    expect(course.notes).toBe('Updated notes');
+  });
+
+  test('reorders courses', async () => {
+    const courses = await agent.get(`/api/menus/${menuId}/courses`).expect(200);
+    const order = courses.body.map((c, i) => ({
+      course_id: c.id,
+      sort_order: courses.body.length - 1 - i,
+    }));
+
+    await agent
+      .put(`/api/menus/${menuId}/courses/reorder`)
+      .send({ order })
+      .expect(200);
+  });
+
+  test('assigns dish to course', async () => {
+    const dishId = await createDish('Course Dish');
+    const courses = await agent.get(`/api/menus/${menuId}/courses`).expect(200);
+    const courseId = courses.body[0].id;
+
+    await agent
+      .post(`/api/menus/${menuId}/dishes`)
+      .send({ dish_id: dishId, servings: 1, course_id: courseId })
+      .expect(201);
+
+    const detail = await agent.get(`/api/menus/${menuId}`).expect(200);
+    const dish = detail.body.dishes.find(d => d.id === dishId);
+    expect(dish.course_id).toBe(courseId);
+  });
+
+  test('moves dish between courses', async () => {
+    const courses = await agent.get(`/api/menus/${menuId}/courses`).expect(200);
+    const detail = await agent.get(`/api/menus/${menuId}`).expect(200);
+    const dish = detail.body.dishes[0];
+    const targetCourseId = courses.body[1].id;
+
+    await agent
+      .put(`/api/menus/${menuId}/dishes/${dish.id}`)
+      .send({ course_id: targetCourseId })
+      .expect(200);
+
+    const updated = await agent.get(`/api/menus/${menuId}`).expect(200);
+    const movedDish = updated.body.dishes.find(d => d.id === dish.id);
+    expect(movedDish.course_id).toBe(targetCourseId);
+  });
+
+  test('dish notes on menu_dishes', async () => {
+    const detail = await agent.get(`/api/menus/${menuId}`).expect(200);
+    const dish = detail.body.dishes[0];
+
+    await agent
+      .put(`/api/menus/${menuId}/dishes/${dish.id}`)
+      .send({ notes: 'Serve first, fire after speeches' })
+      .expect(200);
+
+    const updated = await agent.get(`/api/menus/${menuId}`).expect(200);
+    const updatedDish = updated.body.dishes.find(d => d.id === dish.id);
+    expect(updatedDish.menu_dish_notes).toBe('Serve first, fire after speeches');
+  });
+
+  test('deletes course and unassigns dishes', async () => {
+    const courses = await agent.get(`/api/menus/${menuId}/courses`).expect(200);
+    const courseId = courses.body[1].id;
+    const detail = await agent.get(`/api/menus/${menuId}`).expect(200);
+    const dishesInCourse = detail.body.dishes.filter(d => d.course_id === courseId);
+
+    await agent.delete(`/api/menus/${menuId}/courses/${courseId}`).expect(200);
+
+    const updated = await agent.get(`/api/menus/${menuId}`).expect(200);
+    // Dishes should still exist but with null course_id
+    for (const d of dishesInCourse) {
+      const updatedDish = updated.body.dishes.find(dd => dd.id === d.id);
+      expect(updatedDish).toBeDefined();
+      expect(updatedDish.course_id).toBeNull();
+    }
+  });
+
+  test('returns 404 for non-existent course', async () => {
+    await agent.delete(`/api/menus/${menuId}/courses/99999`).expect(404);
+  });
+});
+
+// ─── COURSE TEMPLATES ──────────────────────────────────────────────────────
+
+describe('Course templates', () => {
+  test('applies 3-course template', async () => {
+    const menu = await agent
+      .post('/api/menus')
+      .send({ name: 'Template Menu', service_style: 'coursed' })
+      .expect(201);
+
+    const res = await agent
+      .post(`/api/menus/${menu.body.id}/courses/from-template`)
+      .send({ template: '3-course' })
+      .expect(201);
+
+    expect(res.body.courses).toHaveLength(3);
+    expect(res.body.courses[0].name).toBe('Starter');
+    expect(res.body.courses[1].name).toBe('Main');
+    expect(res.body.courses[2].name).toBe('Dessert');
+  });
+
+  test('applies 5-course template', async () => {
+    const menu = await agent
+      .post('/api/menus')
+      .send({ name: 'Template Menu 5', service_style: 'coursed' })
+      .expect(201);
+
+    const res = await agent
+      .post(`/api/menus/${menu.body.id}/courses/from-template`)
+      .send({ template: '5-course' })
+      .expect(201);
+
+    expect(res.body.courses).toHaveLength(5);
+  });
+
+  test('applies tasting template', async () => {
+    const menu = await agent
+      .post('/api/menus')
+      .send({ name: 'Template Menu Tasting', service_style: 'coursed' })
+      .expect(201);
+
+    const res = await agent
+      .post(`/api/menus/${menu.body.id}/courses/from-template`)
+      .send({ template: 'tasting' })
+      .expect(201);
+
+    expect(res.body.courses).toHaveLength(7);
+  });
+
+  test('rejects invalid template', async () => {
+    const menu = await agent
+      .post('/api/menus')
+      .send({ name: 'Bad Template Menu' })
+      .expect(201);
+
+    await agent
+      .post(`/api/menus/${menu.body.id}/courses/from-template`)
+      .send({ template: 'invalid' })
+      .expect(400);
+  });
+});
+
+// ─── KITCHEN PRINT WITH COURSES ─────────────────────────────────────────────
+
+describe('Kitchen print with courses', () => {
+  test('includes courses and courseMap in kitchen print', async () => {
+    const menu = await agent
+      .post('/api/menus')
+      .send({ name: 'Print Course Menu', service_style: 'coursed' })
+      .expect(201);
+
+    const courseRes = await agent
+      .post(`/api/menus/${menu.body.id}/courses`)
+      .send({ name: 'Starter', notes: 'Light and fresh' })
+      .expect(201);
+
+    const dishId = await createDish('Print Course Dish');
+    await agent
+      .post(`/api/menus/${menu.body.id}/dishes`)
+      .send({ dish_id: dishId, servings: 1, course_id: courseRes.body.id })
+      .expect(201);
+
+    const res = await agent.get(`/api/menus/${menu.body.id}/kitchen-print`).expect(200);
+    expect(res.body.courses).toBeDefined();
+    expect(res.body.courses.length).toBe(1);
+    expect(res.body.courses[0].name).toBe('Starter');
+    expect(res.body.courseMap).toBeDefined();
+    expect(res.body.unassigned).toBeDefined();
+  });
+
+  test('includes dish notes in kitchen print', async () => {
+    const menu = await agent
+      .post('/api/menus')
+      .send({ name: 'Note Print Menu' })
+      .expect(201);
+
+    const dishId = await createDish('Note Print Dish');
+    await agent
+      .post(`/api/menus/${menu.body.id}/dishes`)
+      .send({ dish_id: dishId, servings: 1 })
+      .expect(201);
+
+    await agent
+      .put(`/api/menus/${menu.body.id}/dishes/${dishId}`)
+      .send({ notes: 'Garnish with herbs' })
+      .expect(200);
+
+    const res = await agent.get(`/api/menus/${menu.body.id}/kitchen-print`).expect(200);
+    const dish = res.body.dishes.find(d => d.id === dishId);
+    expect(dish.menu_dish_notes).toBe('Garnish with herbs');
+  });
+
+  test('menu list includes course_count', async () => {
+    const menu = await agent
+      .post('/api/menus')
+      .send({ name: 'Count Menu', service_style: 'coursed' })
+      .expect(201);
+
+    await agent.post(`/api/menus/${menu.body.id}/courses`).send({ name: 'Starter' }).expect(201);
+    await agent.post(`/api/menus/${menu.body.id}/courses`).send({ name: 'Main' }).expect(201);
+
+    const list = await agent.get('/api/menus').expect(200);
+    const m = list.body.find(x => x.id === menu.body.id);
+    expect(m.course_count).toBe(2);
+  });
+});

@@ -21,6 +21,7 @@ const TOOL_REGISTRY = [
         description: { type: 'string', description: 'Optional description of the menu' },
         event_date: { type: 'string', description: 'Date for the menu in YYYY-MM-DD format (e.g. "2026-03-15"). Used for event menus to track when the event takes place.' },
         menu_type: { type: 'string', enum: ['event', 'standard'], description: 'Type of menu. "event" (default) for one-off events, "standard" for the recurring house menu. Only one standard menu can exist.' },
+        service_style: { type: 'string', enum: ['coursed', 'alacarte'], description: 'Service style. "coursed" for multi-course meals, "alacarte" (default) for à la carte with custom sections.' },
       },
       required: ['name'],
     },
@@ -88,7 +89,7 @@ const TOOL_REGISTRY = [
   },
   {
     name: 'add_dish_to_menu',
-    description: 'Add an existing dish to a menu. Requires knowing the dish and menu by name or ID.',
+    description: 'Add an existing dish to a menu. Requires knowing the dish and menu by name or ID. Can optionally assign to a course/section by name.',
     input_schema: {
       type: 'object',
       properties: {
@@ -97,6 +98,7 @@ const TOOL_REGISTRY = [
         menu_id: { type: 'number', description: 'ID of the menu to add the dish to' },
         menu_name: { type: 'string', description: 'Name of the menu (used for fuzzy matching if no ID)' },
         servings: { type: 'number', description: 'Number of servings/batches. Defaults to 1.' },
+        course_name: { type: 'string', description: 'Name of the course/section to assign the dish to. Will match by name or create if not found.' },
       },
       required: [],
     },
@@ -263,6 +265,38 @@ const TOOL_REGISTRY = [
         dish_name: { type: 'string', description: 'Dish name (fuzzy matched)' },
       },
       required: [],
+    },
+  },
+
+  {
+    name: 'add_course_to_menu',
+    description: 'Add a course or section to a menu. Menus support coursed (multi-course meal) and à la carte (custom sections) modes.',
+    autoApprove: true,
+    input_schema: {
+      type: 'object',
+      properties: {
+        menu_id: { type: 'number', description: 'ID of the menu' },
+        menu_name: { type: 'string', description: 'Menu name (fuzzy matched)' },
+        name: { type: 'string', description: 'Name of the course/section (e.g. "Starter", "Small Plates")' },
+        notes: { type: 'string', description: 'Optional notes for this course (e.g. timing, service instructions)' },
+      },
+      required: ['name'],
+    },
+  },
+  {
+    name: 'move_dish_to_course',
+    description: 'Move a dish to a different course/section within a menu.',
+    autoApprove: true,
+    input_schema: {
+      type: 'object',
+      properties: {
+        menu_id: { type: 'number', description: 'ID of the menu' },
+        menu_name: { type: 'string', description: 'Menu name (fuzzy matched)' },
+        dish_id: { type: 'number', description: 'ID of the dish to move' },
+        dish_name: { type: 'string', description: 'Dish name (fuzzy matched)' },
+        course_name: { type: 'string', description: 'Name of the target course/section' },
+      },
+      required: ['course_name'],
     },
   },
 
@@ -907,9 +941,10 @@ const handlers = {
       db.prepare("UPDATE menus SET menu_type = 'event' WHERE menu_type = 'standard' AND deleted_at IS NULL").run();
     }
 
+    const serviceStyle = input.service_style || 'alacarte';
     const result = db.prepare(
-      'INSERT INTO menus (name, description, menu_type, event_date) VALUES (?, ?, ?, ?)'
-    ).run(input.name, input.description || '', menuType, eventDate);
+      'INSERT INTO menus (name, description, menu_type, event_date, service_style) VALUES (?, ?, ?, ?, ?)'
+    ).run(input.name, input.description || '', menuType, eventDate, serviceStyle);
     const id = result.lastInsertRowid;
     const undoId = saveSnapshot('menu', id, 'create', null);
 
@@ -1029,10 +1064,25 @@ const handlers = {
 
     const servings = input.servings || 1;
 
+    // Resolve course by name if provided
+    let courseId = null;
+    let courseName = input.course_name;
+    if (courseName) {
+      const course = db.prepare(
+        "SELECT id, name FROM menu_courses WHERE menu_id = ? AND name LIKE ? LIMIT 1"
+      ).get(menuId, `%${courseName}%`);
+      if (course) {
+        courseId = course.id;
+        courseName = course.name;
+      }
+    }
+
     if (opts.preview) {
+      let desc = `Add "${dishName}" to menu "${menuName}" (${servings} serving${servings !== 1 ? 's' : ''})`;
+      if (courseName) desc += ` in "${courseName}"`;
       return {
-        description: `Add "${dishName}" to menu "${menuName}" (${servings} serving${servings !== 1 ? 's' : ''})`,
-        message: `I'll add "${dishName}" to "${menuName}".`,
+        description: desc,
+        message: `I'll add "${dishName}" to "${menuName}"${courseName ? ` under "${courseName}"` : ''}.`,
       };
     }
 
@@ -1045,16 +1095,26 @@ const handlers = {
       };
     }
 
+    // Create course if named but not found
+    if (input.course_name && !courseId) {
+      const maxCourseOrder = db.prepare('SELECT COALESCE(MAX(sort_order), -1) + 1 as next FROM menu_courses WHERE menu_id = ?').get(menuId);
+      const result = db.prepare('INSERT INTO menu_courses (menu_id, name, sort_order) VALUES (?, ?, ?)').run(
+        menuId, input.course_name, maxCourseOrder.next
+      );
+      courseId = result.lastInsertRowid;
+      courseName = input.course_name;
+    }
+
     const maxOrder = db.prepare('SELECT COALESCE(MAX(sort_order), -1) + 1 as next FROM menu_dishes WHERE menu_id = ?').get(menuId);
-    db.prepare('INSERT INTO menu_dishes (menu_id, dish_id, servings, sort_order) VALUES (?, ?, ?, ?)').run(
-      menuId, dishId, servings, maxOrder.next
+    db.prepare('INSERT INTO menu_dishes (menu_id, dish_id, servings, sort_order, course_id) VALUES (?, ?, ?, ?, ?)').run(
+      menuId, dishId, servings, maxOrder.next, courseId
     );
 
     if (opts.broadcast) opts.broadcast('menu_updated', { id: menuId });
 
     return {
       success: true,
-      message: `Added "${dishName}" to "${menuName}".`,
+      message: `Added "${dishName}" to "${menuName}"${courseName ? ` in "${courseName}"` : ''}.`,
       entityType: 'menu',
       entityId: menuId,
     };
@@ -1311,26 +1371,42 @@ const handlers = {
     }
 
     const dishes = db.prepare(
-      `SELECT d.id, d.name, d.category, d.suggested_price, d.batch_yield, md.servings
+      `SELECT d.id, d.name, d.category, d.suggested_price, d.batch_yield, md.servings, md.course_id, md.notes AS menu_dish_notes
        FROM menu_dishes md JOIN dishes d ON md.dish_id = d.id
        WHERE md.menu_id = ? AND d.deleted_at IS NULL ORDER BY md.sort_order`
     ).all(menu.id);
 
+    const courses = db.prepare('SELECT * FROM menu_courses WHERE menu_id = ? ORDER BY sort_order').all(menu.id);
+
     const parts = [`Menu: "${menu.name}" (ID: ${menu.id})`];
     if (menu.menu_type) parts.push(`Type: ${menu.menu_type}`);
+    if (menu.service_style) parts.push(`Style: ${menu.service_style}`);
     if (menu.event_date) parts.push(`Event date: ${menu.event_date}`);
     if (menu.description) parts.push(`Description: ${menu.description}`);
     if (menu.sell_price) parts.push(`Sell price: ${menu.sell_price}`);
     if (menu.expected_covers) parts.push(`Expected covers: ${menu.expected_covers}`);
     if (menu.guest_allergies) parts.push(`Guest allergies: ${menu.guest_allergies}`);
 
-    if (dishes.length) {
-      parts.push(`Dishes (${dishes.length}):`);
-      for (const d of dishes) {
+    if (courses.length) {
+      parts.push(`Courses/Sections (${courses.length}):`);
+      for (const c of courses) {
+        const courseDishes = dishes.filter(d => d.course_id === c.id);
+        parts.push(`  [${c.name}] (${courseDishes.length} dishes)${c.notes ? ' — ' + c.notes : ''}`);
+        for (const d of courseDishes) {
+          const portions = d.servings * (d.batch_yield || 1);
+          parts.push(`    - ${d.name} (${d.category || 'other'}) — ${d.servings} batch(es), ${portions} portions`);
+        }
+      }
+    }
+
+    const unassigned = dishes.filter(d => !d.course_id);
+    if (unassigned.length) {
+      parts.push(`${courses.length ? 'Unassigned d' : 'D'}ishes (${unassigned.length}):`);
+      for (const d of unassigned) {
         const portions = d.servings * (d.batch_yield || 1);
         parts.push(`  - ${d.name} (${d.category || 'other'}) — ${d.servings} batch(es), ${portions} portions${d.suggested_price ? ', price: ' + d.suggested_price : ''}`);
       }
-    } else {
+    } else if (!courses.length) {
       parts.push('No dishes on this menu yet.');
     }
 
@@ -2234,6 +2310,58 @@ const handlers = {
 
     if (opts.broadcast) opts.broadcast('menu_updated', { id: menuResolved.menuId });
     return { success: true, message: `Removed "${dishResolved.dishName}" from "${menuResolved.menuName}".` };
+  },
+
+  add_course_to_menu(input, opts) {
+    const db = getDb();
+    const menuResolved = resolveMenu(db, input);
+    if (!menuResolved) return { description: 'Menu not found', message: 'Could not find that menu.' };
+
+    if (opts.preview) {
+      return {
+        description: `Add course "${input.name}" to "${menuResolved.menuName}"`,
+        message: `I'll add a course/section called "${input.name}" to "${menuResolved.menuName}".`,
+      };
+    }
+
+    const maxOrder = db.prepare('SELECT COALESCE(MAX(sort_order), -1) + 1 as next FROM menu_courses WHERE menu_id = ?').get(menuResolved.menuId);
+    db.prepare('INSERT INTO menu_courses (menu_id, name, notes, sort_order) VALUES (?, ?, ?, ?)').run(
+      menuResolved.menuId, input.name, input.notes || '', maxOrder.next
+    );
+
+    if (opts.broadcast) opts.broadcast('menu_updated', { id: menuResolved.menuId });
+    return { success: true, message: `Added course "${input.name}" to "${menuResolved.menuName}".` };
+  },
+
+  move_dish_to_course(input, opts) {
+    const db = getDb();
+    const menuResolved = resolveMenu(db, input);
+    if (!menuResolved) return { description: 'Menu not found', message: 'Could not find that menu.' };
+    const dishResolved = resolveDish(db, input);
+    if (!dishResolved) return { description: 'Dish not found', message: 'Could not find that dish.' };
+
+    const course = db.prepare(
+      "SELECT id, name FROM menu_courses WHERE menu_id = ? AND name LIKE ? LIMIT 1"
+    ).get(menuResolved.menuId, `%${input.course_name}%`);
+
+    if (!course) {
+      return { description: 'Course not found', message: `Could not find a course matching "${input.course_name}" on "${menuResolved.menuName}".` };
+    }
+
+    if (opts.preview) {
+      return {
+        description: `Move "${dishResolved.dishName}" to "${course.name}"`,
+        message: `I'll move "${dishResolved.dishName}" to the "${course.name}" course on "${menuResolved.menuName}".`,
+      };
+    }
+
+    const result = db.prepare('UPDATE menu_dishes SET course_id = ? WHERE menu_id = ? AND dish_id = ?').run(
+      course.id, menuResolved.menuId, dishResolved.dishId
+    );
+    if (result.changes === 0) return { success: false, message: `"${dishResolved.dishName}" is not on "${menuResolved.menuName}".` };
+
+    if (opts.broadcast) opts.broadcast('menu_updated', { id: menuResolved.menuId });
+    return { success: true, message: `Moved "${dishResolved.dishName}" to "${course.name}".` };
   },
 
   // ─── Quick Action Handlers ────────────────────────────────────
