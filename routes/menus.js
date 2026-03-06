@@ -7,6 +7,13 @@ const asyncHandler = require('../middleware/asyncHandler');
 const router = express.Router();
 
 const VALID_MENU_TYPES = ['standard', 'event'];
+const VALID_SERVICE_STYLES = ['coursed', 'alacarte'];
+
+const COURSE_TEMPLATES = {
+  '3-course': ['Starter', 'Main', 'Dessert'],
+  '5-course': ['Amuse Bouche', 'Starter', 'Fish', 'Main', 'Dessert'],
+  'tasting': ['Amuse Bouche', 'First Course', 'Second Course', 'Intermezzo', 'Main', 'Pre-Dessert', 'Dessert'],
+};
 
 // GET /api/menus - List all menus
 router.get('/', (req, res) => {
@@ -61,9 +68,17 @@ router.get('/', (req, res) => {
       }
     }
 
+    // Batch: course counts per menu
+    const courseRows = db.prepare(
+      `SELECT menu_id, COUNT(*) AS cnt FROM menu_courses WHERE menu_id IN (${placeholders}) GROUP BY menu_id`
+    ).all(...menuIds);
+    const courseCountMap = {};
+    for (const r of courseRows) courseCountMap[r.menu_id] = r.cnt;
+
     for (const menu of menus) {
       const dishes = menuDishMap[menu.id] || [];
       menu.dish_count = dishes.length;
+      menu.course_count = courseCountMap[menu.id] || 0;
 
       let totalFoodCost = 0;
       for (const md of dishes) {
@@ -87,9 +102,14 @@ router.get('/:id', (req, res) => {
   const menu = db.prepare('SELECT * FROM menus WHERE id = ? AND deleted_at IS NULL').get(req.params.id);
   if (!menu) return res.status(404).json({ error: 'Menu not found' });
 
-  // Get dishes in this menu
+  // Get courses for this menu
+  menu.courses = db.prepare(
+    'SELECT * FROM menu_courses WHERE menu_id = ? ORDER BY sort_order, id'
+  ).all(menu.id);
+
+  // Get dishes in this menu (include course_id and notes)
   menu.dishes = db.prepare(`
-    SELECT d.*, md.servings, md.sort_order, md.id AS menu_dish_id, md.active_days
+    SELECT d.*, md.servings, md.sort_order, md.id AS menu_dish_id, md.active_days, md.course_id, md.notes AS menu_dish_notes
     FROM menu_dishes md
     JOIN dishes d ON d.id = md.dish_id
     WHERE md.menu_id = ? AND d.deleted_at IS NULL
@@ -192,8 +212,11 @@ router.get('/:id/kitchen-print', (req, res) => {
   const menu = db.prepare('SELECT * FROM menus WHERE id = ? AND deleted_at IS NULL').get(req.params.id);
   if (!menu) return res.status(404).json({ error: 'Menu not found' });
 
+  // Get courses
+  const courses = db.prepare('SELECT * FROM menu_courses WHERE menu_id = ? ORDER BY sort_order, id').all(menu.id);
+
   const dishes = db.prepare(`
-    SELECT d.*, md.servings, md.sort_order
+    SELECT d.*, md.servings, md.sort_order, md.course_id, md.notes AS menu_dish_notes
     FROM menu_dishes md
     JOIN dishes d ON d.id = md.dish_id
     WHERE md.menu_id = ? AND d.deleted_at IS NULL
@@ -299,10 +322,25 @@ router.get('/:id/kitchen-print', (req, res) => {
     grouped[cat].push(dish);
   }
 
+  // Group by course
+  const courseMap = {};
+  const unassigned = [];
+  for (const dish of dishes) {
+    if (dish.course_id) {
+      if (!courseMap[dish.course_id]) courseMap[dish.course_id] = [];
+      courseMap[dish.course_id].push(dish);
+    } else {
+      unassigned.push(dish);
+    }
+  }
+
   res.json({
     menu,
     dishes,
     grouped,
+    courses,
+    courseMap,
+    unassigned,
     guest_allergies: menu.guest_allergies ? menu.guest_allergies.split(',').map(a => a.trim()).filter(Boolean) : [],
     expected_covers: menu.expected_covers || 0,
   });
@@ -311,13 +349,18 @@ router.get('/:id/kitchen-print', (req, res) => {
 // POST /api/menus - Create menu
 router.post('/', (req, res) => {
   const db = getDb();
-  const { name, description, sell_price, expected_covers, guest_allergies, allergen_covers, schedule_days, menu_type, event_date, gcal_event_id } = req.body;
+  const { name, description, sell_price, expected_covers, guest_allergies, allergen_covers, schedule_days, menu_type, event_date, gcal_event_id, service_style } = req.body;
   if (!name) return res.status(400).json({ error: 'Name is required' });
   if (sell_price !== undefined && (typeof sell_price !== 'number' || sell_price < 0)) {
     return res.status(400).json({ error: 'sell_price must be a non-negative number' });
   }
   if (expected_covers !== undefined && (typeof expected_covers !== 'number' || expected_covers < 0 || !Number.isInteger(expected_covers))) {
     return res.status(400).json({ error: 'expected_covers must be a non-negative integer' });
+  }
+
+  // Service style validation
+  if (service_style !== undefined && !VALID_SERVICE_STYLES.includes(service_style)) {
+    return res.status(400).json({ error: 'service_style must be "coursed" or "alacarte"' });
   }
 
   // Menu type validation
@@ -354,8 +397,8 @@ router.post('/', (req, res) => {
   const scheduleDaysJson = (schedule_days && type === 'standard') ? JSON.stringify(schedule_days) : '[]';
 
   const result = db.prepare(
-    'INSERT INTO menus (name, description, sell_price, expected_covers, guest_allergies, allergen_covers, schedule_days, menu_type, event_date, gcal_event_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
-  ).run(name, description || '', sell_price || 0, expected_covers || 0, guest_allergies || '', coversJson, scheduleDaysJson, type, event_date || null, gcal_event_id || null);
+    'INSERT INTO menus (name, description, sell_price, expected_covers, guest_allergies, allergen_covers, schedule_days, menu_type, event_date, gcal_event_id, service_style) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+  ).run(name, description || '', sell_price || 0, expected_covers || 0, guest_allergies || '', coversJson, scheduleDaysJson, type, event_date || null, gcal_event_id || null, service_style || 'alacarte');
 
   req.broadcast('menu_created', { id: result.lastInsertRowid }, req.headers['x-client-id']);
   res.status(201).json({ id: result.lastInsertRowid });
@@ -364,7 +407,7 @@ router.post('/', (req, res) => {
 // PUT /api/menus/:id - Update menu
 router.put('/:id', (req, res) => {
   const db = getDb();
-  const { name, description, is_active, sell_price, expected_covers, guest_allergies, allergen_covers, schedule_days, menu_type, event_date, gcal_event_id } = req.body;
+  const { name, description, is_active, sell_price, expected_covers, guest_allergies, allergen_covers, schedule_days, menu_type, event_date, gcal_event_id, service_style } = req.body;
 
   // Look up current menu to know its type
   const current = db.prepare('SELECT menu_type FROM menus WHERE id = ? AND deleted_at IS NULL').get(req.params.id);
@@ -439,6 +482,12 @@ router.put('/:id', (req, res) => {
     updates.push('gcal_event_id = ?');
     params.push(gcal_event_id);
   }
+  if (service_style !== undefined) {
+    if (!VALID_SERVICE_STYLES.includes(service_style)) {
+      return res.status(400).json({ error: 'service_style must be "coursed" or "alacarte"' });
+    }
+    updates.push('service_style = ?'); params.push(service_style);
+  }
   updates.push("updated_at = datetime('now')");
 
   params.push(req.params.id);
@@ -480,9 +529,14 @@ router.put('/:id/dishes/reorder', (req, res) => {
     return res.status(400).json({ error: 'order array is required' });
   }
 
-  const stmt = db.prepare('UPDATE menu_dishes SET sort_order = ? WHERE menu_id = ? AND dish_id = ?');
+  const stmtWithCourse = db.prepare('UPDATE menu_dishes SET sort_order = ?, course_id = ? WHERE menu_id = ? AND dish_id = ?');
+  const stmtNoCourse = db.prepare('UPDATE menu_dishes SET sort_order = ? WHERE menu_id = ? AND dish_id = ?');
   for (const item of order) {
-    stmt.run(item.sort_order, req.params.id, item.dish_id);
+    if (item.course_id !== undefined) {
+      stmtWithCourse.run(item.sort_order, item.course_id === null ? null : item.course_id, req.params.id, item.dish_id);
+    } else {
+      stmtNoCourse.run(item.sort_order, req.params.id, item.dish_id);
+    }
   }
 
   req.broadcast('menu_updated', { id: parseInt(req.params.id) }, req.headers['x-client-id']);
@@ -492,7 +546,7 @@ router.put('/:id/dishes/reorder', (req, res) => {
 // POST /api/menus/:id/dishes - Add dish to menu
 router.post('/:id/dishes', (req, res) => {
   const db = getDb();
-  const { dish_id, servings, sort_order, active_days } = req.body;
+  const { dish_id, servings, sort_order, active_days, course_id } = req.body;
 
   if (!dish_id) return res.status(400).json({ error: 'dish_id is required' });
   if (servings !== undefined && (typeof servings !== 'number' || servings < 1)) {
@@ -509,8 +563,8 @@ router.post('/:id/dishes', (req, res) => {
   const activeDaysJson = active_days ? JSON.stringify(active_days) : null;
 
   try {
-    db.prepare('INSERT INTO menu_dishes (menu_id, dish_id, servings, sort_order, active_days) VALUES (?, ?, ?, ?, ?)').run(
-      req.params.id, dish_id, servings || 1, order, activeDaysJson
+    db.prepare('INSERT INTO menu_dishes (menu_id, dish_id, servings, sort_order, active_days, course_id) VALUES (?, ?, ?, ?, ?, ?)').run(
+      req.params.id, dish_id, servings || 1, order, activeDaysJson, course_id || null
     );
     req.broadcast('menu_updated', { id: parseInt(req.params.id) }, req.headers['x-client-id']);
     res.status(201).json({ success: true });
@@ -522,10 +576,10 @@ router.post('/:id/dishes', (req, res) => {
   }
 });
 
-// PUT /api/menus/:id/dishes/:dishId - Update servings/order/active_days
+// PUT /api/menus/:id/dishes/:dishId - Update servings/order/active_days/course_id/notes
 router.put('/:id/dishes/:dishId', (req, res) => {
   const db = getDb();
-  const { servings, sort_order, active_days } = req.body;
+  const { servings, sort_order, active_days, course_id, notes } = req.body;
 
   if (active_days !== undefined && active_days !== null) {
     if (!Array.isArray(active_days) || !active_days.every(d => Number.isInteger(d) && d >= 0 && d <= 6)) {
@@ -546,6 +600,14 @@ router.put('/:id/dishes/:dishId', (req, res) => {
     updates.push('active_days = ?');
     params.push(active_days === null ? null : JSON.stringify(active_days));
   }
+  if (course_id !== undefined) {
+    updates.push('course_id = ?');
+    params.push(course_id === null ? null : course_id);
+  }
+  if (notes !== undefined) {
+    updates.push('notes = ?');
+    params.push(notes || '');
+  }
 
   if (!updates.length) return res.status(400).json({ error: 'Nothing to update' });
 
@@ -562,6 +624,126 @@ router.delete('/:id/dishes/:dishId', (req, res) => {
   const db = getDb();
   const result = db.prepare('DELETE FROM menu_dishes WHERE menu_id = ? AND dish_id = ?').run(req.params.id, req.params.dishId);
   if (result.changes === 0) return res.status(404).json({ error: 'Menu dish not found' });
+  req.broadcast('menu_updated', { id: parseInt(req.params.id) }, req.headers['x-client-id']);
+  res.json({ success: true });
+});
+
+// ============================
+// Menu Courses / Sections
+// ============================
+
+// GET /api/menus/:id/courses - List courses for a menu
+router.get('/:id/courses', (req, res) => {
+  const db = getDb();
+  const menu = db.prepare('SELECT id FROM menus WHERE id = ? AND deleted_at IS NULL').get(req.params.id);
+  if (!menu) return res.status(404).json({ error: 'Menu not found' });
+
+  const courses = db.prepare('SELECT * FROM menu_courses WHERE menu_id = ? ORDER BY sort_order, id').all(req.params.id);
+  res.json(courses);
+});
+
+// POST /api/menus/:id/courses - Create a course/section
+router.post('/:id/courses', (req, res) => {
+  const db = getDb();
+  const menu = db.prepare('SELECT id FROM menus WHERE id = ? AND deleted_at IS NULL').get(req.params.id);
+  if (!menu) return res.status(404).json({ error: 'Menu not found' });
+
+  const { name, notes, sort_order } = req.body;
+  if (!name || typeof name !== 'string' || !name.trim()) {
+    return res.status(400).json({ error: 'Course name is required' });
+  }
+
+  const maxOrder = db.prepare('SELECT MAX(sort_order) AS max_order FROM menu_courses WHERE menu_id = ?').get(req.params.id);
+  const order = sort_order !== undefined ? sort_order : (maxOrder.max_order || 0) + 1;
+
+  const result = db.prepare('INSERT INTO menu_courses (menu_id, name, notes, sort_order) VALUES (?, ?, ?, ?)').run(
+    req.params.id, name.trim(), notes || '', order
+  );
+
+  req.broadcast('menu_updated', { id: parseInt(req.params.id) }, req.headers['x-client-id']);
+  res.status(201).json({ id: result.lastInsertRowid, name: name.trim(), notes: notes || '', sort_order: order });
+});
+
+// PUT /api/menus/:id/courses/reorder - Batch reorder courses
+// NOTE: Must be defined before /:id/courses/:courseId to avoid matching "reorder" as courseId
+router.put('/:id/courses/reorder', (req, res) => {
+  const db = getDb();
+  const menu = db.prepare('SELECT id FROM menus WHERE id = ? AND deleted_at IS NULL').get(req.params.id);
+  if (!menu) return res.status(404).json({ error: 'Menu not found' });
+
+  const { order } = req.body;
+  if (!order || !Array.isArray(order)) {
+    return res.status(400).json({ error: 'order array is required' });
+  }
+
+  const stmt = db.prepare('UPDATE menu_courses SET sort_order = ? WHERE id = ? AND menu_id = ?');
+  for (const item of order) {
+    stmt.run(item.sort_order, item.course_id, req.params.id);
+  }
+
+  req.broadcast('menu_updated', { id: parseInt(req.params.id) }, req.headers['x-client-id']);
+  res.json({ success: true });
+});
+
+// POST /api/menus/:id/courses/from-template - Create courses from a template
+// NOTE: Must be defined before /:id/courses/:courseId
+router.post('/:id/courses/from-template', (req, res) => {
+  const db = getDb();
+  const menu = db.prepare('SELECT id FROM menus WHERE id = ? AND deleted_at IS NULL').get(req.params.id);
+  if (!menu) return res.status(404).json({ error: 'Menu not found' });
+
+  const { template } = req.body;
+  if (!template || !COURSE_TEMPLATES[template]) {
+    return res.status(400).json({ error: `Invalid template. Choose from: ${Object.keys(COURSE_TEMPLATES).join(', ')}` });
+  }
+
+  const courseNames = COURSE_TEMPLATES[template];
+  const maxOrder = db.prepare('SELECT MAX(sort_order) AS max_order FROM menu_courses WHERE menu_id = ?').get(req.params.id);
+  let startOrder = (maxOrder.max_order || 0) + 1;
+
+  const created = [];
+  const stmt = db.prepare('INSERT INTO menu_courses (menu_id, name, sort_order) VALUES (?, ?, ?)');
+  for (const name of courseNames) {
+    const result = stmt.run(req.params.id, name, startOrder++);
+    created.push({ id: result.lastInsertRowid, name, sort_order: startOrder - 1 });
+  }
+
+  req.broadcast('menu_updated', { id: parseInt(req.params.id) }, req.headers['x-client-id']);
+  res.status(201).json({ courses: created, template });
+});
+
+// PUT /api/menus/:id/courses/:courseId - Update course name/notes/sort_order
+router.put('/:id/courses/:courseId', (req, res) => {
+  const db = getDb();
+  const { name, notes, sort_order } = req.body;
+
+  const updates = [];
+  const params = [];
+  if (name !== undefined) {
+    if (typeof name !== 'string' || !name.trim()) return res.status(400).json({ error: 'Course name cannot be empty' });
+    updates.push('name = ?'); params.push(name.trim());
+  }
+  if (notes !== undefined) { updates.push('notes = ?'); params.push(notes); }
+  if (sort_order !== undefined) { updates.push('sort_order = ?'); params.push(sort_order); }
+
+  if (!updates.length) return res.status(400).json({ error: 'Nothing to update' });
+
+  params.push(req.params.courseId, req.params.id);
+  const result = db.prepare(`UPDATE menu_courses SET ${updates.join(', ')} WHERE id = ? AND menu_id = ?`).run(...params);
+  if (result.changes === 0) return res.status(404).json({ error: 'Course not found' });
+
+  req.broadcast('menu_updated', { id: parseInt(req.params.id) }, req.headers['x-client-id']);
+  res.json({ success: true });
+});
+
+// DELETE /api/menus/:id/courses/:courseId - Delete course (dishes become unassigned)
+router.delete('/:id/courses/:courseId', (req, res) => {
+  const db = getDb();
+  // Unassign dishes from this course
+  db.prepare('UPDATE menu_dishes SET course_id = NULL WHERE course_id = ? AND menu_id = ?').run(req.params.courseId, req.params.id);
+  const result = db.prepare('DELETE FROM menu_courses WHERE id = ? AND menu_id = ?').run(req.params.courseId, req.params.id);
+  if (result.changes === 0) return res.status(404).json({ error: 'Course not found' });
+
   req.broadcast('menu_updated', { id: parseInt(req.params.id) }, req.headers['x-client-id']);
   res.json({ success: true });
 });

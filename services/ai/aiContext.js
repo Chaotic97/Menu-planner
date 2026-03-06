@@ -89,27 +89,45 @@ async function buildContext(pageContext) {
   // Menu context
   if (pageContext.entityType === 'menu' && pageContext.entityId) {
     const menu = db.prepare(
-      'SELECT id, name, description, sell_price, expected_covers, menu_type, event_date FROM menus WHERE id = ? AND deleted_at IS NULL'
+      'SELECT id, name, description, sell_price, expected_covers, menu_type, event_date, service_style FROM menus WHERE id = ? AND deleted_at IS NULL'
     ).get(pageContext.entityId);
 
     if (menu) {
       parts.push(`Current menu: "${menu.name}" (ID: ${menu.id})`);
       if (menu.menu_type) parts.push(`Menu type: ${menu.menu_type}`);
+      if (menu.service_style) parts.push(`Service style: ${menu.service_style}`);
       if (menu.event_date) parts.push(`Event date: ${menu.event_date}`);
       if (menu.sell_price) parts.push(`Sell price: ${menu.sell_price}`);
       if (menu.expected_covers) parts.push(`Expected covers: ${menu.expected_covers}`);
 
+      // Get courses/sections
+      const courses = db.prepare(
+        'SELECT id, name, notes FROM menu_courses WHERE menu_id = ? ORDER BY sort_order'
+      ).all(pageContext.entityId);
+
       const dishes = db.prepare(
-        `SELECT d.id, d.name, d.category, md.servings
+        `SELECT d.id, d.name, d.category, md.servings, md.course_id
          FROM menu_dishes md
          JOIN dishes d ON md.dish_id = d.id
          WHERE md.menu_id = ? AND d.deleted_at IS NULL
          ORDER BY md.sort_order`
       ).all(pageContext.entityId);
 
-      if (dishes.length) {
-        parts.push('Dishes on menu:');
-        for (const d of dishes) {
+      if (courses.length) {
+        parts.push(`Courses/Sections (${courses.length}):`);
+        for (const c of courses) {
+          const courseDishes = dishes.filter(d => d.course_id === c.id);
+          parts.push(`  [${c.name}] (${courseDishes.length} dishes)${c.notes ? ' — ' + c.notes : ''}`);
+          for (const d of courseDishes) {
+            parts.push(`    - ${d.name} (${d.category || 'uncategorized'}, ${d.servings} servings)`);
+          }
+        }
+      }
+
+      const unassigned = dishes.filter(d => !d.course_id);
+      if (unassigned.length) {
+        parts.push(`${courses.length ? 'Unassigned d' : 'D'}ishes on menu:`);
+        for (const d of unassigned) {
           parts.push(`  - ${d.name} (${d.category || 'uncategorized'}, ${d.servings} servings)`);
         }
       }

@@ -1020,6 +1020,7 @@ textarea.input { resize: vertical; min-height: 80px; }
   border-radius: var(--radius-sm);
   margin-bottom: 8px;
   border: 1px solid var(--border);
+  flex-wrap: wrap;
 }
 
 .mb-dish-thumb {
@@ -3109,6 +3110,293 @@ textarea.input { resize: vertical; min-height: 80px; }
   font-size: 0.75em;
   opacity: 0.85;
   font-weight: 700;
+}
+
+/* ============================
+   Menu Courses / Sections
+   ============================ */
+
+/* --- Service Style Toggle --- */
+.mc-style-toggle-bar {
+  margin-bottom: 16px;
+}
+
+.mc-style-toggle {
+  display: inline-flex;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.mc-style-btn {
+  padding: 6px 16px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  font-family: var(--font);
+  border: none;
+  background: var(--surface);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.mc-style-btn:hover {
+  background: rgba(var(--primary-rgb), 0.08);
+}
+
+.mc-style-btn.active {
+  background: var(--primary);
+  color: #fff;
+}
+
+/* --- Course Section --- */
+.mc-course-section {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  margin-bottom: 12px;
+  background: var(--surface);
+}
+
+.mc-course-section.dragging {
+  opacity: 0.5;
+}
+
+.mc-course-section.drag-over {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 2px rgba(var(--primary-rgb), 0.2);
+}
+
+.mc-course-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+  background: rgba(var(--primary-rgb), 0.03);
+}
+
+.mc-course-drag {
+  cursor: grab;
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+  user-select: none;
+}
+
+.mc-course-name {
+  font-size: 1rem;
+  font-weight: 700;
+  margin: 0;
+  flex: 1;
+  min-width: 0;
+}
+
+.mc-course-dish-count {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.mc-course-add-dish {
+  white-space: nowrap;
+}
+
+.mc-course-dishes {
+  min-height: 40px;
+  transition: background 0.15s;
+}
+
+.mc-course-dishes.mc-drop-target {
+  background: rgba(var(--primary-rgb), 0.06);
+}
+
+.mc-course-empty {
+  padding: 16px;
+  text-align: center;
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+  font-style: italic;
+}
+
+/* --- Course & Dish Notes --- */
+.mc-course-note-area,
+.mc-dish-note-area {
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height 0.2s ease, padding 0.2s ease;
+  padding: 0 12px;
+}
+
+.mc-course-note-area.mc-note-open,
+.mc-dish-note-area.mc-note-open {
+  max-height: 120px;
+  padding: 8px 12px;
+}
+
+.mc-course-note-textarea,
+.mc-dish-note-textarea {
+  width: 100%;
+  font-family: var(--font);
+  font-size: 0.82rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 6px 8px;
+  background: var(--bg);
+  color: var(--text);
+  resize: vertical;
+  min-height: 36px;
+}
+
+.mc-course-note-btn,
+.mc-dish-note-btn {
+  color: var(--text-secondary);
+  opacity: 0.5;
+  transition: opacity 0.15s;
+}
+
+.mc-course-note-btn:hover,
+.mc-dish-note-btn:hover,
+.mc-course-note-btn.mc-has-note,
+.mc-dish-note-btn.mc-has-note {
+  opacity: 1;
+  color: var(--primary);
+}
+
+/* --- Dish Note inside dish row --- */
+.mb-dish-row .mc-dish-note-area {
+  flex-basis: 100%;
+  padding: 0 12px 0 52px;
+}
+
+.mb-dish-row .mc-dish-note-area.mc-note-open {
+  padding: 4px 12px 8px 52px;
+}
+
+/* --- Add Course Bar --- */
+.mc-add-course-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 12px;
+  flex-wrap: wrap;
+}
+
+.mc-template-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.mc-template-label {
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+}
+
+.mc-template-btn {
+  font-size: 0.78rem;
+}
+
+/* --- Unassigned Dishes --- */
+.mc-unassigned-heading {
+  color: var(--text-secondary);
+  font-style: italic;
+}
+
+/* --- Servings Input (number field + steppers) --- */
+.mb-servings-input {
+  width: 42px;
+  text-align: center;
+  font-size: 0.9rem;
+  font-weight: 700;
+  font-family: var(--font);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text);
+  padding: 2px 4px;
+  -moz-appearance: textfield;
+}
+
+.mb-servings-input::-webkit-outer-spin-button,
+.mb-servings-input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.mb-servings-input:focus {
+  outline: none;
+  border-color: var(--primary);
+}
+
+/* --- Menu List Style Badges --- */
+.ml-style-badge {
+  display: inline-block;
+  font-size: 0.7rem;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  margin-right: 4px;
+}
+
+.ml-style-coursed {
+  background: rgba(var(--primary-rgb), 0.12);
+  color: var(--primary);
+}
+
+.ml-style-alacarte {
+  background: rgba(var(--success-rgb), 0.12);
+  color: var(--success);
+}
+
+/* --- Courses Container --- */
+.mc-courses-container {
+  margin-top: 8px;
+}
+
+/* --- Dark mode overrides for courses --- */
+[data-theme="dark"] .mc-course-header {
+  background: rgba(var(--primary-rgb), 0.06);
+}
+
+[data-theme="dark"] .mc-course-note-textarea,
+[data-theme="dark"] .mc-dish-note-textarea {
+  background: var(--surface);
+  border-color: var(--border);
+}
+
+[data-theme="dark"] .mc-style-btn {
+  background: var(--surface);
+  color: var(--text-secondary);
+}
+
+[data-theme="dark"] .mc-style-btn.active {
+  background: var(--primary);
+  color: #fff;
+}
+
+/* --- Mobile responsive --- */
+@media (max-width: 480px) {
+  .mc-course-header {
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .mc-course-name {
+    font-size: 0.9rem;
+  }
+  .mc-add-course-bar {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .mc-style-btn {
+    padding: 5px 12px;
+    font-size: 0.8rem;
+  }
+  .mb-dish-row .mc-dish-note-area,
+  .mb-dish-row .mc-dish-note-area.mc-note-open {
+    padding-left: 12px;
+  }
 }
 
 /* ============================

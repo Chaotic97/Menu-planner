@@ -174,6 +174,8 @@ export async function renderMenuList(container) {
           <h3 class="card-title">${escapeHtml(menu.name)}</h3>
           ${menu.description ? `<p class="card-desc">${escapeHtml(menu.description.length > 120 ? menu.description.slice(0, 120) + '…' : menu.description)}</p>` : ''}
           <div class="menu-stats">
+            ${menu.service_style === 'coursed' ? '<span class="ml-style-badge ml-style-coursed">Coursed</span>' : '<span class="ml-style-badge ml-style-alacarte">&Agrave; la carte</span>'}
+            ${menu.course_count ? `<span>${menu.course_count} ${menu.service_style === 'coursed' ? 'course' : 'section'}${menu.course_count !== 1 ? 's' : ''}, </span>` : ''}
             <span>${menu.dish_count} dish${menu.dish_count !== 1 ? 'es' : ''}</span>
             ${menu.sell_price ? `<span> &middot; $${Number(menu.sell_price).toFixed(2)}</span>` : ''}
             ${menu.menu_food_cost_percent !== undefined && menu.menu_food_cost_percent !== null ? `

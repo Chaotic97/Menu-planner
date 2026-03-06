@@ -85,6 +85,14 @@ export const removeDishFromMenu = (menuId, dishId) => request(`/menus/${menuId}/
 export const reorderMenuDishes = (menuId, order) => request(`/menus/${menuId}/dishes/reorder`, { method: 'PUT', body: { order } });
 export const getMenuKitchenPrint = (menuId) => request(`/menus/${menuId}/kitchen-print`);
 
+// Menu Courses
+export const getCourses = (menuId) => request(`/menus/${menuId}/courses`);
+export const createCourse = (menuId, data) => request(`/menus/${menuId}/courses`, { method: 'POST', body: data });
+export const updateCourse = (menuId, courseId, data) => request(`/menus/${menuId}/courses/${courseId}`, { method: 'PUT', body: data });
+export const deleteCourse = (menuId, courseId) => request(`/menus/${menuId}/courses/${courseId}`, { method: 'DELETE' });
+export const reorderCourses = (menuId, order) => request(`/menus/${menuId}/courses/reorder`, { method: 'PUT', body: { order } });
+export const applyCoursesTemplate = (menuId, template) => request(`/menus/${menuId}/courses/from-template`, { method: 'POST', body: { template } });
+
 // Todos (legacy menu-based endpoints)
 export const getShoppingList = (menuId) => request(`/todos/menu/${menuId}/shopping-list`);
 export const getScaledShoppingList = (menuId, covers) => request(`/todos/menu/${menuId}/scaled-shopping-list?covers=${covers}`);
