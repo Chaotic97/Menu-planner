@@ -1,4 +1,4 @@
-import { getMenus, getShoppingList, getScaledShoppingList, updateIngredientStock, clearAllStock } from '../api.js';
+import { getMenus, getShoppingList, getScaledShoppingList } from '../api.js';
 import { escapeHtml } from '../utils/escapeHtml.js';
 import { showToast } from '../components/toast.js';
 import { openModal, closeModal } from '../components/modal.js';
@@ -18,7 +18,6 @@ export async function renderShoppingList(container, menuId) {
 
   let activeMenuId = menuId ? parseInt(menuId) : null;
   let shoppingData = null;
-  let showInStock = false;
   let scaleCovers = '';
 
   async function loadShoppingList() {
@@ -38,17 +37,13 @@ export async function renderShoppingList(container, menuId) {
     }
   }
 
-  function countInStock() {
-    if (!shoppingData) return { inStock: 0, total: 0 };
-    let inStock = 0;
+  function countItems() {
+    if (!shoppingData) return 0;
     let total = 0;
     for (const group of shoppingData.groups) {
-      for (const item of group.items) {
-        total++;
-        if (item.in_stock) inStock++;
-      }
+      total += group.items.length;
     }
-    return { inStock, total };
+    return total;
   }
 
   function renderShoppingContent() {
@@ -56,15 +51,12 @@ export async function renderShoppingList(container, menuId) {
       return '<div class="sl-empty"><p>No ingredients in this menu. Add dishes with ingredients first.</p></div>';
     }
 
-    const { inStock, total } = countInStock();
-    const needCount = total - inStock;
+    const total = countItems();
 
     let html = `
       <div class="sl-summary">
         <div class="sl-summary-main">
-          <span class="sl-summary-need"><strong>${needCount}</strong> to buy</span>
-          <span class="sl-summary-have">${inStock} in stock</span>
-          <span class="sl-summary-total">${total} total</span>
+          <span class="sl-summary-need"><strong>${total}</strong> item${total !== 1 ? 's' : ''}</span>
         </div>
         <div class="sl-summary-cost">
           Est. total: <strong>$${shoppingData.total_estimated_cost.toFixed(2)}</strong>
@@ -73,27 +65,13 @@ export async function renderShoppingList(container, menuId) {
     `;
 
     for (const group of shoppingData.groups) {
-      const needItems = group.items.filter(i => !i.in_stock);
-      const stockItems = group.items.filter(i => i.in_stock);
-
-      // Skip entire category if all in stock and not showing in-stock
-      if (needItems.length === 0 && !showInStock) continue;
-
       html += `<div class="sl-category">
         <h3 class="sl-category-title">${escapeHtml(group.category.charAt(0).toUpperCase() + group.category.slice(1))}
-          <span class="sl-category-count">(${needItems.length} to buy${stockItems.length ? `, ${stockItems.length} in stock` : ''})</span>
+          <span class="sl-category-count">(${group.items.length})</span>
         </h3>`;
 
-      // Items to buy
-      for (const item of needItems) {
-        html += renderShoppingItem(item, false);
-      }
-
-      // In-stock items (greyed out, at bottom)
-      if (showInStock && stockItems.length) {
-        for (const item of stockItems) {
-          html += renderShoppingItem(item, true);
-        }
+      for (const item of group.items) {
+        html += renderShoppingItem(item);
       }
 
       html += '</div>';
@@ -102,17 +80,9 @@ export async function renderShoppingList(container, menuId) {
     return html;
   }
 
-  function renderShoppingItem(item, isInStock) {
+  function renderShoppingItem(item) {
     return `
-      <div class="sl-item ${isInStock ? 'sl-item-stocked' : ''}" data-ingredient-id="${item.ingredient_id}">
-        <button class="sl-stock-btn ${isInStock ? 'sl-stock-btn-active' : ''}"
-                data-ingredient-id="${item.ingredient_id}"
-                data-in-stock="${isInStock ? 1 : 0}"
-                title="${isInStock ? 'Mark as needed' : 'Mark as in stock'}">
-          ${isInStock
-            ? '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>'
-            : '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/></svg>'}
-        </button>
+      <div class="sl-item" data-ingredient-id="${item.ingredient_id}">
         <div class="sl-item-body">
           <span class="sl-item-name">${escapeHtml(item.ingredient)}</span>
           <span class="sl-item-qty">${item.total_quantity} ${escapeHtml(item.unit)}</span>
@@ -126,16 +96,15 @@ export async function renderShoppingList(container, menuId) {
   function openPurchaseOrder() {
     if (!shoppingData) return;
 
-    const needItems = [];
+    const allItems = [];
     for (const group of shoppingData.groups) {
-      const items = group.items.filter(i => !i.in_stock);
-      if (items.length) needItems.push({ category: group.category, items });
+      if (group.items.length) allItems.push({ category: group.category, items: group.items });
     }
 
-    let needCost = 0;
-    for (const g of needItems) {
+    let totalCost = 0;
+    for (const g of allItems) {
       for (const i of g.items) {
-        if (i.estimated_cost !== null) needCost += i.estimated_cost;
+        if (i.estimated_cost !== null) totalCost += i.estimated_cost;
       }
     }
 
@@ -156,13 +125,13 @@ export async function renderShoppingList(container, menuId) {
                 : ''}
           </div>
         </div>
-        ${needItems.length ? `
+        ${allItems.length ? `
           <table class="po-table">
             <thead>
               <tr><th>Ingredient</th><th>Qty</th><th>Unit</th><th>Est. Cost</th><th>Used In</th></tr>
             </thead>
             <tbody>
-              ${needItems.map(g => `
+              ${allItems.map(g => `
                 <tr class="po-category-row"><td colspan="5">${g.category.charAt(0).toUpperCase() + g.category.slice(1)}</td></tr>
                 ${g.items.map(item => `
                   <tr>
@@ -178,7 +147,7 @@ export async function renderShoppingList(container, menuId) {
             <tfoot>
               <tr class="po-total-row">
                 <td colspan="3"><strong>Estimated Total</strong></td>
-                <td><strong>$${needCost.toFixed(2)}</strong></td>
+                <td><strong>$${totalCost.toFixed(2)}</strong></td>
                 <td></td>
               </tr>
             </tfoot>
@@ -191,7 +160,7 @@ export async function renderShoppingList(container, menuId) {
           <div class="td-form-actions" style="margin-top: 16px;">
             <button class="btn btn-secondary" id="po-print-btn">Print PO</button>
           </div>
-        ` : '<p>All items are in stock. Nothing to order.</p>'}
+        ` : '<p>No items to order.</p>'}
       </div>
     `;
 
@@ -222,35 +191,10 @@ export async function renderShoppingList(container, menuId) {
     });
   }
 
-  function attachListeners() {
-    // Stock toggle buttons
-    container.querySelectorAll('.sl-stock-btn').forEach(btn => {
-      btn.addEventListener('click', async () => {
-        const ingredientId = parseInt(btn.dataset.ingredientId);
-        const currentlyInStock = btn.dataset.inStock === '1';
-        try {
-          await updateIngredientStock(ingredientId, !currentlyInStock);
-          // Update local data
-          for (const group of shoppingData.groups) {
-            for (const item of group.items) {
-              if (item.ingredient_id === ingredientId) {
-                item.in_stock = currentlyInStock ? 0 : 1;
-              }
-            }
-          }
-          renderContent();
-        } catch (err) {
-          showToast('Failed to update: ' + err.message, 'error');
-        }
-      });
-    });
-  }
-
   function renderContent() {
     const listArea = container.querySelector('#sl-list');
     if (!listArea) return;
     listArea.innerHTML = renderShoppingContent();
-    attachListeners();
   }
 
   async function renderPage() {
@@ -264,8 +208,6 @@ export async function renderShoppingList(container, menuId) {
     const menuOptions = menus.map(m =>
       `<option value="${m.id}" ${m.id === activeMenuId ? 'selected' : ''}>${escapeHtml(m.name)}</option>`
     ).join('');
-
-    const { inStock } = shoppingData ? countInStock() : { inStock: 0 };
 
     container.innerHTML = `
       <div class="page-header">
@@ -293,20 +235,12 @@ export async function renderShoppingList(container, menuId) {
             </div>
           ` : ''}
         </div>
-        <div class="sl-controls-right">
-          <label class="sl-toggle-instock">
-            <input type="checkbox" id="sl-show-instock" ${showInStock ? 'checked' : ''}>
-            <span>Show in-stock items</span>
-          </label>
-        </div>
       </div>
 
       <div id="sl-list">
         ${activeMenuId ? renderShoppingContent() : '<div class="sl-empty"><p>Select a menu to generate a shopping list.</p></div>'}
       </div>
     `;
-
-    attachListeners();
 
     // Menu selector
     container.querySelector('#sl-menu-select').addEventListener('change', async (e) => {
@@ -336,40 +270,19 @@ export async function renderShoppingList(container, menuId) {
       }
     });
 
-    // Show in-stock toggle
-    container.querySelector('#sl-show-instock')?.addEventListener('change', (e) => {
-      showInStock = e.target.checked;
-      renderContent();
-    });
-
-    // Overflow menu (Purchase Order + Clear in-stock)
+    // Overflow menu (Purchase Order)
     const slOverflowSlot = container.querySelector('#sl-overflow-menu');
     if (slOverflowSlot) {
       const overflowItems = [
         { label: 'Purchase Order', icon: '📋', onClick: () => openPurchaseOrder() },
       ];
-      if (inStock > 0) {
-        overflowItems.push({
-          label: `Clear in-stock (${inStock})`, icon: '✕', danger: true, onClick: async () => {
-            if (!confirm('Clear all in-stock flags? This resets for a new order cycle.')) return;
-            try {
-              const result = await clearAllStock();
-              showToast(`Cleared ${result.cleared} in-stock flags`, 'success');
-              await loadShoppingList();
-              await renderPage();
-            } catch (err) {
-              showToast('Failed to clear: ' + err.message, 'error');
-            }
-          }
-        });
-      }
       const menuTrigger = createActionMenu(overflowItems);
       slOverflowSlot.appendChild(menuTrigger);
     }
   }
 
   // Sync event listeners — refresh when ingredients or menus change
-  const syncEvents = ['sync:ingredient_updated', 'sync:ingredient_created', 'sync:ingredients_stock_cleared', 'sync:menu_updated'];
+  const syncEvents = ['sync:ingredient_updated', 'sync:ingredient_created', 'sync:menu_updated'];
   const syncHandler = async () => {
     await loadShoppingList();
     await renderPage();

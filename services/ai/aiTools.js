@@ -316,20 +316,6 @@ const TOOL_REGISTRY = [
     },
   },
   {
-    name: 'toggle_ingredient_stock',
-    description: 'Toggle an ingredient in-stock / out-of-stock status.',
-    autoApprove: true,
-    input_schema: {
-      type: 'object',
-      properties: {
-        ingredient_id: { type: 'number', description: 'ID of the ingredient' },
-        ingredient_name: { type: 'string', description: 'Name of the ingredient (fuzzy matched if no ID)' },
-        in_stock: { type: 'boolean', description: 'Set to true for in-stock, false for out-of-stock. If omitted, toggles current state.' },
-      },
-      required: [],
-    },
-  },
-  {
     name: 'complete_task',
     description: 'Mark a task as complete or incomplete. Shortcut for quickly completing tasks.',
     autoApprove: true,
@@ -517,7 +503,7 @@ const TOOL_REGISTRY = [
   },
   {
     name: 'search_ingredients',
-    description: 'Search for ingredients by name. Returns matching ingredients with cost, stock status, and which dishes use them.',
+    description: 'Search for ingredients by name. Returns matching ingredients with cost and which dishes use them.',
     autoApprove: true,
     input_schema: {
       type: 'object',
@@ -607,7 +593,7 @@ const TOOL_REGISTRY = [
   },
   {
     name: 'lookup_ingredient',
-    description: 'Get full details of a specific ingredient including cost, stock status, and which dishes use it.',
+    description: 'Get full details of a specific ingredient including cost and which dishes use it.',
     autoApprove: true,
     input_schema: {
       type: 'object',
@@ -822,7 +808,7 @@ const TOOL_REGISTRY = [
 
 Available tables and key columns:
 - dishes: id, name, description, category, chefs_notes, suggested_price, is_favorite, batch_yield, deleted_at, created_at, updated_at
-- ingredients: id, name, unit_cost, base_unit, category, in_stock
+- ingredients: id, name, unit_cost, base_unit, category
 - dish_ingredients: dish_id, ingredient_id, quantity, unit, prep_note, sort_order (UNIQUE dish_id+ingredient_id)
 - dish_section_headers: id, dish_id, label, sort_order
 - ingredient_allergens: ingredient_id, allergen, source ('auto'/'manual') — allergens are tracked per ingredient
@@ -1421,7 +1407,7 @@ const handlers = {
     const db = getDb();
     // Single query with LEFT JOIN to count dish usage — avoids N+1
     const ingredients = db.prepare(
-      `SELECT i.id, i.name, i.unit_cost, i.base_unit, i.category, i.in_stock,
+      `SELECT i.id, i.name, i.unit_cost, i.base_unit, i.category,
               COUNT(di.ingredient_id) as dish_count
        FROM ingredients i
        LEFT JOIN dish_ingredients di ON di.ingredient_id = i.id
@@ -1438,8 +1424,7 @@ const handlers = {
 
     const parts = [`Found ${ingredients.length} ingredient(s) matching "${input.query}":`];
     for (const ing of ingredients) {
-      const stock = ing.in_stock ? ' [IN STOCK]' : '';
-      parts.push(`  - "${ing.name}" (ID:${ing.id}) — cost: ${ing.unit_cost || '?'}/${ing.base_unit || '?'}, used in ${ing.dish_count} dish(es)${stock}`);
+      parts.push(`  - "${ing.name}" (ID:${ing.id}) — cost: ${ing.unit_cost || '?'}/${ing.base_unit || '?'}, used in ${ing.dish_count} dish(es)`);
     }
 
     const message = parts.join('\n');
@@ -1527,7 +1512,7 @@ const handlers = {
 
     // Aggregate ingredients from all dishes on this menu
     const items = db.prepare(
-      `SELECT i.name, i.unit_cost, i.base_unit, i.in_stock,
+      `SELECT i.name, i.unit_cost, i.base_unit,
               SUM(di.quantity * md.servings) as total_qty, di.unit
        FROM menu_dishes md
        JOIN dish_ingredients di ON di.dish_id = md.dish_id
@@ -1543,23 +1528,14 @@ const handlers = {
     }
 
     let totalCost = 0;
-    const toBuy = items.filter(i => !i.in_stock);
-    const inStock = items.filter(i => i.in_stock);
 
     const parts = [`Shopping list for "${menuName}" (${items.length} items):`];
-    parts.push(`\nTo buy (${toBuy.length}):`);
-    for (const item of toBuy) {
+    for (const item of items) {
       const cost = item.total_qty && item.unit_cost ? (item.total_qty * item.unit_cost).toFixed(2) : '?';
       if (item.total_qty && item.unit_cost) totalCost += item.total_qty * item.unit_cost;
       parts.push(`  - ${item.total_qty || '?'} ${item.unit || ''} ${item.name} — est. cost: ${cost}`);
     }
-    if (inStock.length) {
-      parts.push(`\nAlready in stock (${inStock.length}):`);
-      for (const item of inStock) {
-        parts.push(`  - ${item.total_qty || '?'} ${item.unit || ''} ${item.name}`);
-      }
-    }
-    parts.push(`\nEstimated total cost (to buy): ${totalCost.toFixed(2)}`);
+    parts.push(`\nEstimated total cost: ${totalCost.toFixed(2)}`);
 
     const message = parts.join('\n');
     if (opts.preview) return { description: `Shopping list for "${menuName}"`, message };
@@ -1577,8 +1553,6 @@ const handlers = {
     const taskOverdue = db.prepare("SELECT COUNT(*) as cnt FROM tasks WHERE completed = 0 AND due_date < date('now')").get().cnt;
     const noteCount = db.prepare('SELECT COUNT(*) as cnt FROM service_notes').get().cnt;
     const specialCount = db.prepare('SELECT COUNT(*) as cnt FROM weekly_specials WHERE is_active = 1').get().cnt;
-    const inStockCount = db.prepare('SELECT COUNT(*) as cnt FROM ingredients WHERE in_stock = 1').get().cnt;
-
     // Recent activity
     const recentDishes = db.prepare(
       "SELECT name, created_at FROM dishes WHERE deleted_at IS NULL ORDER BY created_at DESC LIMIT 5"
@@ -1593,7 +1567,7 @@ const handlers = {
       'PlateStack System Summary:',
       `  Dishes: ${dishCount}`,
       `  Menus: ${menuCount}`,
-      `  Ingredients: ${ingredientCount} (${inStockCount} in stock)`,
+      `  Ingredients: ${ingredientCount}`,
       `  Tasks: ${taskTotal} total, ${taskPending} pending, ${taskOverdue} overdue`,
       `  Service notes: ${noteCount}`,
       `  Active specials: ${specialCount}`,
@@ -1721,7 +1695,6 @@ const handlers = {
       `Ingredient: "${ingredient.name}" (ID: ${ingredient.id})`,
       `Unit cost: ${ingredient.unit_cost || 'not set'} per ${ingredient.base_unit || '?'}`,
       `Category: ${ingredient.category || 'uncategorized'}`,
-      `In stock: ${ingredient.in_stock ? 'Yes' : 'No'}`,
     ];
 
     if (dishUsage.length) {
@@ -2396,28 +2369,6 @@ const handlers = {
     if (opts.broadcast) opts.broadcast('dish_updated', { id: dishId });
 
     return { success: true, message: `"${dishName}" ${newVal ? 'added to' : 'removed from'} favorites.` };
-  },
-
-  toggle_ingredient_stock(input, opts) {
-    const db = getDb();
-    const resolved = resolveIngredient(db, input);
-    if (!resolved) return { success: true, message: 'Ingredient not found.' };
-    const { ingredientId, ingredientName } = resolved;
-
-    const current = db.prepare('SELECT in_stock FROM ingredients WHERE id = ?').get(ingredientId);
-    const newVal = input.in_stock !== undefined ? (input.in_stock ? 1 : 0) : (current.in_stock ? 0 : 1);
-
-    if (opts.preview) {
-      return {
-        description: `Mark "${ingredientName}" as ${newVal ? 'in stock' : 'out of stock'}`,
-        message: `I'll mark "${ingredientName}" as ${newVal ? 'in stock' : 'out of stock'}.`,
-      };
-    }
-
-    db.prepare('UPDATE ingredients SET in_stock = ? WHERE id = ?').run(newVal, ingredientId);
-    if (opts.broadcast) opts.broadcast('ingredient_updated', { id: ingredientId });
-
-    return { success: true, message: `"${ingredientName}" marked as ${newVal ? 'in stock' : 'out of stock'}.` };
   },
 
   complete_task(input, opts) {
