@@ -1,4 +1,4 @@
-import { getIngredients, updateIngredient, updateIngredientStock, updateIngredientAllergen } from '../api.js';
+import { getIngredients, updateIngredient, updateIngredientAllergen } from '../api.js';
 import { escapeHtml } from '../utils/escapeHtml.js';
 import { showToast } from '../components/toast.js';
 import { openModal, closeModal } from '../components/modal.js';
@@ -52,7 +52,6 @@ export async function renderIngredientList(container) {
 
   function render() {
     const sortedList = sorted(ingredients);
-    const inStockCount = ingredients.filter(i => i.in_stock).length;
     const totalCount = ingredients.length;
 
     container.innerHTML = `
@@ -65,7 +64,7 @@ export async function renderIngredientList(container) {
           <input type="search" class="input il-search" id="il-search" placeholder="Search ingredients..." value="${escapeHtml(searchQuery)}">
         </div>
         <div class="il-summary">
-          ${totalCount} ingredient${totalCount !== 1 ? 's' : ''}${inStockCount ? ` &middot; ${inStockCount} in stock` : ''}
+          ${totalCount} ingredient${totalCount !== 1 ? 's' : ''}
         </div>
       </div>
 
@@ -83,27 +82,17 @@ export async function renderIngredientList(container) {
                 <th class="il-th il-th-unit">Unit</th>
                 <th class="il-th il-th-sortable il-th-cat" data-sort="category">Category${sortIcon('category')}</th>
                 <th class="il-th il-th-sortable il-th-usage" data-sort="dish_count">Used In${sortIcon('dish_count')}</th>
-                <th class="il-th il-th-stock">In Stock</th>
                 <th class="il-th il-th-actions"></th>
               </tr>
             </thead>
             <tbody>
               ${sortedList.map(ing => `
-                <tr class="il-row${ing.in_stock ? ' il-row-stocked' : ''}" data-id="${ing.id}">
+                <tr class="il-row" data-id="${ing.id}">
                   <td class="il-td il-td-name">${escapeHtml(ing.name)}</td>
                   <td class="il-td il-td-cost">${formatCost(ing.unit_cost)}</td>
                   <td class="il-td il-td-unit">${escapeHtml(ing.base_unit || '-')}</td>
                   <td class="il-td il-td-cat">${escapeHtml(ing.category || 'other')}</td>
                   <td class="il-td il-td-usage">${ing.dish_count || 0}</td>
-                  <td class="il-td il-td-stock">
-                    <button class="il-stock-toggle${ing.in_stock ? ' il-stock-on' : ''}" data-id="${ing.id}" title="${ing.in_stock ? 'Mark out of stock' : 'Mark in stock'}" aria-label="${ing.in_stock ? 'In stock' : 'Out of stock'}">
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="18" height="18">
-                        ${ing.in_stock
-                          ? '<polyline points="20 6 9 17 4 12"/>'
-                          : '<circle cx="12" cy="12" r="10"/>'}
-                      </svg>
-                    </button>
-                  </td>
                   <td class="il-td il-td-actions">
                     <button class="il-edit-btn" data-id="${ing.id}" title="Edit" aria-label="Edit ${escapeHtml(ing.name)}">
                       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" width="16" height="16">
@@ -142,23 +131,6 @@ export async function renderIngredientList(container) {
           sortDir = 'asc';
         }
         render();
-      });
-    });
-
-    // Stock toggle
-    container.querySelectorAll('.il-stock-toggle').forEach(btn => {
-      btn.addEventListener('click', async () => {
-        const id = btn.dataset.id;
-        const ing = ingredients.find(i => String(i.id) === String(id));
-        if (!ing) return;
-        const newVal = !ing.in_stock;
-        try {
-          await updateIngredientStock(id, newVal);
-          ing.in_stock = newVal ? 1 : 0;
-          render();
-        } catch (err) {
-          showToast(err.message || 'Failed to update stock', 'error');
-        }
       });
     });
 
@@ -273,7 +245,7 @@ export async function renderIngredientList(container) {
   await load();
 
   // Sync listeners
-  const syncEvents = ['sync:ingredient_created', 'sync:ingredient_updated', 'sync:ingredients_stock_cleared'];
+  const syncEvents = ['sync:ingredient_created', 'sync:ingredient_updated'];
   const syncHandler = () => load();
   for (const evt of syncEvents) window.addEventListener(evt, syncHandler);
   const cleanup = () => {

@@ -18,7 +18,6 @@ function generateShoppingList(menuId) {
       i.unit_cost,
       i.base_unit,
       i.category,
-      i.in_stock,
       d.name AS dish_name
     FROM menu_dishes md
     JOIN dishes d ON d.id = md.dish_id
@@ -43,7 +42,6 @@ function generateShoppingList(menuId) {
         total_quantity: 0,
         unit_cost: row.unit_cost,
         base_unit: row.base_unit,
-        in_stock: row.in_stock || 0,
         used_in: [],
       };
     }
@@ -106,7 +104,6 @@ function generateShoppingList(menuId) {
       total_quantity: item.total_quantity,
       unit: item.unit,
       estimated_cost: item.estimated_cost,
-      in_stock: item.in_stock,
       used_in: item.used_in,
     };
     if (item.mixed_units) entry.mixed_units = item.mixed_units;

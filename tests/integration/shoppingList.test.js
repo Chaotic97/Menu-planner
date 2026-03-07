@@ -178,29 +178,6 @@ describe('Shopping list category grouping', () => {
   });
 });
 
-// ─── IN-STOCK FLAG ──────────────────────────────────────────────────────────
-
-describe('Shopping list in_stock passthrough', () => {
-  test('passes through in_stock flag from ingredient', async () => {
-    const ingId = await createIngredient('Butter SL', 0.01, 'g', 'dairy');
-    // Mark as in stock
-    await agent.put(`/api/ingredients/${ingId}/stock`).send({ in_stock: true });
-
-    const dish = await createDishWithIngredients('Butter Dish', [
-      { name: 'Butter SL', quantity: 50, unit: 'g' },
-    ]);
-
-    const menuId = await createMenuWithDishes('Stock Menu', [
-      { dishId: dish, servings: 1 },
-    ]);
-
-    const res = await agent.get(`/api/todos/menu/${menuId}/shopping-list`).expect(200);
-    const allItems = res.body.groups.flatMap(g => g.items);
-    const butter = allItems.find(i => i.ingredient === 'Butter SL');
-    expect(butter.in_stock).toBe(1);
-  });
-});
-
 // ─── ESTIMATED COST ─────────────────────────────────────────────────────────
 
 describe('Shopping list estimated cost', () => {

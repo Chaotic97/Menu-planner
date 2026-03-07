@@ -365,6 +365,8 @@ async function initialize() {
      JOIN allergen_keywords ak ON da.allergen = ak.allergen
      WHERE da.source = 'auto'
        AND LOWER(i.name) LIKE '%' || LOWER(ak.keyword) || '%'`,
+    // Remove unused in_stock column (may silently fail on older SQLite without DROP COLUMN support)
+    `ALTER TABLE ingredients DROP COLUMN in_stock`,
   ];
 
   for (const sql of MIGRATIONS) {
