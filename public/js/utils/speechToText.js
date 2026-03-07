@@ -1,12 +1,12 @@
 /**
  * Client-side Speech-to-Text using OpenAI Whisper via Transformers.js.
  * Runs entirely in the browser — no server processing, audio never leaves device.
- * Uses whisper-base quantized (~50MB one-time download, cached by Transformers.js).
+ * Uses whisper-small quantized (~150MB one-time download, cached by Transformers.js).
  */
 
 import { showToast } from '../components/toast.js';
 
-const MODEL_ID = 'Xenova/whisper-base';
+const MODEL_ID = 'Xenova/whisper-small';
 const MAX_RECORD_SECONDS = 30;
 const IDLE_UNLOAD_MS = 5 * 60 * 1000; // Free memory after 5 min idle
 const SILENCE_THRESHOLD = 0.01; // RMS below this = silence
@@ -98,7 +98,7 @@ export async function checkModelCached() {
     if (transformersCache) {
       const cache = await caches.open(transformersCache);
       const keys = await cache.keys();
-      const hasWhisper = keys.some(req => req.url.includes('whisper-base'));
+      const hasWhisper = keys.some(req => req.url.includes('whisper-small'));
       localStorage.setItem('stt_model_downloaded', String(hasWhisper));
       return { cached: hasWhisper };
     }
@@ -163,8 +163,9 @@ export async function deleteModelCache() {
 
 /**
  * Lazily load Transformers.js and initialize the Whisper pipeline.
+ * @param {{ silent?: boolean }} options - If silent, suppress toasts (used for background preload)
  */
-async function ensureModel() {
+async function ensureModel({ silent = false } = {}) {
   if (transcriber) {
     resetIdleTimer();
     return transcriber;
@@ -180,7 +181,7 @@ async function ensureModel() {
     transcriber = await pipeline('automatic-speech-recognition', MODEL_ID, {
       quantized: true,
       progress_callback: (progress) => {
-        if (progress.status === 'download' && !progressToastShown) {
+        if (!silent && progress.status === 'download' && !progressToastShown) {
           showToast('Loading voice model from cache...', 'info', 5000);
           progressToastShown = true;
         }
@@ -191,16 +192,29 @@ async function ensureModel() {
     resetIdleTimer();
     return transcriber;
   } catch (err) {
-    if (!navigator.onLine) {
-      showToast('Voice input requires a one-time model download. Please connect to the internet.', 'error', 5000);
-    } else {
-      showToast('Failed to load voice model. Please try again.', 'error', 4000);
+    if (!silent) {
+      if (!navigator.onLine) {
+        showToast('Voice input requires a one-time model download. Please connect to the internet.', 'error', 5000);
+      } else {
+        showToast('Failed to load voice model. Please try again.', 'error', 4000);
+      }
     }
     console.error('Whisper model load failed:', err);
     return null;
   } finally {
     isModelLoading = false;
   }
+}
+
+/**
+ * Quietly preload the Whisper model from cache on app start.
+ * Only attempts if model was previously downloaded. No toasts, no errors shown.
+ */
+export function preloadModelQuietly() {
+  if (!isModelDownloaded()) return;
+  setTimeout(() => {
+    ensureModel({ silent: true }).catch(() => {});
+  }, 3000);
 }
 
 /** Reset the idle timer that unloads the model to free memory. */

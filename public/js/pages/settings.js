@@ -96,7 +96,7 @@ export async function renderSettings(container) {
         </button>
         <div class="st-section-body">
           <p class="ak-intro">
-            Voice input uses a local Whisper model (~50 MB) that runs entirely in your browser.
+            Voice input uses a local Whisper model (~150 MB) that runs entirely in your browser.
             Pre-download it here so it's ready when you tap the microphone.
           </p>
           <div class="card" style="padding: var(--space-md);">
