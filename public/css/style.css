@@ -6787,6 +6787,13 @@ textarea.input { resize: vertical; min-height: 80px; }
   border-color: var(--danger);
   animation: stt-pulse 1.5s ease-in-out infinite;
 }
+.stt-mic.stt-recording.stt-hearing {
+  animation: none;
+  box-shadow: 0 0 0 6px rgba(var(--success-rgb), 0.35);
+  background: var(--success);
+  border-color: var(--success);
+  transition: box-shadow 0.15s, background 0.15s;
+}
 .stt-mic.stt-transcribing {
   opacity: 0.6;
   cursor: wait;
