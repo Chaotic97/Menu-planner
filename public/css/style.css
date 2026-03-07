@@ -6798,6 +6798,67 @@ textarea.input { resize: vertical; min-height: 80px; }
   }
 }
 
+/* ============================
+   Speech-to-Text (.stt-)
+   ============================ */
+.stt-mic {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-muted, var(--text));
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+  position: relative;
+}
+.stt-mic:hover {
+  background: rgba(var(--primary-rgb), 0.1);
+  color: var(--primary);
+  border-color: var(--primary);
+}
+.stt-mic.stt-recording {
+  background: var(--danger);
+  color: white;
+  border-color: var(--danger);
+  animation: stt-pulse 1.5s ease-in-out infinite;
+}
+.stt-mic.stt-transcribing {
+  opacity: 0.6;
+  cursor: wait;
+  pointer-events: none;
+  animation: stt-spin 1s linear infinite;
+}
+
+@keyframes stt-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(var(--danger-rgb), 0.4); }
+  50% { box-shadow: 0 0 0 8px rgba(var(--danger-rgb), 0); }
+}
+@keyframes stt-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+/* --- STT: mobile --- */
+@media (max-width: 480px) {
+  .stt-mic {
+    width: 34px;
+    height: 34px;
+  }
+}
+
+/* --- STT: dark mode --- */
+[data-theme="dark"] .stt-mic {
+  background: var(--surface);
+}
+[data-theme="dark"] .stt-mic:hover {
+  background: rgba(var(--primary-rgb), 0.15);
+}
+
 /* --- Today: Responsive --- */
 @media (max-width: 480px) {
   .ty-header {

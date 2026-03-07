@@ -2,6 +2,7 @@ import { createTask, aiCommand, aiConfirm, aiUndo, createConversation, addConver
 import { showToast } from './toast.js';
 import { escapeHtml } from '../utils/escapeHtml.js';
 import { toggleDrawer } from './chatDrawer.js';
+import { createMicButton } from '../utils/speechToText.js';
 
 // Routes where command bar should be hidden
 const HIDDEN_ROUTES = [
@@ -170,6 +171,10 @@ function createBar() {
   const input = barEl.querySelector('.cb-input');
   const sendBtn = barEl.querySelector('.cb-send');
   const modeToggle = barEl.querySelector('.cb-mode-toggle');
+
+  // Insert mic button between input and send
+  const micBtn = createMicButton(input);
+  sendBtn.parentNode.insertBefore(micBtn, sendBtn);
 
   // Create suggestions dropdown
   suggestionsEl = document.createElement('div');

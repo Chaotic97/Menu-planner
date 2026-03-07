@@ -1,5 +1,6 @@
 const CACHE_NAME = 'platestack-v4';
 const API_CACHE_NAME = 'platestack-api-v1';
+const STT_CACHE_NAME = 'platestack-stt-v1';
 
 // Core app shell to pre-cache
 const PRECACHE_URLS = [
@@ -29,7 +30,7 @@ self.addEventListener('install', (event) => {
 
 // Activate: clean up old caches
 self.addEventListener('activate', (event) => {
-  const keep = new Set([CACHE_NAME, API_CACHE_NAME]);
+  const keep = new Set([CACHE_NAME, API_CACHE_NAME, STT_CACHE_NAME]);
   event.waitUntil(
     caches.keys().then((keys) =>
       Promise.all(keys.filter((k) => !keep.has(k)).map((k) => caches.delete(k)))
@@ -65,6 +66,21 @@ self.addEventListener('notificationclick', (event) => {
 self.addEventListener('fetch', (event) => {
   const { request } = event;
   const url = new URL(request.url);
+
+  // Cache Transformers.js CDN files (library code for offline STT)
+  if (request.method === 'GET' && url.hostname === 'cdn.jsdelivr.net' && url.pathname.includes('transformers')) {
+    event.respondWith(
+      caches.match(request).then((cached) => {
+        if (cached) return cached;
+        return fetch(request).then((res) => {
+          const clone = res.clone();
+          caches.open(STT_CACHE_NAME).then((cache) => cache.put(request, clone));
+          return res;
+        });
+      })
+    );
+    return;
+  }
 
   // Skip non-GET and cross-origin
   if (request.method !== 'GET' || url.origin !== self.location.origin) return;
