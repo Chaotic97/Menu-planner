@@ -10,6 +10,7 @@ import { aiCommandStream, aiConfirm, aiUndo, aiExtractText, getConversations, cr
 import { escapeHtml } from '../utils/escapeHtml.js';
 import { renderMarkdown } from '../utils/markdown.js';
 import { showToast } from './toast.js';
+import { createMicButton } from '../utils/speechToText.js';
 
 let drawerEl = null;
 let fabEl = null;
@@ -305,6 +306,10 @@ function createDrawer() {
   const input = drawerEl.querySelector('.chat-drawer-input');
   const sendBtn = drawerEl.querySelector('.chat-drawer-send');
   const fileInput = drawerEl.querySelector('.chat-drawer-file-input');
+
+  // Insert mic button between input and send
+  const chatMicBtn = createMicButton(input);
+  sendBtn.parentNode.insertBefore(chatMicBtn, sendBtn);
 
   backdrop.addEventListener('click', closeDrawer);
   closeBtn.addEventListener('click', closeDrawer);
