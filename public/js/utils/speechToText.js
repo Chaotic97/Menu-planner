@@ -10,12 +10,35 @@ const MODEL_ID = 'Xenova/whisper-base';
 const MAX_RECORD_SECONDS = 30;
 const IDLE_UNLOAD_MS = 5 * 60 * 1000; // Free memory after 5 min idle
 const SILENCE_THRESHOLD = 0.01; // RMS below this = silence
-const SILENCE_DURATION_MS = 2500; // 2.5s of silence to auto-stop
+const SILENCE_DURATION_MS = 3000; // 3s of silence to auto-stop
 const CHUNK_INTERVAL_MS = 4000; // Transcribe interim every 4s
 
 /** Detect Whisper hallucination tokens like [BLANK_AUDIO] */
 function isBlankAudio(text) {
   return /^\[.*BLANK.*AUDIO.*\]$/.test(text);
+}
+
+/**
+ * Known Whisper hallucination phrases produced on silent/near-silent audio.
+ * Compared after lowercasing and stripping punctuation.
+ */
+const HALLUCINATION_PHRASES = new Set([
+  'you', 'thank you', 'thanks for watching', 'thanks for watching!',
+  'subscribe', 'bye', 'the end', 'thanks', 'okay',
+  'oh', 'ah', 'hmm', 'uh', 'um', 'so',
+]);
+
+/** Check if transcription is a known Whisper hallucination */
+function isHallucination(text) {
+  if (!text) return true;
+  const normalized = text.toLowerCase().replace(/[^\w\s]/g, '').trim();
+  if (normalized.length <= 2) return true;
+  return HALLUCINATION_PHRASES.has(normalized);
+}
+
+/** Combined check for blank audio tokens and hallucination phrases */
+function isBadTranscription(text) {
+  return isBlankAudio(text) || isHallucination(text);
 }
 
 let transcriber = null;
@@ -302,7 +325,7 @@ function startInterimTranscription(targetInput) {
       const audioData = await audioToFloat32(interimBlob);
       const result = await transcriber(audioData, { language: 'en', task: 'transcribe' });
       const rawInterim = (result.text || '').trim();
-      const interimText = isBlankAudio(rawInterim) ? '' : rawInterim;
+      const interimText = isBadTranscription(rawInterim) ? '' : rawInterim;
 
       if (interimText && targetInputRef && isRecording) {
         const prefix = originalInputValue;
@@ -465,15 +488,30 @@ async function handleMicTap(button, targetInput) {
       return;
     }
 
-    // Convert audio and transcribe
+    // Convert audio and check energy level
     const audioData = await audioToFloat32(audioBlob);
+
+    // Skip transcription if audio is near-silent (prevents hallucinations)
+    let rms = 0;
+    for (let i = 0; i < audioData.length; i++) {
+      rms += audioData[i] * audioData[i];
+    }
+    rms = Math.sqrt(rms / audioData.length);
+
+    if (rms < 0.005) {
+      targetInput.classList.remove('stt-interim-text');
+      targetInput.value = originalInputValue || '';
+      showToast('No speech detected. Please try again.', 'info', 3000);
+      return;
+    }
+
     const result = await model(audioData, {
       language: 'en',
       task: 'transcribe',
     });
 
     const rawText = (result.text || '').trim();
-    const text = isBlankAudio(rawText) ? '' : rawText;
+    const text = isBadTranscription(rawText) ? '' : rawText;
 
     // Clear interim styling
     targetInput.classList.remove('stt-interim-text');
