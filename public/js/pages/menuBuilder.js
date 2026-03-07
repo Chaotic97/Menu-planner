@@ -406,6 +406,12 @@ export async function renderMenuBuilder(container, menuId) {
     container.querySelector('#add-dish-btn')?.addEventListener('click', () => showDishPicker());
     container.querySelector('#add-dish-empty')?.addEventListener('click', () => showDishPicker());
 
+    // Set back-navigation context when clicking dish name links
+    container.addEventListener('click', (e) => {
+      const link = e.target.closest('.dish-name-link');
+      if (link) sessionStorage.setItem('dishNav_backTo', `#/menus/${menuId}`);
+    });
+
     // Per-course "Add Dish" buttons
     container.querySelectorAll('.mc-course-add-dish').forEach(btn => {
       btn.addEventListener('click', () => {
@@ -571,8 +577,8 @@ export async function renderMenuBuilder(container, menuId) {
     container.querySelectorAll('.mb-row-actions[data-dish-id]').forEach(slot => {
       const dishId = slot.dataset.dishId;
       const menuTrigger = createActionMenu([
-        { label: 'View Dish', icon: '👁', onClick: () => { window.location.hash = `#/dishes/${dishId}`; } },
-        { label: 'Edit Dish', icon: '✏️', onClick: () => { window.location.hash = `#/dishes/${dishId}/edit`; } },
+        { label: 'View Dish', icon: '👁', onClick: () => { sessionStorage.setItem('dishNav_backTo', `#/menus/${menuId}`); window.location.hash = `#/dishes/${dishId}`; } },
+        { label: 'Edit Dish', icon: '✏️', onClick: () => { sessionStorage.setItem('dishNav_backTo', `#/menus/${menuId}`); window.location.hash = `#/dishes/${dishId}/edit`; } },
         { label: 'Remove', icon: '✕', danger: true, onClick: async () => {
           try {
             await removeDishFromMenu(menuId, dishId);

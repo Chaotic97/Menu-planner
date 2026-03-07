@@ -119,9 +119,11 @@ export async function renderDishForm(container, dishId) {
     existingDirections = [];
   }
 
+  const backTo = sessionStorage.getItem('dishNav_backTo') || '#/dishes';
+
   container.innerHTML = `
     <div class="page-header">
-      <a href="#/dishes" class="btn btn-back">&larr; Back</a>
+      <a href="${backTo}" class="btn btn-back">&larr; Back</a>
       <h1>${isEdit ? 'Edit Dish' : 'New Dish'}</h1>
       <div class="header-actions">
         ${isEdit ? '<button type="button" id="header-save-btn" class="btn btn-primary">Save Changes</button>' : ''}
@@ -1012,7 +1014,13 @@ export async function renderDishForm(container, dishId) {
         }
         showToast('Dish created');
       }
-      window.location.hash = '#/dishes';
+      const savedBackTo = sessionStorage.getItem('dishNav_backTo');
+      if (savedBackTo) {
+        sessionStorage.removeItem('dishNav_backTo');
+        window.location.hash = savedBackTo;
+      } else {
+        window.location.hash = '#/dishes';
+      }
     } catch (err) {
       submitBtns.forEach(b => { b.disabled = false; b.textContent = b.dataset.origText || (isEdit ? 'Save Changes' : 'Create Dish'); });
       showToast(err.message, 'error');
