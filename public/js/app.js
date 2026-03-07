@@ -19,6 +19,7 @@ import { renderLogin } from './pages/login.js';
 import { authStatus, authLogout } from './api.js';
 import { connectSync } from './sync.js';
 import { initNotifications } from './utils/notifications.js';
+import { preloadModelQuietly } from './utils/speechToText.js';
 
 const appContent = document.getElementById('app-content');
 
@@ -270,6 +271,7 @@ window.addEventListener('DOMContentLoaded', async () => {
     initCommandBar();
     initChatDrawer();
     initNotifications();
+    preloadModelQuietly();
     router();
   }
 });
