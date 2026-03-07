@@ -6819,6 +6819,70 @@ textarea.input { resize: vertical; min-height: 80px; }
   background: rgba(var(--primary-rgb), 0.15);
 }
 
+/* --- STT: interim text indicator --- */
+.stt-interim-text {
+  color: var(--text-muted) !important;
+  font-style: italic;
+}
+
+/* --- STT: Settings section --- */
+.st-stt-status-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  margin-bottom: var(--space-md);
+}
+
+.st-stt-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  border-radius: var(--radius);
+  font-size: var(--text-sm);
+  font-weight: 500;
+}
+
+.st-stt-badge--ok {
+  background: rgba(var(--success-rgb), 0.12);
+  color: var(--success);
+}
+
+.st-stt-badge--warning {
+  background: rgba(var(--warning-rgb), 0.12);
+  color: var(--warning);
+}
+
+.st-stt-progress-container {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  margin-bottom: var(--space-md);
+}
+
+.st-stt-progress {
+  flex: 1;
+  height: 8px;
+  border-radius: 4px;
+  background: var(--border);
+  overflow: hidden;
+}
+
+.st-stt-progress-fill {
+  height: 100%;
+  border-radius: 4px;
+  background: var(--primary);
+  transition: width 0.3s ease;
+  width: 0%;
+}
+
+.st-stt-progress-text {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  min-width: 36px;
+  text-align: right;
+}
+
 /* --- Today: Responsive --- */
 @media (max-width: 480px) {
   .ty-header {
