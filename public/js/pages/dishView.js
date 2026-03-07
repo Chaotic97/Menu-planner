@@ -74,9 +74,11 @@ export async function renderDishView(container, dishId) {
     return html;
   }
 
+  const backTo = sessionStorage.getItem('dishNav_backTo') || '#/dishes';
+
   container.innerHTML = `
     <div class="page-header">
-      <a href="#/dishes" class="btn btn-back">&larr; Back</a>
+      <a href="${backTo}" class="btn btn-back">&larr; Back</a>
       <h1 class="dv-title">${escapeHtml(dish.name)}</h1>
       <div class="header-actions">
         <a href="#/dishes/${dish.id}/edit" class="btn btn-primary">Edit</a>
@@ -220,8 +222,8 @@ export async function renderDishView(container, dishId) {
   const overflowSlot = container.querySelector('#dv-overflow-slot');
   if (overflowSlot) {
     const menuTrigger = createActionMenu([
-      { label: 'Print Kitchen Sheet', onClick: () => printDishSheet(dish) },
-      { label: 'Print Service Card', onClick: () => printServiceCard(dish) },
+      { label: 'Print Kitchen Sheet', onClick: () => printDishSheet(dish, { type: 'kitchen' }) },
+      { label: 'Print FoH Sheet', onClick: () => printDishSheet(dish, { type: 'foh' }) },
     ]);
     overflowSlot.appendChild(menuTrigger);
   }
@@ -243,16 +245,18 @@ export async function renderDishView(container, dishId) {
   window.addEventListener('hashchange', cleanup);
 }
 
-function printDishSheet(dish) {
+function printDishSheet(dish, { type = 'kitchen' } = {}) {
+  const isFoh = type === 'foh';
   const allergens = dish.allergens || [];
   const sections = dish.ingredients || [];
   const subs = dish.substitutions || [];
-  const components = dish.components || [];
+  const components = isFoh ? [] : (dish.components || []);
   const directions = dish.directions || [];
   const categoryLabel = CATEGORIES.find(c => c.value === dish.category)?.label || dish.category || '';
+  const sheetLabel = isFoh ? 'FoH Sheet' : 'Kitchen Sheet';
 
   let html = `
-    <html><head><title>Kitchen Sheet - ${escapeHtml(dish.name)}</title>
+    <html><head><title>${sheetLabel} - ${escapeHtml(dish.name)}</title>
     <style>
       body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; padding: 20px; color: #1a1a1a; }
       h1 { font-size: 1.5rem; margin: 0 0 4px; }
@@ -333,8 +337,8 @@ function printDishSheet(dish) {
     html += `<div class="notes">${escapeHtml(dish.chefs_notes)}</div>`;
   }
 
-  // Service Directions
-  const serviceDirections = dish.service_directions || [];
+  // Service Directions (kitchen sheet only)
+  const serviceDirections = !isFoh ? (dish.service_directions || []) : [];
   if (serviceDirections.length) {
     html += `<div class="section-title">Service Directions</div>`;
     let stepNum = 0;
@@ -362,69 +366,6 @@ function printDishSheet(dish) {
   if (dish.service_notes) {
     html += `<div class="section-title">Service Notes</div>`;
     html += `<div class="notes">${escapeHtml(dish.service_notes)}</div>`;
-  }
-
-  html += `</body></html>`;
-  printSheet(html);
-}
-
-function printServiceCard(dish) {
-  const allergens = dish.allergens || [];
-  const components = dish.components || [];
-  const serviceDirections = dish.service_directions || [];
-
-  let html = `
-    <html><head><title>Service Card - ${escapeHtml(dish.name)}</title>
-    <style>
-      body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; padding: 20px; color: #1a1a1a; }
-      h1 { font-size: 1.5rem; margin: 0 0 4px; }
-      .meta { font-size: 0.85rem; color: #555; margin-bottom: 16px; padding-bottom: 10px; border-bottom: 3px solid #1a1a1a; }
-      .meta span { margin-right: 12px; }
-      .allergens { margin-bottom: 12px; }
-      .allergen-tag { display: inline-block; padding: 2px 8px; font-size: 0.72rem; font-weight: 700; background: #ffcdd2; color: #b71c1c; border-radius: 10px; margin-right: 3px; margin-bottom: 3px; }
-      .section-title { font-size: 0.95rem; font-weight: 700; margin: 16px 0 8px; padding-bottom: 4px; border-bottom: 2px solid #ddd; }
-      .components ul { padding-left: 0; list-style: none; margin: 0; }
-      .components li { padding: 3px 0; font-size: 0.9rem; font-weight: 600; border-bottom: 1px solid #f0f0f0; }
-      .dir-step { display: flex; gap: 8px; margin-bottom: 6px; font-size: 0.88rem; }
-      .dir-num { font-weight: 700; color: #888; min-width: 20px; }
-      .dir-section { font-weight: 700; font-size: 0.9rem; margin: 12px 0 4px; padding-bottom: 2px; border-bottom: 1px solid #ddd; }
-      .empty-note { font-size: 0.85rem; color: #999; font-style: italic; margin: 8px 0; }
-      @media print { body { padding: 0; } }
-    </style></head><body>
-    <h1>${escapeHtml(dish.name)}</h1>
-    <div class="meta">
-      <span>Service Card</span>
-      <span style="float:right;color:#888;">Printed: ${new Date().toLocaleDateString()}</span>
-    </div>
-  `;
-
-  // Allergens
-  if (allergens.length) {
-    html += `<div class="allergens">${allergens.map(a => `<span class="allergen-tag">${escapeHtml(typeof a === 'string' ? a : a.allergen)}</span>`).join('')}</div>`;
-  }
-
-  // Service Components
-  html += `<div class="section-title">Components</div>`;
-  if (components.length) {
-    html += `<div class="components"><ul>${components.map(c => `<li>${escapeHtml(c.name)}</li>`).join('')}</ul></div>`;
-  } else {
-    html += `<p class="empty-note">No service components listed.</p>`;
-  }
-
-  // Service Directions
-  html += `<div class="section-title">Service Process</div>`;
-  if (serviceDirections.length) {
-    let stepNum = 0;
-    for (const d of serviceDirections) {
-      if (d.type === 'section') {
-        html += `<div class="dir-section">${escapeHtml(d.text)}</div>`;
-      } else {
-        stepNum++;
-        html += `<div class="dir-step"><span class="dir-num">${stepNum}.</span><span>${escapeHtml(d.text)}</span></div>`;
-      }
-    }
-  } else {
-    html += `<p class="empty-note">No service directions listed.</p>`;
   }
 
   html += `</body></html>`;
