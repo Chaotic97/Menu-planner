@@ -2,6 +2,7 @@ import { getAllergenKeywords, addAllergenKeyword, deleteAllergenKeyword, changeP
 import { showToast } from '../components/toast.js';
 import { escapeHtml } from '../utils/escapeHtml.js';
 import { restartNotifications } from '../utils/notifications.js';
+import { checkModelCached, preDownloadModel, deleteModelCache } from '../utils/speechToText.js';
 
 const EU_14 = [
   'celery', 'crustaceans', 'eggs', 'fish', 'gluten', 'lupin',
@@ -81,6 +82,36 @@ export async function renderSettings(container) {
 
             <div class="st-form-actions">
               <button id="ai-save-btn" class="btn btn-primary">Save AI Settings</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="st-section">
+        <button class="st-section-toggle" aria-expanded="true">
+          <span class="st-section-title">Voice Input</span>
+          <span class="st-chevron" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16"><polyline points="6 9 12 15 18 9"/></svg>
+          </span>
+        </button>
+        <div class="st-section-body">
+          <p class="ak-intro">
+            Voice input uses a local Whisper model (~50 MB) that runs entirely in your browser.
+            Pre-download it here so it's ready when you tap the microphone.
+          </p>
+          <div class="card" style="padding: var(--space-md);">
+            <div id="stt-status-row" class="st-stt-status-row">
+              <span id="stt-status-badge" class="st-stt-badge st-stt-badge--warning">Checking...</span>
+            </div>
+            <div id="stt-progress-container" class="st-stt-progress-container" style="display:none;">
+              <div class="st-stt-progress">
+                <div class="st-stt-progress-fill" id="stt-progress-fill"></div>
+              </div>
+              <span id="stt-progress-text" class="st-stt-progress-text">0%</span>
+            </div>
+            <div class="st-form-actions">
+              <button id="stt-download-btn" class="btn btn-primary">Download Voice Model</button>
+              <button id="stt-delete-btn" class="btn btn-ghost" style="color:var(--danger); display:none;">Delete Cached Model</button>
             </div>
           </div>
         </div>
@@ -702,6 +733,78 @@ export async function renderSettings(container) {
       showToast('Test notification sent');
     } catch {
       showToast('Failed to show notification', 'error');
+    }
+  });
+
+  // --- Voice Input (Whisper Model) ---
+  const sttBadge = container.querySelector('#stt-status-badge');
+  const sttProgressContainer = container.querySelector('#stt-progress-container');
+  const sttProgressFill = container.querySelector('#stt-progress-fill');
+  const sttProgressText = container.querySelector('#stt-progress-text');
+  const sttDownloadBtn = container.querySelector('#stt-download-btn');
+  const sttDeleteBtn = container.querySelector('#stt-delete-btn');
+
+  function setSttStatus(cached) {
+    if (cached) {
+      sttBadge.textContent = 'Downloaded';
+      sttBadge.className = 'st-stt-badge st-stt-badge--ok';
+      sttDownloadBtn.style.display = 'none';
+      sttDeleteBtn.style.display = 'inline-block';
+    } else {
+      sttBadge.textContent = 'Not downloaded';
+      sttBadge.className = 'st-stt-badge st-stt-badge--warning';
+      sttDownloadBtn.style.display = 'inline-block';
+      sttDeleteBtn.style.display = 'none';
+    }
+    sttProgressContainer.style.display = 'none';
+  }
+
+  // Check initial status
+  checkModelCached().then(({ cached }) => setSttStatus(cached)).catch(() => setSttStatus(false));
+
+  sttDownloadBtn.addEventListener('click', async () => {
+    sttDownloadBtn.disabled = true;
+    sttDownloadBtn.textContent = 'Downloading...';
+    sttProgressContainer.style.display = 'flex';
+    sttProgressFill.style.width = '0%';
+    sttProgressText.textContent = '0%';
+
+    // Track file download progress
+    const fileProgress = {};
+
+    try {
+      await preDownloadModel((progress) => {
+        if (progress.status === 'progress' && progress.file) {
+          fileProgress[progress.file] = progress.progress || 0;
+          const total = Object.values(fileProgress);
+          const avg = total.reduce((a, b) => a + b, 0) / total.length;
+          const pct = Math.round(avg);
+          sttProgressFill.style.width = pct + '%';
+          sttProgressText.textContent = pct + '%';
+        } else if (progress.status === 'done') {
+          sttProgressFill.style.width = '100%';
+          sttProgressText.textContent = '100%';
+        }
+      });
+      showToast('Voice model downloaded successfully');
+      setSttStatus(true);
+    } catch (err) {
+      showToast('Failed to download voice model: ' + (err.message || 'Unknown error'), 'error');
+      setSttStatus(false);
+    } finally {
+      sttDownloadBtn.disabled = false;
+      sttDownloadBtn.textContent = 'Download Voice Model';
+    }
+  });
+
+  sttDeleteBtn.addEventListener('click', async () => {
+    if (!confirm('Delete the cached voice model? You will need to re-download it to use voice input.')) return;
+    try {
+      await deleteModelCache();
+      showToast('Voice model cache deleted');
+      setSttStatus(false);
+    } catch (err) {
+      showToast('Failed to delete cache: ' + (err.message || 'Unknown error'), 'error');
     }
   });
 

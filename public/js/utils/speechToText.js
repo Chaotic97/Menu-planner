@@ -9,6 +9,9 @@ import { showToast } from '../components/toast.js';
 const MODEL_ID = 'Xenova/whisper-base';
 const MAX_RECORD_SECONDS = 30;
 const IDLE_UNLOAD_MS = 5 * 60 * 1000; // Free memory after 5 min idle
+const SILENCE_THRESHOLD = 0.01; // RMS below this = silence
+const SILENCE_DURATION_MS = 2500; // 2.5s of silence to auto-stop
+const CHUNK_INTERVAL_MS = 4000; // Transcribe interim every 4s
 
 let transcriber = null;
 let isModelLoading = false;
@@ -17,6 +20,18 @@ let mediaRecorder = null;
 let audioChunks = [];
 let isRecording = false;
 let idleTimer = null;
+
+// Silence detection state
+let silenceAudioCtx = null;
+let analyserNode = null;
+let silenceStart = null;
+let silenceCheckInterval = null;
+
+// Interim transcription state
+let chunkTranscribeInterval = null;
+let isChunkTranscribing = false;
+let targetInputRef = null;
+let originalInputValue = '';
 
 // Microphone SVG icons
 const micIcon = `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -30,9 +45,96 @@ const stopIcon = `<svg viewBox="0 0 24 24" width="18" height="18" fill="currentC
   <rect x="6" y="6" width="12" height="12" rx="2"/>
 </svg>`;
 
+/* ============================
+   Model Cache Management
+   ============================ */
+
+/**
+ * Synchronous check using localStorage heuristic.
+ * Used by mic button guard for fast, non-blocking check.
+ */
+export function isModelDownloaded() {
+  return localStorage.getItem('stt_model_downloaded') === 'true';
+}
+
+/**
+ * Async check that queries the Cache API as source of truth.
+ * Updates localStorage to match. Returns { cached: boolean }.
+ */
+export async function checkModelCached() {
+  try {
+    const cacheNames = await caches.keys();
+    const transformersCache = cacheNames.find(name =>
+      name.includes('transformers') || name.includes('huggingface')
+    );
+    if (transformersCache) {
+      const cache = await caches.open(transformersCache);
+      const keys = await cache.keys();
+      const hasWhisper = keys.some(req => req.url.includes('whisper-base'));
+      localStorage.setItem('stt_model_downloaded', String(hasWhisper));
+      return { cached: hasWhisper };
+    }
+    // No transformers cache found — check if model is loaded in memory
+    if (transcriber) {
+      localStorage.setItem('stt_model_downloaded', 'true');
+      return { cached: true };
+    }
+    localStorage.setItem('stt_model_downloaded', 'false');
+    return { cached: false };
+  } catch {
+    // Cache API not available or error — fall back to localStorage
+    return { cached: isModelDownloaded() };
+  }
+}
+
+/**
+ * Pre-download the Whisper model with progress reporting.
+ * @param {function} onProgress - Called with { status, progress, file } during download
+ */
+export async function preDownloadModel(onProgress) {
+  if (transcriber) {
+    localStorage.setItem('stt_model_downloaded', 'true');
+    return;
+  }
+  if (isModelLoading) return;
+
+  isModelLoading = true;
+  try {
+    const { pipeline } = await import('https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.4.1');
+
+    transcriber = await pipeline('automatic-speech-recognition', MODEL_ID, {
+      quantized: true,
+      progress_callback: onProgress || (() => {}),
+    });
+
+    localStorage.setItem('stt_model_downloaded', 'true');
+    resetIdleTimer();
+  } finally {
+    isModelLoading = false;
+  }
+}
+
+/**
+ * Delete cached model files and clear status.
+ */
+export async function deleteModelCache() {
+  try {
+    const cacheNames = await caches.keys();
+    for (const name of cacheNames) {
+      if (name.includes('transformers') || name.includes('huggingface')) {
+        await caches.delete(name);
+      }
+    }
+  } catch {
+    // Cache API not available
+  }
+  transcriber = null;
+  localStorage.removeItem('stt_model_downloaded');
+  if (idleTimer) { clearTimeout(idleTimer); idleTimer = null; }
+}
+
 /**
  * Lazily load Transformers.js and initialize the Whisper pipeline.
- * Shows a progress toast during model download.
  */
 async function ensureModel() {
   if (transcriber) {
@@ -40,13 +142,6 @@ async function ensureModel() {
     return transcriber;
   }
   if (isModelLoading) return null;
-
-  // Check if model is likely cached (heuristic: if we loaded it before in this session)
-  // If offline and model not cached, warn the user
-  if (!navigator.onLine) {
-    // Try to load anyway — Transformers.js will use Cache API if model was downloaded before
-    // If it fails, we'll catch and show offline message
-  }
 
   isModelLoading = true;
   let progressToastShown = false;
@@ -58,12 +153,13 @@ async function ensureModel() {
       quantized: true,
       progress_callback: (progress) => {
         if (progress.status === 'download' && !progressToastShown) {
-          showToast('Downloading voice model... This is a one-time download.', 'info', 10000);
+          showToast('Loading voice model from cache...', 'info', 5000);
           progressToastShown = true;
         }
       },
     });
 
+    localStorage.setItem('stt_model_downloaded', 'true');
     resetIdleTimer();
     return transcriber;
   } catch (err) {
@@ -93,14 +189,11 @@ function resetIdleTimer() {
  */
 async function audioToFloat32(blob) {
   const arrayBuffer = await blob.arrayBuffer();
-  // Create AudioContext inside user-gesture call chain (iOS requirement)
   const audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
   try {
     const audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
-    // Get mono channel (first channel)
     const channelData = audioBuffer.getChannelData(0);
 
-    // If sample rate doesn't match 16kHz, resample
     if (audioBuffer.sampleRate !== 16000) {
       const offlineCtx = new OfflineAudioContext(1, Math.ceil(audioBuffer.duration * 16000), 16000);
       const source = offlineCtx.createBufferSource();
@@ -130,11 +223,108 @@ function getRecordingMimeType() {
   return ''; // Let browser choose default
 }
 
+/* ============================
+   Silence Detection
+   ============================ */
+
+function startSilenceDetection(stream) {
+  try {
+    silenceAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    const source = silenceAudioCtx.createMediaStreamSource(stream);
+    analyserNode = silenceAudioCtx.createAnalyser();
+    analyserNode.fftSize = 2048;
+    source.connect(analyserNode);
+
+    const bufferLength = analyserNode.fftSize;
+    const dataArray = new Float32Array(bufferLength);
+    silenceStart = null;
+
+    silenceCheckInterval = setInterval(() => {
+      if (!isRecording || !analyserNode) return;
+
+      analyserNode.getFloatTimeDomainData(dataArray);
+      let sum = 0;
+      for (let i = 0; i < bufferLength; i++) {
+        sum += dataArray[i] * dataArray[i];
+      }
+      const rms = Math.sqrt(sum / bufferLength);
+
+      if (rms < SILENCE_THRESHOLD) {
+        if (silenceStart === null) {
+          silenceStart = Date.now();
+        } else if (Date.now() - silenceStart >= SILENCE_DURATION_MS) {
+          // Silence detected long enough — auto-stop
+          if (mediaRecorder && mediaRecorder.state === 'recording') {
+            mediaRecorder.stop();
+          }
+        }
+      } else {
+        silenceStart = null;
+      }
+    }, 100);
+  } catch (err) {
+    console.warn('Silence detection setup failed:', err);
+  }
+}
+
+function stopSilenceDetection() {
+  if (silenceCheckInterval) { clearInterval(silenceCheckInterval); silenceCheckInterval = null; }
+  if (silenceAudioCtx) {
+    silenceAudioCtx.close().catch(() => {});
+    silenceAudioCtx = null;
+  }
+  analyserNode = null;
+  silenceStart = null;
+}
+
+/* ============================
+   Interim Transcription
+   ============================ */
+
+function startInterimTranscription(targetInput) {
+  targetInputRef = targetInput;
+  originalInputValue = targetInput.value;
+
+  chunkTranscribeInterval = setInterval(async () => {
+    if (audioChunks.length === 0 || !transcriber || isChunkTranscribing) return;
+
+    isChunkTranscribing = true;
+    try {
+      const interimBlob = new Blob([...audioChunks], { type: mediaRecorder?.mimeType || 'audio/webm' });
+      const audioData = await audioToFloat32(interimBlob);
+      const result = await transcriber(audioData, { language: 'en', task: 'transcribe' });
+      const interimText = (result.text || '').trim();
+
+      if (interimText && targetInputRef && isRecording) {
+        const prefix = originalInputValue;
+        const spaceBefore = prefix.length > 0 && !prefix.endsWith(' ') ? ' ' : '';
+        targetInputRef.value = prefix + spaceBefore + interimText;
+        targetInputRef.classList.add('stt-interim-text');
+      }
+    } catch {
+      // Non-critical — skip this interim update
+    } finally {
+      isChunkTranscribing = false;
+    }
+  }, CHUNK_INTERVAL_MS);
+}
+
+function stopInterimTranscription() {
+  if (chunkTranscribeInterval) { clearInterval(chunkTranscribeInterval); chunkTranscribeInterval = null; }
+  if (targetInputRef) targetInputRef.classList.remove('stt-interim-text');
+  targetInputRef = null;
+  isChunkTranscribing = false;
+}
+
+/* ============================
+   Recording
+   ============================ */
+
 /**
  * Start recording from the microphone.
  * Returns a Promise that resolves with the recorded audio Blob when stopped.
  */
-function startRecording(button) {
+function startRecording(button, targetInput) {
   return new Promise((resolve, reject) => {
     navigator.mediaDevices.getUserMedia({ audio: true })
       .then(stream => {
@@ -148,23 +338,55 @@ function startRecording(button) {
         });
 
         mediaRecorder.addEventListener('stop', () => {
-          // Stop all tracks to release mic
           stream.getTracks().forEach(t => t.stop());
+          stopSilenceDetection();
+          stopInterimTranscription();
           const blob = new Blob(audioChunks, { type: mediaRecorder.mimeType });
           audioChunks = [];
+          isRecording = false;
           resolve(blob);
         });
 
         mediaRecorder.addEventListener('error', (e) => {
           stream.getTracks().forEach(t => t.stop());
+          stopSilenceDetection();
+          stopInterimTranscription();
+          isRecording = false;
           reject(e.error || new Error('Recording failed'));
         });
 
-        mediaRecorder.start();
+        // Use timeslice for incremental chunks (Safari fallback below)
+        try {
+          mediaRecorder.start(1000);
+        } catch {
+          // Safari may not support timeslice — fall back to regular start
+          mediaRecorder.start();
+        }
+
         isRecording = true;
         button.classList.add('stt-recording');
         button.innerHTML = stopIcon;
         button.title = 'Stop recording';
+
+        // Start silence detection
+        startSilenceDetection(stream);
+
+        // Start interim transcription if model is loaded
+        if (targetInput && transcriber) {
+          startInterimTranscription(targetInput);
+        }
+
+        // Safari timeslice fallback: poll requestData if timeslice didn't work
+        // (dataavailable only fires on stop without timeslice)
+        if (targetInput && transcriber) {
+          const requestDataInterval = setInterval(() => {
+            if (!isRecording || !mediaRecorder || mediaRecorder.state !== 'recording') {
+              clearInterval(requestDataInterval);
+              return;
+            }
+            try { mediaRecorder.requestData(); } catch { /* ignore */ }
+          }, 1000);
+        }
 
         // Safety timeout
         setTimeout(() => {
@@ -189,11 +411,10 @@ function stopRecording() {
   if (mediaRecorder && mediaRecorder.state === 'recording') {
     mediaRecorder.stop();
   }
-  isRecording = false;
 }
 
 /**
- * Handle a mic button tap. Manages the full record → transcribe → insert flow.
+ * Handle a mic button tap. Manages the full record -> transcribe -> insert flow.
  */
 async function handleMicTap(button, targetInput) {
   // If another button is already recording, ignore
@@ -205,11 +426,20 @@ async function handleMicTap(button, targetInput) {
     return; // The promise from startRecording will resolve and continue the flow
   }
 
+  // Guard: check if model is pre-downloaded
+  if (!transcriber && !isModelDownloaded()) {
+    showToast('Voice model not downloaded. Go to Settings \u2192 Voice Input to download.', 'warning', 5000);
+    return;
+  }
+
   // Start new recording
   activeButton = button;
 
+  // Pre-load model from cache so it's ready for interim transcription
+  ensureModel();
+
   try {
-    const audioBlob = await startRecording(button);
+    const audioBlob = await startRecording(button, targetInput);
 
     // Switch to transcribing state
     button.classList.remove('stt-recording');
@@ -234,21 +464,22 @@ async function handleMicTap(button, targetInput) {
     });
 
     const text = (result.text || '').trim();
+
+    // Clear interim styling
+    targetInput.classList.remove('stt-interim-text');
+
     if (text) {
-      // Insert at cursor position or append
-      const start = targetInput.selectionStart;
-      const end = targetInput.selectionEnd;
-      const current = targetInput.value;
-      const prefix = current.substring(0, start);
-      const suffix = current.substring(end);
+      // Replace with final transcription at original cursor position
+      const prefix = originalInputValue || '';
       const spaceBefore = prefix.length > 0 && !prefix.endsWith(' ') ? ' ' : '';
-      targetInput.value = prefix + spaceBefore + text + suffix;
-      // Place cursor after inserted text
-      const newPos = prefix.length + spaceBefore.length + text.length;
+      targetInput.value = prefix + spaceBefore + text;
+      const newPos = targetInput.value.length;
       targetInput.setSelectionRange(newPos, newPos);
       targetInput.focus();
       targetInput.dispatchEvent(new Event('input', { bubbles: true }));
     } else {
+      // Restore original value if no speech detected
+      targetInput.value = originalInputValue || '';
       showToast('No speech detected. Please try again.', 'info', 3000);
     }
   } catch (err) {
@@ -262,6 +493,7 @@ async function handleMicTap(button, targetInput) {
     button.title = 'Voice input';
     activeButton = null;
     isRecording = false;
+    originalInputValue = '';
   }
 }
 
