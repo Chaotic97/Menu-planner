@@ -13,6 +13,11 @@ const SILENCE_THRESHOLD = 0.01; // RMS below this = silence
 const SILENCE_DURATION_MS = 2500; // 2.5s of silence to auto-stop
 const CHUNK_INTERVAL_MS = 4000; // Transcribe interim every 4s
 
+/** Detect Whisper hallucination tokens like [BLANK_AUDIO] */
+function isBlankAudio(text) {
+  return /^\[.*BLANK.*AUDIO.*\]$/.test(text);
+}
+
 let transcriber = null;
 let isModelLoading = false;
 let activeButton = null; // Only one mic records at a time
@@ -250,6 +255,7 @@ function startSilenceDetection(stream) {
       const rms = Math.sqrt(sum / bufferLength);
 
       if (rms < SILENCE_THRESHOLD) {
+        if (activeButton) activeButton.classList.remove('stt-hearing');
         if (silenceStart === null) {
           silenceStart = Date.now();
         } else if (Date.now() - silenceStart >= SILENCE_DURATION_MS) {
@@ -259,6 +265,7 @@ function startSilenceDetection(stream) {
           }
         }
       } else {
+        if (activeButton) activeButton.classList.add('stt-hearing');
         silenceStart = null;
       }
     }, 100);
@@ -268,6 +275,7 @@ function startSilenceDetection(stream) {
 }
 
 function stopSilenceDetection() {
+  if (activeButton) activeButton.classList.remove('stt-hearing');
   if (silenceCheckInterval) { clearInterval(silenceCheckInterval); silenceCheckInterval = null; }
   if (silenceAudioCtx) {
     silenceAudioCtx.close().catch(() => {});
@@ -293,7 +301,8 @@ function startInterimTranscription(targetInput) {
       const interimBlob = new Blob([...audioChunks], { type: mediaRecorder?.mimeType || 'audio/webm' });
       const audioData = await audioToFloat32(interimBlob);
       const result = await transcriber(audioData, { language: 'en', task: 'transcribe' });
-      const interimText = (result.text || '').trim();
+      const rawInterim = (result.text || '').trim();
+      const interimText = isBlankAudio(rawInterim) ? '' : rawInterim;
 
       if (interimText && targetInputRef && isRecording) {
         const prefix = originalInputValue;
@@ -463,7 +472,8 @@ async function handleMicTap(button, targetInput) {
       task: 'transcribe',
     });
 
-    const text = (result.text || '').trim();
+    const rawText = (result.text || '').trim();
+    const text = isBlankAudio(rawText) ? '' : rawText;
 
     // Clear interim styling
     targetInput.classList.remove('stt-interim-text');
