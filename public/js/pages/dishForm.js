@@ -121,6 +121,19 @@ export async function renderDishForm(container, dishId) {
 
   const backTo = sessionStorage.getItem('dishNav_backTo') || '#/dishes';
 
+  // Compute subtitle values for collapsible sections
+  const ingredientCount = ingredients.filter(r => r.row_type === 'ingredient').length;
+  const ingredientSubtitle = ingredientCount ? `${ingredientCount} ingredient${ingredientCount !== 1 ? 's' : ''}` : '';
+  const prepStepCount = existingDirections.filter(d => d.type === 'step').length;
+  const prepSubtitle = prepStepCount ? `${prepStepCount} step${prepStepCount !== 1 ? 's' : ''}` : '';
+  const svcStepCount = existingServiceDirections.filter(d => d.type === 'step').length;
+  const svcSubtitle = svcStepCount ? `${svcStepCount} step${svcStepCount !== 1 ? 's' : ''}` : '';
+  const costSubtitle = dish && dish.cost && dish.cost.cost_per_portion
+    ? `$${dish.cost.cost_per_portion.toFixed(2)}/portion` +
+      (dish.suggested_price ? ` (${((dish.cost.cost_per_portion / dish.suggested_price) * 100).toFixed(0)}%)` : '')
+    : '';
+  const photoSubtitle = dish && dish.photo_path ? 'Uploaded' : '';
+
   container.innerHTML = `
     <div class="page-header">
       <a href="${backTo}" class="btn btn-back">&larr; Back</a>
@@ -172,144 +185,159 @@ export async function renderDishForm(container, dishId) {
             <textarea id="dish-desc" class="input" rows="2" placeholder="Brief description...">${dish ? escapeHtml(dish.description) : (importedData ? escapeHtml(importedData.description) : '')}</textarea>
           </div>
 
-          <!-- Photo Upload -->
-          <div class="form-group">
-            <label>Photo</label>
-            <div class="photo-upload" id="photo-upload-area">
-              ${dish && dish.photo_path
-                ? `<div class="photo-preview-wrap" id="photo-preview-wrap">
-                    <img src="${escapeHtml(dish.photo_path)}" alt="Dish photo" class="photo-preview" id="photo-preview">
-                    <button type="button" class="photo-delete-btn" id="photo-delete-btn" title="Remove photo">&times;</button>
-                  </div>`
-                : '<div class="photo-placeholder" id="photo-preview"><span>Tap to upload photo</span></div>'
-              }
-              <input type="file" id="photo-input" accept="image/*" hidden>
-            </div>
-          </div>
-
-          <!-- Ingredients -->
-          <div class="form-group">
-            <label>Ingredients</label>
-            <div id="ingredients-list">
-              ${ingredients.map((ing, i) =>
-                ing.row_type === 'section'
-                  ? sectionHeaderRow(ing, i)
-                  : ingredientRow(ing, i)
-              ).join('')}
-            </div>
-            <div class="ing-add-buttons">
-              <button type="button" id="add-ingredient" class="btn btn-secondary">+ Add Ingredient</button>
-              <button type="button" id="add-section-header" class="btn btn-secondary">+ Add Section</button>
-            </div>
-          </div>
-
-          <!-- Allergens (collapsible) -->
-          <div class="collapsible-section" id="section-allergens">
-            ${collapsibleHeader('Allergens', dish && dish.allergens && dish.allergens.length ? `${dish.allergens.length} detected` : '')}
+          <!-- Photo Upload (collapsible) -->
+          <div class="collapsible-section" id="section-photo">
+            ${collapsibleHeader('Photo', photoSubtitle)}
             <div class="collapsible-section__body">
-              <div style="margin-bottom:8px;">
-                <span class="text-muted" style="font-size:0.83rem;">From ingredients:</span>
-                <div id="allergen-preview" style="margin-top:4px;min-height:24px;">
-                  ${dish ? renderAllergenBadgesWithSource(dish.allergens.filter(a => a.ingredient_name)) : '<span class="text-muted">Add ingredients to detect allergens</span>'}
-                </div>
-              </div>
-              <div>
-                <span class="text-muted" style="font-size:0.83rem;">Dish-level manual tags — click to toggle:</span>
-                <div class="allergen-toggle-grid" id="allergen-manual-toggles" style="margin-top:6px;">
-                  ${ALLERGEN_LIST.map(a => {
-                    const isManual = dish && dish.allergens.some(al => al.allergen === a && al.source === 'manual' && !al.ingredient_name);
-                    return `<button type="button" class="allergen-toggle ${isManual ? 'active' : ''}" data-allergen="${a}">${capitalize(a)}</button>`;
-                  }).join('')}
-                </div>
+              <div class="photo-upload" id="photo-upload-area">
+                ${dish && dish.photo_path
+                  ? `<div class="photo-preview-wrap" id="photo-preview-wrap">
+                      <img src="${escapeHtml(dish.photo_path)}" alt="Dish photo" class="photo-preview" id="photo-preview">
+                      <button type="button" class="photo-delete-btn" id="photo-delete-btn" title="Remove photo">&times;</button>
+                    </div>`
+                  : '<div class="photo-placeholder" id="photo-preview"><span>Tap to upload photo</span></div>'
+                }
+                <input type="file" id="photo-input" accept="image/*" hidden>
               </div>
             </div>
           </div>
 
-          <!-- Allergen Substitutions (collapsible) -->
-          <div class="collapsible-section" id="section-substitutions">
-            ${collapsibleHeader('Allergen Substitutions', existingSubs.length ? `${existingSubs.length} swap${existingSubs.length > 1 ? 's' : ''}` : '')}
+          <!-- Ingredients (collapsible) -->
+          <div class="collapsible-section" id="section-ingredients">
+            ${collapsibleHeader('Ingredients', ingredientSubtitle)}
             <div class="collapsible-section__body">
-              <p class="text-muted" style="font-size:0.85rem;margin-bottom:8px;">Add ingredient swaps for allergen-free versions (e.g., wheat flour &rarr; rice flour for gluten-free)</p>
-              <div id="substitutions-list">
-                ${existingSubs.map((sub, i) => substitutionRow(sub, i)).join('')}
+              <div id="ingredients-list">
+                ${ingredients.map((ing, i) =>
+                  ing.row_type === 'section'
+                    ? sectionHeaderRow(ing, i)
+                    : ingredientRow(ing, i)
+                ).join('')}
               </div>
-              <button type="button" id="add-substitution" class="btn btn-secondary">+ Add Substitution</button>
+              <div class="ing-add-buttons">
+                <button type="button" id="add-ingredient" class="btn btn-secondary">+ Add Ingredient</button>
+                <button type="button" id="add-section-header" class="btn btn-secondary">+ Add Section</button>
+              </div>
             </div>
           </div>
 
-          <!-- Service Components (collapsible) -->
-          <div class="collapsible-section" id="section-components">
-            ${collapsibleHeader('Service Components', existingComponents.length ? `${existingComponents.length} item${existingComponents.length > 1 ? 's' : ''}` : '')}
-            <div class="collapsible-section__body">
-              <p class="text-muted" style="font-size:0.85rem;margin-bottom:8px;">Pre-prepped items on the plate at service (e.g. duck liver parfait, brioche croutons, truffle gel). These appear on the service sheet instead of raw ingredients.</p>
-              <div id="components-list">
-                ${existingComponents.map((comp, i) => componentRow(comp, i)).join('')}
-              </div>
-              <button type="button" id="add-component" class="btn btn-secondary">+ Add Component</button>
-            </div>
-          </div>
+          <!-- Allergens & Safety group -->
+          <div class="df-section-group">
+            <span class="df-section-group__label">Allergens & Safety</span>
 
-          <!-- Cost Breakdown -->
-          <div class="form-group" id="cost-section">
-            <label>Cost Breakdown</label>
-            <div id="cost-breakdown">
-              ${dish && dish.cost ? renderCostBreakdown(dish) : '<span class="text-muted">Add ingredients with costs to see breakdown</span>'}
-            </div>
-            <div class="collapsible-section" id="section-manual-costs" style="margin-top:14px;">
-              ${collapsibleHeader('Additional Cost Items', (dish && dish.manual_costs && dish.manual_costs.length) ? `${dish.manual_costs.length} item${dish.manual_costs.length > 1 ? 's' : ''}` : '')}
+            <!-- Allergens (collapsible) -->
+            <div class="collapsible-section" id="section-allergens">
+              ${collapsibleHeader('Allergens', dish && dish.allergens && dish.allergens.length ? `${dish.allergens.length} detected` : '')}
               <div class="collapsible-section__body">
-                <p class="text-muted" style="font-size:0.83rem;margin-bottom:8px;">Add labor, packaging, or overhead costs not tied to ingredients.</p>
-                <div id="manual-costs-list">
-                  ${(dish && dish.manual_costs || []).map((item, i) => manualCostRow(item, i)).join('')}
+                <div style="margin-bottom:8px;">
+                  <span class="text-muted" style="font-size:0.83rem;">From ingredients:</span>
+                  <div id="allergen-preview" style="margin-top:4px;min-height:24px;">
+                    ${dish ? renderAllergenBadgesWithSource(dish.allergens.filter(a => a.ingredient_name)) : '<span class="text-muted">Add ingredients to detect allergens</span>'}
+                  </div>
                 </div>
-                <button type="button" id="add-manual-cost" class="btn btn-secondary">+ Add Cost Item</button>
+                <div>
+                  <span class="text-muted" style="font-size:0.83rem;">Dish-level manual tags — click to toggle:</span>
+                  <div class="allergen-toggle-grid" id="allergen-manual-toggles" style="margin-top:6px;">
+                    ${ALLERGEN_LIST.map(a => {
+                      const isManual = dish && dish.allergens.some(al => al.allergen === a && al.source === 'manual' && !al.ingredient_name);
+                      return `<button type="button" class="allergen-toggle ${isManual ? 'active' : ''}" data-allergen="${a}">${capitalize(a)}</button>`;
+                    }).join('')}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Allergen Substitutions (collapsible) -->
+            <div class="collapsible-section" id="section-substitutions">
+              ${collapsibleHeader('Allergen Substitutions', existingSubs.length ? `${existingSubs.length} swap${existingSubs.length > 1 ? 's' : ''}` : '')}
+              <div class="collapsible-section__body">
+                <p class="text-muted" style="font-size:0.85rem;margin-bottom:8px;">Add ingredient swaps for allergen-free versions (e.g., wheat flour &rarr; rice flour for gluten-free)</p>
+                <div id="substitutions-list">
+                  ${existingSubs.map((sub, i) => substitutionRow(sub, i)).join('')}
+                </div>
+                <button type="button" id="add-substitution" class="btn btn-secondary">+ Add Substitution</button>
+              </div>
+            </div>
+
+            <!-- Service Components (collapsible) -->
+            <div class="collapsible-section" id="section-components">
+              ${collapsibleHeader('Service Components', existingComponents.length ? `${existingComponents.length} item${existingComponents.length > 1 ? 's' : ''}` : '')}
+              <div class="collapsible-section__body">
+                <p class="text-muted" style="font-size:0.85rem;margin-bottom:8px;">Pre-prepped items on the plate at service (e.g. duck liver parfait, brioche croutons, truffle gel). These appear on the service sheet instead of raw ingredients.</p>
+                <div id="components-list">
+                  ${existingComponents.map((comp, i) => componentRow(comp, i)).join('')}
+                </div>
+                <button type="button" id="add-component" class="btn btn-secondary">+ Add Component</button>
               </div>
             </div>
           </div>
 
-          <!-- Prep Directions -->
-          <div class="form-group">
-            <label>Prep Directions</label>
-            <p class="text-muted" style="font-size:0.85rem;margin-bottom:8px;">Step-by-step prep method — drag to reorder, add section headers to group steps.</p>
-            ${dish && dish.chefs_notes && !existingDirections.length ? `
-              <div class="dir-legacy-notes">
-                <span class="dir-legacy-label">Legacy Chef's Notes</span>
-                <p class="dir-legacy-text">${escapeHtml(dish.chefs_notes).replace(/\n/g, '<br>')}</p>
-                <p class="text-muted" style="font-size:0.8rem;margin-top:6px;">Add direction steps below to replace this text. The text above will stay until you save with steps.</p>
+          <!-- Cost Breakdown (collapsible) -->
+          <div class="collapsible-section" id="section-costing">
+            ${collapsibleHeader('Cost Breakdown', costSubtitle)}
+            <div class="collapsible-section__body">
+              <div id="cost-breakdown">
+                ${dish && dish.cost ? renderCostBreakdown(dish) : '<span class="text-muted">Add ingredients with costs to see breakdown</span>'}
               </div>
-            ` : ''}
-            <div id="directions-list">
-              ${existingDirections.map((d, i) =>
-                d.type === 'section'
-                  ? directionSectionRow(d, i)
-                  : directionStepRow(d, i)
-              ).join('')}
+              <div class="collapsible-section" id="section-manual-costs" style="margin-top:14px;">
+                ${collapsibleHeader('Additional Cost Items', (dish && dish.manual_costs && dish.manual_costs.length) ? `${dish.manual_costs.length} item${dish.manual_costs.length > 1 ? 's' : ''}` : '')}
+                <div class="collapsible-section__body">
+                  <p class="text-muted" style="font-size:0.83rem;margin-bottom:8px;">Add labor, packaging, or overhead costs not tied to ingredients.</p>
+                  <div id="manual-costs-list">
+                    ${(dish && dish.manual_costs || []).map((item, i) => manualCostRow(item, i)).join('')}
+                  </div>
+                  <button type="button" id="add-manual-cost" class="btn btn-secondary">+ Add Cost Item</button>
+                </div>
+              </div>
             </div>
-            <div class="ing-add-buttons">
-              <button type="button" id="add-direction-step" class="btn btn-secondary">+ Add Step</button>
-              <button type="button" id="add-direction-section" class="btn btn-secondary">+ Add Section</button>
-              ${dish ? `<button type="button" id="ai-cleanup-btn" class="btn btn-ghost btn-sm ai-cleanup-btn" title="Clean up directions with AI">
-                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.5 5.5L19 10l-5.5 1.5L12 17l-1.5-5.5L5 10l5.5-1.5L12 3z"/></svg>
-                Clean up with AI
-              </button>` : ''}
-            </div>
-            <div id="ai-cleanup-preview" class="ai-cleanup-preview" style="display:none;"></div>
           </div>
 
-          <!-- Service Directions -->
-          <div class="form-group">
-            <label>Service Directions</label>
-            <p class="text-muted" style="font-size:0.85rem;margin-bottom:8px;">Step-by-step plating & assembly at service — drag to reorder, add section headers to group steps.</p>
-            <div id="service-directions-list">
-              ${existingServiceDirections.map((d, i) =>
-                d.type === 'section'
-                  ? serviceDirectionSectionRow(d, i)
-                  : serviceDirectionStepRow(d, i)
-              ).join('')}
+          <!-- Prep Directions (collapsible) -->
+          <div class="collapsible-section" id="section-prep-directions">
+            ${collapsibleHeader('Prep Directions', prepSubtitle)}
+            <div class="collapsible-section__body">
+              <p class="text-muted" style="font-size:0.85rem;margin-bottom:8px;">Step-by-step prep method — drag to reorder, add section headers to group steps.</p>
+              ${dish && dish.chefs_notes && !existingDirections.length ? `
+                <div class="dir-legacy-notes">
+                  <span class="dir-legacy-label">Legacy Chef's Notes</span>
+                  <p class="dir-legacy-text">${escapeHtml(dish.chefs_notes).replace(/\n/g, '<br>')}</p>
+                  <p class="text-muted" style="font-size:0.8rem;margin-top:6px;">Add direction steps below to replace this text. The text above will stay until you save with steps.</p>
+                </div>
+              ` : ''}
+              <div id="directions-list">
+                ${existingDirections.map((d, i) =>
+                  d.type === 'section'
+                    ? directionSectionRow(d, i)
+                    : directionStepRow(d, i)
+                ).join('')}
+              </div>
+              <div class="ing-add-buttons">
+                <button type="button" id="add-direction-step" class="btn btn-secondary">+ Add Step</button>
+                <button type="button" id="add-direction-section" class="btn btn-secondary">+ Add Section</button>
+                ${dish ? `<button type="button" id="ai-cleanup-btn" class="btn btn-ghost btn-sm ai-cleanup-btn" title="Clean up directions with AI">
+                  <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.5 5.5L19 10l-5.5 1.5L12 17l-1.5-5.5L5 10l5.5-1.5L12 3z"/></svg>
+                  Clean up with AI
+                </button>` : ''}
+              </div>
+              <div id="ai-cleanup-preview" class="ai-cleanup-preview" style="display:none;"></div>
             </div>
-            <div class="ing-add-buttons">
-              <button type="button" id="add-svc-direction-step" class="btn btn-secondary">+ Add Step</button>
-              <button type="button" id="add-svc-direction-section" class="btn btn-secondary">+ Add Section</button>
+          </div>
+
+          <!-- Service Directions (collapsible) -->
+          <div class="collapsible-section" id="section-svc-directions">
+            ${collapsibleHeader('Service Directions', svcSubtitle)}
+            <div class="collapsible-section__body">
+              <p class="text-muted" style="font-size:0.85rem;margin-bottom:8px;">Step-by-step plating & assembly at service — drag to reorder, add section headers to group steps.</p>
+              <div id="service-directions-list">
+                ${existingServiceDirections.map((d, i) =>
+                  d.type === 'section'
+                    ? serviceDirectionSectionRow(d, i)
+                    : serviceDirectionStepRow(d, i)
+                ).join('')}
+              </div>
+              <div class="ing-add-buttons">
+                <button type="button" id="add-svc-direction-step" class="btn btn-secondary">+ Add Step</button>
+                <button type="button" id="add-svc-direction-section" class="btn btn-secondary">+ Add Section</button>
+              </div>
             </div>
           </div>
 
@@ -365,11 +393,16 @@ export async function renderDishForm(container, dishId) {
     overflowSlot.appendChild(menuBtn);
   }
 
-  // Collapsible sections — collapsed by default for secondary sections
+  // Collapsible sections
+  makeCollapsible(container.querySelector('#section-photo'), { open: !!(dish && dish.photo_path) || !isEdit, storageKey: 'dish_sec_photo' });
+  makeCollapsible(container.querySelector('#section-ingredients'), { open: true, storageKey: 'dish_sec_ingredients' });
   makeCollapsible(container.querySelector('#section-allergens'), { open: false, storageKey: 'dish_sec_allergens' });
   makeCollapsible(container.querySelector('#section-substitutions'), { open: false, storageKey: 'dish_sec_subs' });
   makeCollapsible(container.querySelector('#section-components'), { open: false, storageKey: 'dish_sec_components' });
+  makeCollapsible(container.querySelector('#section-costing'), { open: false, storageKey: 'dish_sec_costing' });
   makeCollapsible(container.querySelector('#section-manual-costs'), { open: false, storageKey: 'dish_sec_manualcosts' });
+  makeCollapsible(container.querySelector('#section-prep-directions'), { open: true, storageKey: 'dish_sec_prep_directions' });
+  makeCollapsible(container.querySelector('#section-svc-directions'), { open: false, storageKey: 'dish_sec_svc_directions' });
   makeCollapsible(container.querySelector('#section-service-notes'), { open: false, storageKey: 'dish_sec_servicenotes' });
 
   // Header save button (edit mode only)
@@ -460,6 +493,7 @@ export async function renderDishForm(container, dishId) {
     ingredientsList.appendChild(div.firstElementChild);
     setupAutocomplete(ingredientsList.lastElementChild.querySelector('.ing-name'));
     updateAllergenPreview();
+    updateIngredientSubtitle();
   });
 
   // Add section header row
@@ -476,6 +510,7 @@ export async function renderDishForm(container, dishId) {
     if (e.target.closest('.remove-ingredient')) {
       e.target.closest('.ingredient-row').remove();
       updateAllergenPreview();
+      updateIngredientSubtitle();
       return;
     }
 
@@ -650,6 +685,28 @@ export async function renderDishForm(container, dishId) {
     }
   }
 
+  // Dynamic subtitle updaters for collapsible sections
+  function updateIngredientSubtitle() {
+    const count = container.querySelectorAll('.ingredient-row').length;
+    const el = container.querySelector('#section-ingredients .collapsible-section__subtitle');
+    if (el) {
+      el.textContent = count ? `${count} ingredient${count !== 1 ? 's' : ''}` : '';
+    }
+  }
+
+  function updateDirectionSubtitles() {
+    const prepCount = container.querySelectorAll('#directions-list .dir-step-row').length;
+    const prepEl = container.querySelector('#section-prep-directions .collapsible-section__subtitle');
+    if (prepEl) {
+      prepEl.textContent = prepCount ? `${prepCount} step${prepCount !== 1 ? 's' : ''}` : '';
+    }
+    const svcCount = container.querySelectorAll('#service-directions-list .dir-step-row').length;
+    const svcEl = container.querySelector('#section-svc-directions .collapsible-section__subtitle');
+    if (svcEl) {
+      svcEl.textContent = svcCount ? `${svcCount} step${svcCount !== 1 ? 's' : ''}` : '';
+    }
+  }
+
   // Ingredient autocomplete
   function setupAutocomplete(input) {
     let dropdown = null;
@@ -747,6 +804,7 @@ export async function renderDishForm(container, dishId) {
     const rows = directionsList.querySelectorAll('.dir-step-row');
     const last = rows[rows.length - 1];
     if (last) last.querySelector('.dir-text').focus();
+    updateDirectionSubtitles();
   });
 
   container.querySelector('#add-direction-section').addEventListener('click', () => {
@@ -762,6 +820,7 @@ export async function renderDishForm(container, dishId) {
   directionsList.addEventListener('click', (e) => {
     if (e.target.closest('.remove-dir-step')) {
       e.target.closest('.dir-step-row').remove();
+      updateDirectionSubtitles();
       return;
     }
     if (e.target.closest('.remove-dir-section')) {
@@ -864,6 +923,7 @@ export async function renderDishForm(container, dishId) {
     const rows = svcDirectionsList.querySelectorAll('.svc-dir-step-row');
     const last = rows[rows.length - 1];
     if (last) last.querySelector('.svc-dir-text').focus();
+    updateDirectionSubtitles();
   });
 
   container.querySelector('#add-svc-direction-section').addEventListener('click', () => {
@@ -879,6 +939,7 @@ export async function renderDishForm(container, dishId) {
   svcDirectionsList.addEventListener('click', (e) => {
     if (e.target.closest('.remove-svc-dir-step')) {
       e.target.closest('.svc-dir-step-row').remove();
+      updateDirectionSubtitles();
       return;
     }
     if (e.target.closest('.remove-svc-dir-section')) {
