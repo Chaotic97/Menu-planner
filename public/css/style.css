@@ -1529,6 +1529,93 @@ textarea.input { resize: vertical; min-height: 80px; }
 .mb-picker-info { flex: 1; }
 .mb-picker-info strong { display: block; margin-bottom: 2px; }
 
+/* --- Menu Builder: Temp Dishes --- */
+.mb-temp-dish {
+  border-left: 3px solid var(--warning, #f59e0b);
+}
+
+.mb-temp-badge {
+  display: inline-block;
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 1px 6px;
+  border-radius: 3px;
+  background: rgba(var(--warning-rgb, 245, 158, 11), 0.15);
+  color: var(--warning, #f59e0b);
+  vertical-align: middle;
+  margin-left: 6px;
+}
+
+.mb-temp-edit-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  font: inherit;
+  color: var(--text);
+  text-align: left;
+}
+.mb-temp-edit-btn:hover { text-decoration: underline; }
+
+.mb-temp-dish-form .form-group { margin-bottom: 16px; }
+
+.mb-temp-allergen-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.mb-temp-allergen-btn {
+  padding: 4px 10px;
+  font-size: 0.8rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+.mb-temp-allergen-btn:hover {
+  border-color: var(--primary);
+}
+.mb-temp-allergen-btn.active {
+  background: rgba(var(--primary-rgb), 0.15);
+  border-color: var(--primary);
+  color: var(--primary);
+  font-weight: 600;
+}
+
+.mb-temp-svcdir-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.mb-temp-svcdir-row .drag-handle {
+  cursor: grab;
+  padding: 4px 0;
+  color: var(--text-light);
+  user-select: none;
+}
+.mb-temp-svcdir-row .input { flex: 1; }
+.mb-temp-svcdir-remove {
+  flex-shrink: 0;
+  font-size: 1.1rem;
+  color: var(--danger);
+}
+
+.mb-temp-svcdir-section .mb-temp-svcdir-label {
+  font-weight: 600;
+}
+
+.mb-temp-svcdir-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+}
+
 /* ============================
    Todo / Task View
    ============================ */

@@ -1,4 +1,4 @@
-import { getMenu, updateMenu, getDishes, createDish, addDishToMenu, removeDishFromMenu, updateMenuDish, getScaledShoppingList, reorderMenuDishes, getMenuKitchenPrint, generateTasks, createCourse, updateCourse, deleteCourse, reorderCourses, applyCoursesTemplate } from '../api.js';
+import { getMenu, updateMenu, getDishes, getDish, createDish, updateDish, deleteDish, updateDishAllergen, addDishToMenu, removeDishFromMenu, updateMenuDish, getScaledShoppingList, reorderMenuDishes, getMenuKitchenPrint, generateTasks, createCourse, updateCourse, deleteCourse, reorderCourses, applyCoursesTemplate } from '../api.js';
 import { renderAllergenBadges } from '../components/allergenBadges.js';
 import { showToast } from '../components/toast.js';
 import { openModal, closeModal } from '../components/modal.js';
@@ -576,21 +576,47 @@ export async function renderMenuBuilder(container, menuId) {
     // Dish row action menus
     container.querySelectorAll('.mb-row-actions[data-dish-id]').forEach(slot => {
       const dishId = slot.dataset.dishId;
-      const menuTrigger = createActionMenu([
-        { label: 'View Dish', icon: '👁', onClick: () => { sessionStorage.setItem('dishNav_backTo', `#/menus/${menuId}`); window.location.hash = `#/dishes/${dishId}`; } },
-        { label: 'Edit Dish', icon: '✏️', onClick: () => { sessionStorage.setItem('dishNav_backTo', `#/menus/${menuId}`); window.location.hash = `#/dishes/${dishId}/edit`; } },
-        { label: 'Remove', icon: '✕', danger: true, onClick: async () => {
-          try {
-            await removeDishFromMenu(menuId, dishId);
-            menu = await getMenu(menuId);
-            showToast('Dish removed');
-            render();
-          } catch (err) {
-            showToast(err.message, 'error');
-          }
-        }},
-      ]);
-      slot.appendChild(menuTrigger);
+      const row = slot.closest('.mb-dish-row');
+      const isTemp = row && row.dataset.temporary === '1';
+
+      const actions = isTemp
+        ? [
+          { label: 'Edit', icon: '✏️', onClick: () => showTempDishEditModal(parseInt(dishId)) },
+          { label: 'Remove', icon: '✕', danger: true, onClick: async () => {
+            try {
+              await removeDishFromMenu(menuId, dishId);
+              await deleteDish(dishId);
+              menu = await getMenu(menuId);
+              showToast('Temp dish removed');
+              render();
+            } catch (err) {
+              showToast(err.message, 'error');
+            }
+          }},
+        ]
+        : [
+          { label: 'View Dish', icon: '👁', onClick: () => { sessionStorage.setItem('dishNav_backTo', `#/menus/${menuId}`); window.location.hash = `#/dishes/${dishId}`; } },
+          { label: 'Edit Dish', icon: '✏️', onClick: () => { sessionStorage.setItem('dishNav_backTo', `#/menus/${menuId}`); window.location.hash = `#/dishes/${dishId}/edit`; } },
+          { label: 'Remove', icon: '✕', danger: true, onClick: async () => {
+            try {
+              await removeDishFromMenu(menuId, dishId);
+              menu = await getMenu(menuId);
+              showToast('Dish removed');
+              render();
+            } catch (err) {
+              showToast(err.message, 'error');
+            }
+          }},
+        ];
+
+      slot.appendChild(createActionMenu(actions));
+    });
+
+    // Temp dish edit buttons (click on name)
+    container.querySelectorAll('.mb-temp-edit-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        showTempDishEditModal(parseInt(btn.dataset.dishId));
+      });
     });
 
     // Course action menus (edit name, add notes, delete)
@@ -713,11 +739,12 @@ export async function renderMenuBuilder(container, menuId) {
 
   function renderDishRow(dish, isHouse, scheduleDays) {
     const hasConflict = dish.allergy_conflicts && dish.allergy_conflicts.length > 0;
+    const isTemp = !!dish.is_temporary;
     let dishActiveDays = null;
     try { dishActiveDays = dish.active_days ? JSON.parse(dish.active_days) : null; } catch {}
     const hasNote = dish.menu_dish_notes && dish.menu_dish_notes.trim();
     return `
-      <div class="mb-dish-row ${hasConflict ? 'allergy-conflict' : ''}" data-dish-id="${dish.id}" data-course-id="${dish.course_id || ''}" draggable="true">
+      <div class="mb-dish-row ${hasConflict ? 'allergy-conflict' : ''} ${isTemp ? 'mb-temp-dish' : ''}" data-dish-id="${dish.id}" data-course-id="${dish.course_id || ''}" data-temporary="${isTemp ? '1' : '0'}" draggable="true">
         <div class="drag-handle" title="Drag to reorder">&#8942;&#8942;</div>
         <div class="mb-dish-thumb">
           ${dish.photo_path
@@ -726,10 +753,14 @@ export async function renderMenuBuilder(container, menuId) {
           }
         </div>
         <div class="mb-dish-info">
-          <a href="#/dishes/${dish.id}" class="dish-name-link"><strong>${escapeHtml(dish.name)}</strong></a>
+          ${isTemp
+            ? `<button type="button" class="dish-name-link mb-temp-edit-btn" data-dish-id="${dish.id}"><strong>${escapeHtml(dish.name)}</strong></button>`
+            : `<a href="#/dishes/${dish.id}" class="dish-name-link"><strong>${escapeHtml(dish.name)}</strong></a>`
+          }
+          ${isTemp ? '<span class="mb-temp-badge">Temp</span>' : ''}
           ${renderAllergenBadges(dish.allergens, true)}
           ${hasConflict ? `<div class="mb-allergy-warning">&#9888; Guest allergy: ${escapeHtml(dish.allergy_conflicts.join(', '))}</div>` : ''}
-          ${dish.substitution_count > 0 ? `<span class="subs-badge" data-dish-id="${dish.id}" title="Has allergen substitutions">&#8644; ${dish.substitution_count} sub${dish.substitution_count > 1 ? 's' : ''}</span>` : ''}
+          ${!isTemp && dish.substitution_count > 0 ? `<span class="subs-badge" data-dish-id="${dish.id}" title="Has allergen substitutions">&#8644; ${dish.substitution_count} sub${dish.substitution_count > 1 ? 's' : ''}</span>` : ''}
           ${isHouse && scheduleDays.length ? `
             <div class="mb-dish-days" data-dish-id="${dish.id}">
               ${scheduleDays.map(d => {
@@ -739,6 +770,7 @@ export async function renderMenuBuilder(container, menuId) {
             </div>
           ` : ''}
         </div>
+        ${!isTemp ? `
         <div class="mb-cost-info">
           ${dish.cost_per_serving > 0 ? `
             <span class="mb-cost-value">$${dish.cost_total.toFixed(2)}</span>
@@ -759,6 +791,7 @@ export async function renderMenuBuilder(container, menuId) {
                    style="width:70px;padding:2px 6px;font-size:0.8rem;margin-left:4px;">
           ` : ''}
         </div>
+        ` : ''}
         <button class="btn btn-icon mc-dish-note-btn ${hasNote ? 'mc-has-note' : ''}" data-dish="${dish.id}" title="Dish notes">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" width="14" height="14"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
         </button>
@@ -1368,6 +1401,164 @@ export async function renderMenuBuilder(container, menuId) {
     }
   }
 
+  // ---- Temp Dish Edit Modal ----
+  async function showTempDishEditModal(dishId) {
+    let dish;
+    try {
+      dish = await getDish(dishId);
+    } catch (err) {
+      showToast('Failed to load dish', 'error');
+      return;
+    }
+
+    const currentAllergens = new Set(
+      (dish.allergens || []).filter(a => a.source === 'manual').map(a => a.allergen)
+    );
+    const serviceDirections = dish.service_directions || [];
+    const svcDirData = serviceDirections.map((d, i) => ({ ...d, sort_order: i }));
+
+    function renderSvcDirRows() {
+      return svcDirData.map((d, idx) => {
+        if (d.type === 'section') {
+          return `<div class="mb-temp-svcdir-row mb-temp-svcdir-section" data-idx="${idx}">
+            <span class="drag-handle" title="Drag to reorder">&#8942;&#8942;</span>
+            <input type="text" class="input mb-temp-svcdir-label" value="${escapeHtml(d.text || '')}" placeholder="Section heading">
+            <button type="button" class="btn btn-icon mb-temp-svcdir-remove" data-idx="${idx}" title="Remove">&times;</button>
+          </div>`;
+        }
+        return `<div class="mb-temp-svcdir-row mb-temp-svcdir-step" data-idx="${idx}">
+          <span class="drag-handle" title="Drag to reorder">&#8942;&#8942;</span>
+          <textarea class="input mb-temp-svcdir-text" rows="2" placeholder="Service direction step">${escapeHtml(d.text || '')}</textarea>
+          <button type="button" class="btn btn-icon mb-temp-svcdir-remove" data-idx="${idx}" title="Remove">&times;</button>
+        </div>`;
+      }).join('');
+    }
+
+    const modal = openModal(`Edit Temp Dish: ${escapeHtml(dish.name)}`, `
+      <form id="temp-dish-form" class="form mb-temp-dish-form">
+        <div class="form-group">
+          <label for="temp-dish-name">Name</label>
+          <input type="text" id="temp-dish-name" class="input" value="${escapeHtml(dish.name)}" required>
+        </div>
+
+        <div class="form-group">
+          <label>Allergens</label>
+          <div class="mb-temp-allergen-grid">
+            ${ALLERGEN_LIST.map(a => `
+              <button type="button" class="mb-temp-allergen-btn ${currentAllergens.has(a) ? 'active' : ''}" data-allergen="${a}">
+                ${escapeHtml(capitalize(a))}
+              </button>
+            `).join('')}
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label>Service Directions</label>
+          <div id="temp-svcdir-list">${renderSvcDirRows()}</div>
+          <div class="mb-temp-svcdir-actions">
+            <button type="button" id="temp-svcdir-add-step" class="btn btn-sm">+ Step</button>
+            <button type="button" id="temp-svcdir-add-section" class="btn btn-sm">+ Section</button>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label for="temp-dish-service-notes">Service Notes (FoH)</label>
+          <textarea id="temp-dish-service-notes" class="input" rows="3" placeholder="Notes for front of house...">${escapeHtml(dish.service_notes || '')}</textarea>
+        </div>
+
+        <button type="submit" class="btn btn-primary" style="width:100%;">Save</button>
+      </form>
+    `);
+
+    // Allergen toggle
+    modal.querySelectorAll('.mb-temp-allergen-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        btn.classList.toggle('active');
+      });
+    });
+
+    // Service direction add/remove
+    const svcDirList = modal.querySelector('#temp-svcdir-list');
+
+    function refreshSvcDirList() {
+      svcDirList.innerHTML = renderSvcDirRows();
+      svcDirList.querySelectorAll('.mb-temp-svcdir-remove').forEach(btn => {
+        btn.addEventListener('click', () => {
+          svcDirData.splice(parseInt(btn.dataset.idx), 1);
+          refreshSvcDirList();
+        });
+      });
+    }
+
+    // Initial remove button wiring
+    refreshSvcDirList();
+
+    modal.querySelector('#temp-svcdir-add-step').addEventListener('click', () => {
+      svcDirData.push({ type: 'step', text: '', sort_order: svcDirData.length });
+      refreshSvcDirList();
+      const rows = svcDirList.querySelectorAll('.mb-temp-svcdir-text');
+      if (rows.length) rows[rows.length - 1].focus();
+    });
+
+    modal.querySelector('#temp-svcdir-add-section').addEventListener('click', () => {
+      svcDirData.push({ type: 'section', text: '', sort_order: svcDirData.length });
+      refreshSvcDirList();
+      const rows = svcDirList.querySelectorAll('.mb-temp-svcdir-label');
+      if (rows.length) rows[rows.length - 1].focus();
+    });
+
+    // Save
+    modal.querySelector('#temp-dish-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const name = modal.querySelector('#temp-dish-name').value.trim();
+      if (!name) return;
+
+      // Collect service directions from current DOM
+      const dirRows = svcDirList.querySelectorAll('.mb-temp-svcdir-row');
+      const service_directions = Array.from(dirRows).map((row, idx) => {
+        if (row.classList.contains('mb-temp-svcdir-section')) {
+          const text = row.querySelector('.mb-temp-svcdir-label').value.trim();
+          return text ? { type: 'section', text, sort_order: idx } : null;
+        }
+        const text = row.querySelector('.mb-temp-svcdir-text').value.trim();
+        return text ? { type: 'step', text, sort_order: idx } : null;
+      }).filter(Boolean);
+
+      const service_notes = modal.querySelector('#temp-dish-service-notes').value;
+
+      // Collect allergens
+      const selectedAllergens = new Set();
+      modal.querySelectorAll('.mb-temp-allergen-btn.active').forEach(btn => {
+        selectedAllergens.add(btn.dataset.allergen);
+      });
+
+      try {
+        // Update dish name, service notes, service directions
+        await updateDish(dishId, { name, service_notes, service_directions });
+
+        // Sync allergens: add new, remove old
+        const promises = [];
+        for (const a of ALLERGEN_LIST) {
+          const wasSet = currentAllergens.has(a);
+          const isSet = selectedAllergens.has(a);
+          if (isSet && !wasSet) {
+            promises.push(updateDishAllergen(dishId, { allergen: a, action: 'add' }));
+          } else if (!isSet && wasSet) {
+            promises.push(updateDishAllergen(dishId, { allergen: a, action: 'remove' }));
+          }
+        }
+        await Promise.all(promises);
+
+        menu = await getMenu(menuId);
+        closeModal();
+        showToast('Temp dish updated');
+        render();
+      } catch (err) {
+        showToast(err.message, 'error');
+      }
+    });
+  }
+
   // ---- Dish Picker ----
   async function showDishPicker(targetCourseId) {
     let allDishes;
@@ -1381,17 +1572,12 @@ export async function renderMenuBuilder(container, menuId) {
     const existingIds = new Set(menu.dishes.map(d => d.id));
     const available = allDishes.filter(d => !existingIds.has(d.id));
 
-    if (!available.length) {
-      showToast('All dishes are already in this menu', 'info');
-      return;
-    }
-
     const modal = openModal('Add Dishes', `
       <div class="mb-quick-add">
-        <input type="text" id="quick-add-name" class="input" placeholder="Quick add: type a dish name and press Enter">
-        <button type="button" id="quick-add-btn" class="btn btn-sm btn-primary">+ Add</button>
+        <input type="text" id="quick-add-name" class="input" placeholder="Quick add: type a name to add a temp dish">
+        <button type="button" id="quick-add-btn" class="btn btn-sm btn-primary">+ Add Temp</button>
       </div>
-      <input type="text" id="dish-picker-search" class="input" placeholder="Search existing dishes...">
+      ${available.length ? `<input type="text" id="dish-picker-search" class="input" placeholder="Search existing dishes...">` : ''}
       <div class="mb-picker-list" id="mb-picker-list">
         ${available.map(d => `
           <div class="mb-picker-item" data-id="${d.id}">
@@ -1416,16 +1602,16 @@ export async function renderMenuBuilder(container, menuId) {
       quickAddBtn.disabled = true;
       quickAddBtn.textContent = 'Adding...';
       try {
-        const dish = await createDish({ name, category: 'other' });
+        const dish = await createDish({ name, category: 'other', is_temporary: true });
         await addDishToMenu(menuId, { dish_id: dish.id, servings: 1, course_id: targetCourseId || null });
         quickAddInput.value = '';
         menu = await getMenu(menuId);
-        showToast(`"${name}" created and added`);
+        showToast(`"${name}" added as temp dish`);
       } catch (err) {
         showToast(err.message, 'error');
       } finally {
         quickAddBtn.disabled = false;
-        quickAddBtn.textContent = '+ Add';
+        quickAddBtn.textContent = '+ Add Temp';
       }
     }
 
@@ -1438,13 +1624,15 @@ export async function renderMenuBuilder(container, menuId) {
     });
 
     const searchInput = modal.querySelector('#dish-picker-search');
-    searchInput.addEventListener('input', () => {
-      const query = searchInput.value.toLowerCase();
-      modal.querySelectorAll('.mb-picker-item').forEach(item => {
-        const name = item.querySelector('strong').textContent.toLowerCase();
-        item.style.display = name.includes(query) ? '' : 'none';
+    if (searchInput) {
+      searchInput.addEventListener('input', () => {
+        const query = searchInput.value.toLowerCase();
+        modal.querySelectorAll('.mb-picker-item').forEach(item => {
+          const name = item.querySelector('strong').textContent.toLowerCase();
+          item.style.display = name.includes(query) ? '' : 'none';
+        });
       });
-    });
+    }
 
     modal.querySelectorAll('.add-to-menu-btn').forEach(btn => {
       btn.addEventListener('click', async () => {
