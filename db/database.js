@@ -367,6 +367,8 @@ async function initialize() {
        AND LOWER(i.name) LIKE '%' || LOWER(ak.keyword) || '%'`,
     // Remove unused in_stock column (may silently fail on older SQLite without DROP COLUMN support)
     `ALTER TABLE ingredients DROP COLUMN in_stock`,
+    // Add is_temporary flag for temp dishes that live within a menu
+    `ALTER TABLE dishes ADD COLUMN is_temporary INTEGER DEFAULT 0`,
   ];
 
   for (const sql of MIGRATIONS) {

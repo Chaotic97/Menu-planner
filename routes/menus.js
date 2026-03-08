@@ -495,6 +495,15 @@ router.delete('/:id', (req, res) => {
   if (!menu) return res.status(404).json({ error: 'Menu not found' });
 
   db.prepare("UPDATE menus SET deleted_at = datetime('now') WHERE id = ?").run(req.params.id);
+
+  // Cascade soft-delete temp dishes that belong to this menu
+  db.prepare(`
+    UPDATE dishes SET deleted_at = datetime('now')
+    WHERE is_temporary = 1 AND id IN (
+      SELECT dish_id FROM menu_dishes WHERE menu_id = ?
+    )
+  `).run(req.params.id);
+
   req.broadcast('menu_deleted', { id: parseInt(req.params.id) }, req.headers['x-client-id']);
   res.json({ success: true });
 });
@@ -504,6 +513,15 @@ router.post('/:id/restore', (req, res) => {
   const db = getDb();
   const result = db.prepare("UPDATE menus SET deleted_at = NULL WHERE id = ?").run(req.params.id);
   if (result.changes === 0) return res.status(404).json({ error: 'Menu not found' });
+
+  // Restore temp dishes that belong to this menu
+  db.prepare(`
+    UPDATE dishes SET deleted_at = NULL
+    WHERE is_temporary = 1 AND id IN (
+      SELECT dish_id FROM menu_dishes WHERE menu_id = ?
+    )
+  `).run(req.params.id);
+
   req.broadcast('menu_created', { id: parseInt(req.params.id) }, req.headers['x-client-id']);
   res.json({ success: true });
 });

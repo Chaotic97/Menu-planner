@@ -282,6 +282,8 @@ async function createTestApp() {
      JOIN allergen_keywords ak ON da.allergen = ak.allergen
      WHERE da.source = 'auto'
        AND LOWER(i.name) LIKE '%' || LOWER(ak.keyword) || '%'`,
+    // Add is_temporary flag for temp dishes that live within a menu
+    `ALTER TABLE dishes ADD COLUMN is_temporary INTEGER DEFAULT 0`,
   ];
 
   for (const sql of MIGRATIONS) {

@@ -49,7 +49,7 @@ router.get('/', (req, res) => {
   const { category, search, favorite, tag } = req.query;
 
   let sql = 'SELECT * FROM dishes';
-  const conditions = ['deleted_at IS NULL'];
+  const conditions = ['deleted_at IS NULL', 'is_temporary = 0'];
   const params = [];
 
   if (category) {
@@ -199,7 +199,7 @@ router.get('/:id', (req, res) => {
 // POST /api/dishes - Create dish
 router.post('/', (req, res) => {
   const db = getDb();
-  const { name, description, category, chefs_notes, service_notes, suggested_price, ingredients, tags, substitutions, manual_costs, components, directions, service_directions, batch_yield } = req.body;
+  const { name, description, category, chefs_notes, service_notes, suggested_price, ingredients, tags, substitutions, manual_costs, components, directions, service_directions, batch_yield, is_temporary } = req.body;
 
   if (!name) return res.status(400).json({ error: 'Name is required' });
   if (batch_yield !== undefined && batch_yield !== null) {
@@ -212,9 +212,9 @@ router.post('/', (req, res) => {
     db.exec('BEGIN');
 
     const result = db.prepare(`
-      INSERT INTO dishes (name, description, category, chefs_notes, service_notes, suggested_price, manual_costs, batch_yield)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(name, description || '', category || 'main', chefs_notes || '', service_notes || '', suggested_price || 0, manual_costs ? JSON.stringify(manual_costs) : '[]', batch_yield || 1);
+      INSERT INTO dishes (name, description, category, chefs_notes, service_notes, suggested_price, manual_costs, batch_yield, is_temporary)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(name, description || '', category || 'main', chefs_notes || '', service_notes || '', suggested_price || 0, manual_costs ? JSON.stringify(manual_costs) : '[]', batch_yield || 1, is_temporary ? 1 : 0);
 
     const dishId = result.lastInsertRowid;
 
