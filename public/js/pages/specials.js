@@ -135,7 +135,8 @@ export async function renderSpecials(container) {
             showToast(isActive ? 'Special deactivated' : 'Special activated');
             loadSpecials();
           } catch (err) {
-            showToast(err.message, 'error');
+            console.warn('Toggle special error:', err);
+            showToast('Could not update special', 'error');
           }
         });
       });
@@ -145,10 +146,11 @@ export async function renderSpecials(container) {
         btn.addEventListener('click', async () => {
           try {
             await deleteSpecial(btn.dataset.id);
-            showToast('Special removed', 'info');
+            showToast('Special removed', 'success');
             loadSpecials();
           } catch (err) {
-            showToast(err.message, 'error');
+            console.warn('Remove special error:', err);
+            showToast('Could not remove special', 'error');
           }
         });
       });
@@ -291,7 +293,8 @@ export async function renderSpecials(container) {
         showToast('Special added');
         loadSpecials();
       } catch (err) {
-        showToast(err.message, 'error');
+        console.warn('Add special error:', err);
+        showToast('Could not add special', 'error');
       }
     });
   }

@@ -32,7 +32,8 @@ export async function renderShoppingList(container, menuId) {
         shoppingData = await getShoppingList(activeMenuId);
       }
     } catch (err) {
-      showToast('Failed to load shopping list: ' + err.message, 'error');
+      console.warn('Shopping list error:', err);
+      showToast('Could not load shopping list', 'error');
       shoppingData = null;
     }
   }

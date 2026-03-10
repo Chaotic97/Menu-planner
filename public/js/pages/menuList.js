@@ -137,7 +137,7 @@ export async function renderMenuList(container) {
           try {
             await deleteMenu(menuId);
             loadMenus();
-            showToast('Menu deleted', 'info', 8000, {
+            showToast('Menu deleted', 'success', 8000, {
               label: 'Undo',
               onClick: async () => {
                 try {
@@ -150,7 +150,8 @@ export async function renderMenuList(container) {
               }
             });
           } catch (err) {
-            showToast(err.message, 'error');
+            console.warn('Delete menu error:', err);
+            showToast('Could not delete menu', 'error');
           }
         }});
         slot.appendChild(createActionMenu(actions));

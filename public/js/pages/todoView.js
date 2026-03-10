@@ -81,7 +81,8 @@ export async function renderTodoView(container, menuId) {
         await generateTasks(activeMenuId);
       }
     } catch (err) {
-      showToast('Failed to generate tasks: ' + err.message, 'error');
+      console.warn('Task generation error:', err);
+      showToast('Could not generate tasks', 'error');
     }
   }
 
@@ -102,7 +103,8 @@ export async function renderTodoView(container, menuId) {
     try {
       tasks = await getTasks(params);
     } catch (err) {
-      showToast('Failed to load tasks: ' + err.message, 'error');
+      console.warn('Load tasks error:', err);
+      showToast('Could not load tasks', 'error');
       tasks = [];
     }
   }
@@ -272,7 +274,8 @@ export async function renderTodoView(container, menuId) {
         await loadTasks();
         renderContent();
       } catch (err) {
-        showToast('Failed to create task: ' + err.message, 'error');
+        console.warn('Create task error:', err);
+        showToast('Could not create task', 'error');
       }
     });
   }
@@ -334,7 +337,8 @@ export async function renderTodoView(container, menuId) {
         await loadTasks();
         renderContent();
       } catch (err) {
-        showToast('Failed to update task: ' + err.message, 'error');
+        console.warn('Update task error:', err);
+        showToast('Could not update task', 'error');
       }
     });
   }
@@ -351,7 +355,8 @@ export async function renderTodoView(container, menuId) {
               await loadTasks();
               renderContent();
             } catch (err) {
-              showToast('Failed to undo: ' + err.message, 'error');
+              console.warn('Undo task error:', err);
+              showToast('Could not undo', 'error');
             }
           },
         });
@@ -359,7 +364,8 @@ export async function renderTodoView(container, menuId) {
       await loadTasks();
       renderContent();
     } catch (err) {
-      showToast('Failed to update task: ' + err.message, 'error');
+      console.warn('Task update error:', err);
+      showToast('Could not update task', 'error');
     }
   }
 
@@ -370,7 +376,8 @@ export async function renderTodoView(container, menuId) {
       await loadTasks();
       renderContent();
     } catch (err) {
-      showToast('Failed to delete task: ' + err.message, 'error');
+      console.warn('Delete task error:', err);
+      showToast('Could not delete task', 'error');
     }
   }
 
@@ -541,7 +548,8 @@ export async function renderTodoView(container, menuId) {
         await loadTasks();
         renderContent();
       } catch (err) {
-        showToast('Failed to regenerate: ' + err.message, 'error');
+        console.warn('Regenerate tasks error:', err);
+        showToast('Could not regenerate tasks', 'error');
       } finally {
         btn.textContent = origText;
         btn.disabled = false;
@@ -594,7 +602,8 @@ export async function renderTodoView(container, menuId) {
             html += `</body></html>`;
             printSheet(html);
           } catch (err) {
-            showToast('Failed to generate prep sheet: ' + err.message, 'error');
+            console.warn('Prep sheet error:', err);
+            showToast('Could not generate prep sheet', 'error');
           }
         }},
       ]);

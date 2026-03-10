@@ -123,7 +123,8 @@ export async function renderDishList(container) {
             const result = await toggleFavorite(btn.dataset.id);
             btn.classList.toggle('favorited', !!result.is_favorite);
           } catch (err) {
-            showToast(err.message, 'error');
+            console.warn('Toggle favorite error:', err);
+            showToast('Could not update favorite', 'error');
           }
         });
       });
@@ -139,14 +140,15 @@ export async function renderDishList(container) {
               showToast('Dish duplicated');
               window.location.hash = `#/dishes/${result.id}`;
             } catch (err) {
-              showToast(err.message, 'error');
+              console.warn('Duplicate dish error:', err);
+              showToast('Could not duplicate dish', 'error');
             }
           }},
           { label: 'Delete', icon: '✕', danger: true, onClick: async () => {
             try {
               await deleteDish(dishId);
               loadDishes();
-              showToast('Dish deleted', 'info', 8000, {
+              showToast('Dish deleted', 'success', 8000, {
                 label: 'Undo',
                 onClick: async () => {
                   try {
@@ -159,14 +161,16 @@ export async function renderDishList(container) {
                 }
               });
             } catch (err) {
-              showToast(err.message, 'error');
+              console.warn('Delete dish error:', err);
+              showToast('Could not delete dish', 'error');
             }
           }},
         ]);
         slot.appendChild(menuTrigger);
       });
     } catch (err) {
-      grid.innerHTML = `<div class="error">Failed to load dishes: ${escapeHtml(err.message)}</div>`;
+      console.warn('Load dishes error:', err);
+      grid.innerHTML = '<div class="error">Could not load dishes</div>';
     }
   }
 

@@ -2119,41 +2119,67 @@ textarea.input { resize: vertical; min-height: 80px; }
 .toast {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 12px 12px 12px 20px;
-  border-radius: var(--radius-sm);
-  font-size: 0.9rem;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: var(--radius);
+  font-size: var(--text-sm);
   font-weight: 500;
+  background: var(--surface);
+  color: var(--text);
   box-shadow: var(--shadow-lg);
+  border-left: 4px solid var(--text-muted);
   transform: translateX(120%);
-  transition: transform 0.3s ease;
-  max-width: 360px;
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  max-width: 380px;
+}
+
+.toast-icon-wrap {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+}
+.toast-icon {
+  width: 20px;
+  height: 20px;
+}
+.toast-text {
+  flex: 1;
+  min-width: 0;
+  line-height: 1.4;
 }
 
 .toast-close {
   flex-shrink: 0;
-  margin-left: auto;
   background: none;
   border: none;
-  color: rgba(255,255,255,0.7);
-  font-size: 1rem;
-  line-height: 1;
+  color: var(--text-muted);
   cursor: pointer;
-  padding: 2px 4px;
+  padding: 4px;
+  min-width: 28px;
+  min-height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   border-radius: var(--radius-sm);
   transition: color 0.15s, background 0.15s;
 }
 
 .toast-close:hover {
-  color: white;
-  background: rgba(255,255,255,0.2);
+  color: var(--text);
+  background: var(--bg);
 }
 
 .toast.show { transform: translateX(0); }
-.toast-success { background: #2e7d32; color: white; }
-.toast-error { background: var(--danger); color: white; }
-.toast-info { background: #1565c0; color: white; }
-.toast-warning { background: var(--warning); color: white; }
+
+/* --- Toast type colours --- */
+.toast-success { border-left-color: var(--success); }
+.toast-success .toast-icon { color: var(--success); }
+.toast-error   { border-left-color: var(--danger); }
+.toast-error .toast-icon   { color: var(--danger); }
+.toast-warning { border-left-color: var(--warning); }
+.toast-warning .toast-icon { color: var(--warning); }
+.toast-info    { border-left-color: #1976d2; }
+.toast-info .toast-icon    { color: #1976d2; }
 
 /* ============================
    Utilities
@@ -2365,20 +2391,20 @@ textarea.input { resize: vertical; min-height: 80px; }
    Toast Undo Action
    ============================ */
 .toast-action {
-  display: inline-block;
-  margin-left: 12px;
+  flex-shrink: 0;
   padding: 4px 12px;
-  font-size: 0.85rem;
-  font-weight: 700;
-  background: rgba(255,255,255,0.2);
-  color: white;
-  border: 1px solid rgba(255,255,255,0.3);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  background: rgba(var(--primary-rgb), 0.08);
+  color: var(--primary);
+  border: 1px solid rgba(var(--primary-rgb), 0.2);
   border-radius: var(--radius-sm);
   cursor: pointer;
   transition: background 0.15s;
+  font-family: var(--font);
 }
 
-.toast-action:hover { background: rgba(255,255,255,0.35); }
+.toast-action:hover { background: rgba(var(--primary-rgb), 0.15); }
 
 /* ============================
    Guest Allergy Conflicts
@@ -2614,6 +2640,7 @@ textarea.input { resize: vertical; min-height: 80px; }
   .toast {
     max-width: 100%;
     transform: translateY(120%);
+    border-left-width: 3px;
   }
   .toast.show { transform: translateY(0); }
 

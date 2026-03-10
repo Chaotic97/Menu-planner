@@ -321,14 +321,16 @@ export async function renderToday(container) {
                   await updateTask(taskId, { completed: false });
                   await reload();
                 } catch (err) {
-                  showToast('Failed to undo: ' + err.message, 'error');
+                  console.warn('Undo task error:', err);
+                  showToast('Could not undo', 'error');
                 }
               },
             });
           }
           await reload();
         } catch (err) {
-          showToast('Failed to update: ' + err.message, 'error');
+          console.warn('Task update error:', err);
+          showToast('Could not update task', 'error');
         }
       });
       // Prevent header toggle when clicking checkbox
@@ -344,7 +346,8 @@ export async function renderToday(container) {
           showToast('Set as next task', 'success');
           await reload();
         } catch (err) {
-          showToast('Failed: ' + err.message, 'error');
+          console.warn('Set next task error:', err);
+          showToast('Could not set next task', 'error');
         }
       });
     });
@@ -356,7 +359,8 @@ export async function renderToday(container) {
           await clearTaskNext();
           await reload();
         } catch (err) {
-          showToast('Failed: ' + err.message, 'error');
+          console.warn('Clear spotlight error:', err);
+          showToast('Could not clear spotlight', 'error');
         }
       });
     });
@@ -371,7 +375,8 @@ export async function renderToday(container) {
           showToast('Task completed', 'success');
           await reload();
         } catch (err) {
-          showToast('Failed: ' + err.message, 'error');
+          console.warn('Complete task error:', err);
+          showToast('Could not complete task', 'error');
         }
       });
     });
@@ -385,7 +390,8 @@ export async function renderToday(container) {
           showToast('Moved to today', 'success');
           await reload();
         } catch (err) {
-          showToast('Failed: ' + err.message, 'error');
+          console.warn('Reschedule task error:', err);
+          showToast('Could not reschedule task', 'error');
         }
       });
     });
@@ -417,7 +423,8 @@ export async function renderToday(container) {
           showToast('Task deleted', 'success');
           await reload();
         } catch (err) {
-          showToast('Failed: ' + err.message, 'error');
+          console.warn('Delete task error:', err);
+          showToast('Could not delete task', 'error');
         }
       });
     });
@@ -428,7 +435,8 @@ export async function renderToday(container) {
       data = await getTodayData();
       render();
     } catch (err) {
-      showToast('Failed to reload: ' + err.message, 'error');
+      console.warn('Reload error:', err);
+      showToast('Could not refresh data', 'error');
     }
   }
 
@@ -503,7 +511,8 @@ export async function renderToday(container) {
         showToast('Task created', 'success');
         await reload();
       } catch (err) {
-        showToast('Failed: ' + err.message, 'error');
+        console.warn('Create task error:', err);
+        showToast('Could not create task', 'error');
       }
     });
   }
@@ -575,7 +584,8 @@ export async function renderToday(container) {
         showToast('Task updated', 'success');
         await reload();
       } catch (err) {
-        showToast('Failed: ' + err.message, 'error');
+        console.warn('Update task error:', err);
+        showToast('Could not update task', 'error');
       }
     });
   }
@@ -603,7 +613,8 @@ export async function renderToday(container) {
           showToast('Phase assigned', 'success');
           await reload();
         } catch (err) {
-          showToast('Failed: ' + err.message, 'error');
+          console.warn('Assign phase error:', err);
+          showToast('Could not assign phase', 'error');
         }
       });
     });
@@ -614,7 +625,8 @@ export async function renderToday(container) {
     try {
       summary = await getTodaySummary();
     } catch (err) {
-      showToast('Failed to load summary: ' + err.message, 'error');
+      console.warn('Load summary error:', err);
+      showToast('Could not load summary', 'error');
       return;
     }
 
