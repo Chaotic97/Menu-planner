@@ -52,7 +52,8 @@ function setupPasswordSection(container) {
       showToast('Password updated');
       form.reset();
     } catch (err) {
-      showToast(err.message || 'Failed to update password', 'error');
+      console.warn('Password update failed:', err);
+      showToast('Could not update password. Please try again.', 'error');
     } finally {
       pwBtn.disabled = false;
       pwBtn.textContent = 'Update password';
@@ -228,7 +229,8 @@ async function setupDayPhasesSection(container) {
       showToast('Day phases saved');
       renderPhaseRows();
     } catch (err) {
-      showToast(err.message || 'Failed to save', 'error');
+      console.warn('Save day phases failed:', err);
+      showToast('Could not save day phases. Please try again.', 'error');
     } finally {
       dpSaveBtn.disabled = false;
       dpSaveBtn.textContent = 'Save Phases';
@@ -242,7 +244,8 @@ async function setupDayPhasesSection(container) {
       showToast('Reset to defaults');
       renderPhaseRows();
     } catch (err) {
-      showToast(err.message || 'Failed to reset', 'error');
+      console.warn('Reset day phases failed:', err);
+      showToast('Could not reset day phases. Please try again.', 'error');
     } finally {
       dpResetBtn.disabled = false;
     }
@@ -342,7 +345,8 @@ async function setupNotificationsSection(container) {
       showToast('Notification settings saved');
       restartNotifications();
     } catch (err) {
-      showToast(err.message || 'Failed to save', 'error');
+      console.warn('Save notification settings failed:', err);
+      showToast('Could not save notification settings. Please try again.', 'error');
     } finally {
       ntSaveBtn.disabled = false;
       ntSaveBtn.textContent = 'Save Notification Settings';
@@ -426,7 +430,8 @@ function setupVoiceInputSection(container) {
       showToast('Voice model downloaded successfully');
       setSttStatus(true);
     } catch (err) {
-      showToast('Failed to download voice model: ' + (err.message || 'Unknown error'), 'error');
+      console.warn('Voice model download failed:', err);
+      showToast('Could not download voice model. Please try again.', 'error');
       setSttStatus(false);
     } finally {
       sttDownloadBtn.disabled = false;
@@ -441,7 +446,8 @@ function setupVoiceInputSection(container) {
       showToast('Voice model cache deleted');
       setSttStatus(false);
     } catch (err) {
-      showToast('Failed to delete cache: ' + (err.message || 'Unknown error'), 'error');
+      console.warn('Delete voice model cache failed:', err);
+      showToast('Could not delete voice model cache. Please try again.', 'error');
     }
   });
 }
@@ -535,7 +541,8 @@ async function setupAiSection(container) {
       await loadAiSettings();
       await loadAiUsage();
     } catch (err) {
-      showToast(err.message || 'Failed to save AI settings', 'error');
+      console.warn('Save AI settings failed:', err);
+      showToast('Could not save AI settings. Please try again.', 'error');
     } finally {
       aiSaveBtn.disabled = false;
       aiSaveBtn.textContent = 'Save AI Settings';
@@ -621,7 +628,8 @@ async function setupGoogleCalendarSection(container) {
       gcalClientSecret.value = '';
       await loadGcalSettings();
     } catch (err) {
-      showToast(err.message || 'Failed to save', 'error');
+      console.warn('Save calendar credentials failed:', err);
+      showToast('Could not save credentials. Please try again.', 'error');
     } finally {
       gcalSaveCredsBtn.disabled = false;
       gcalSaveCredsBtn.textContent = 'Save Credentials';
@@ -636,7 +644,8 @@ async function setupGoogleCalendarSection(container) {
         await saveCalendarSettings({ clientId: id, clientSecret: secret });
         gcalClientSecret.value = '';
       } catch (err) {
-        showToast('Save credentials first: ' + err.message, 'error');
+        console.warn('Save credentials failed:', err);
+        showToast('Could not save credentials. Please try again.', 'error');
         return;
       }
     }
@@ -647,7 +656,8 @@ async function setupGoogleCalendarSection(container) {
       const result = await getCalendarAuthUrl();
       window.location.href = result.url;
     } catch (err) {
-      showToast(err.message || 'Failed to get auth URL', 'error');
+      console.warn('Get calendar auth URL failed:', err);
+      showToast('Could not connect to Google Calendar. Please try again.', 'error');
       gcalConnectBtn.disabled = false;
       gcalConnectBtn.textContent = 'Connect Google Calendar';
     }
@@ -660,7 +670,8 @@ async function setupGoogleCalendarSection(container) {
       showToast('Google Calendar disconnected');
       await loadGcalSettings();
     } catch (err) {
-      showToast(err.message || 'Failed to disconnect', 'error');
+      console.warn('Disconnect calendar failed:', err);
+      showToast('Could not disconnect calendar. Please try again.', 'error');
     }
   });
 
@@ -670,7 +681,8 @@ async function setupGoogleCalendarSection(container) {
       await saveCalendarSettings({ calendarId: calId });
       showToast('Calendar selected');
     } catch (err) {
-      showToast(err.message || 'Failed to save', 'error');
+      console.warn('Save calendar selection failed:', err);
+      showToast('Could not save calendar selection. Please try again.', 'error');
     }
   });
 
@@ -708,7 +720,8 @@ function setupBackupSection(container) {
       const result = await restoreBackup(file);
       showToast(result.message || 'Backup restored successfully');
     } catch (err) {
-      showToast(err.message || 'Failed to restore backup', 'error');
+      console.warn('Restore backup failed:', err);
+      showToast('Could not restore backup. Please try again.', 'error');
     }
     restoreInput.value = '';
   });

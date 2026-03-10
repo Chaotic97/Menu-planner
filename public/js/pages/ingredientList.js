@@ -26,7 +26,8 @@ export async function renderIngredientList(container) {
     try {
       ingredients = await getIngredients(searchQuery || undefined, { include_usage: true });
     } catch (err) {
-      container.innerHTML = `<div class="error">Failed to load ingredients: ${escapeHtml(err.message)}</div>`;
+      console.warn('Load ingredients failed:', err);
+      container.innerHTML = '<div class="error">Could not load ingredients. Please try again.</div>';
       return;
     }
     render();
@@ -214,7 +215,8 @@ export async function renderIngredientList(container) {
           btn.classList.toggle('active');
           showToast(isActive ? `Removed ${allergen}` : `Added ${allergen}`);
         } catch (err) {
-          showToast(err.message || 'Failed to update allergen', 'error');
+          console.warn('Update allergen failed:', err);
+          showToast('Could not update allergen. Please try again.', 'error');
         }
       });
     }
@@ -237,7 +239,8 @@ export async function renderIngredientList(container) {
         showToast('Ingredient updated');
         await load();
       } catch (err) {
-        showToast(err.message || 'Failed to update', 'error');
+        console.warn('Update ingredient failed:', err);
+        showToast('Could not update ingredient. Please try again.', 'error');
       }
     });
   }

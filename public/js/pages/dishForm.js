@@ -505,7 +505,8 @@ function setupDirectionHandlers(ctx) {
                     const { renderDishForm } = await import('./dishForm.js');
                     renderDishForm(container.parentElement || container, dish.id);
                   } catch (err) {
-                    showToast('Undo failed: ' + err.message, 'error');
+                    console.warn('Undo AI cleanup failed:', err);
+                    showToast('Could not undo changes. Please try again.', 'error');
                   }
                 },
               } : undefined);
@@ -516,7 +517,8 @@ function setupDirectionHandlers(ctx) {
               showToast(confirmResult.response || 'Failed to apply', 'error');
             }
           } catch (err) {
-            showToast(err.message || 'Failed to apply changes', 'error');
+            console.warn('Apply AI cleanup failed:', err);
+            showToast('Could not apply changes. Please try again.', 'error');
           }
         });
 
@@ -526,7 +528,8 @@ function setupDirectionHandlers(ctx) {
         });
 
       } catch (err) {
-        aiCleanupPreview.innerHTML = `<div class="ai-cleanup-error">${escapeHtml(err.message || 'Cleanup failed')}</div>`;
+        console.warn('AI cleanup failed:', err);
+        aiCleanupPreview.innerHTML = '<div class="ai-cleanup-error">Could not clean up recipe. Please try again.</div>';
       } finally {
         aiCleanupBtn.disabled = false;
         aiCleanupBtn.innerHTML = `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.5 5.5L19 10l-5.5 1.5L12 17l-1.5-5.5L5 10l5.5-1.5L12 3z"/></svg> Clean up with AI`;
@@ -714,7 +717,8 @@ function setupFormSubmit(ctx) {
       }
     } catch (err) {
       submitBtns.forEach(b => { b.disabled = false; b.textContent = b.dataset.origText || (isEdit ? 'Save Changes' : 'Create Dish'); });
-      showToast(err.message, 'error');
+      console.warn('Save dish failed:', err);
+      showToast('Could not save dish. Please try again.', 'error');
     }
   });
 }
@@ -768,7 +772,8 @@ function setupOverflowMenu(ctx) {
           showToast('Dish duplicated');
           window.location.hash = `#/dishes/${result.id}/edit`;
         } catch (err) {
-          showToast(err.message, 'error');
+          console.warn('Duplicate dish failed:', err);
+          showToast('Could not duplicate dish. Please try again.', 'error');
         }
       }},
     ]);
@@ -789,7 +794,8 @@ export async function renderDishForm(container, dishId) {
       dish = await getDish(dishId);
     }
   } catch (err) {
-    container.innerHTML = `<div class="error">Failed to load: ${escapeHtml(err.message)}</div>`;
+    console.warn('Load dish form failed:', err);
+    container.innerHTML = '<div class="error">Could not load dish. Please try again.</div>';
     return;
   }
 

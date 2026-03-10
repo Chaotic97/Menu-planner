@@ -265,7 +265,8 @@ function setupServiceStyleToggle(container, menuId, ctx) {
         ctx.render();
         showToast(`Switched to ${newStyle === 'coursed' ? 'coursed' : 'à la carte'} mode`);
       } catch (err) {
-        showToast(err.message, 'error');
+        console.warn('Service style switch failed:', err);
+        showToast('Could not change service style. Please try again.', 'error');
       }
     });
   });
@@ -324,7 +325,8 @@ function setupEditMenuModal(container, menuId, isHouse, ctx) {
         showToast('Menu updated');
         ctx.render();
       } catch (err) {
-        showToast(err.message, 'error');
+        console.warn('Menu update failed:', err);
+        showToast('Could not update menu. Please try again.', 'error');
       }
     });
   });
@@ -461,7 +463,7 @@ function setupHeaderActions(container, menuId, isHouse, ctx) {
           ctx.menu = await getMenu(menuId);
           showToast('Converted to event menu');
           ctx.render();
-        } catch (err) { showToast(err.message, 'error'); }
+        } catch (err) { console.warn('Convert to event menu failed:', err); showToast('Could not convert menu. Please try again.', 'error'); }
       }});
     } else {
       overflowItems.push({ label: 'Set as House Menu', icon: '⭐', onClick: async () => {
@@ -470,7 +472,7 @@ function setupHeaderActions(container, menuId, isHouse, ctx) {
           ctx.menu = await getMenu(menuId);
           showToast('Set as house menu');
           ctx.render();
-        } catch (err) { showToast(err.message, 'error'); }
+        } catch (err) { console.warn('Set as house menu failed:', err); showToast('Could not set as house menu. Please try again.', 'error'); }
       }});
     }
     mbOverflowSlot.appendChild(createActionMenu(overflowItems));
@@ -500,7 +502,8 @@ function setupServingsControls(container, menuId, ctx) {
           ctx.render();
         } catch (err) {
           btn.disabled = false;
-          showToast(err.message || 'Failed to update servings', 'error');
+          console.warn('Update servings failed:', err);
+          showToast('Could not update servings. Please try again.', 'error');
         }
       }
     });
@@ -518,7 +521,8 @@ function setupServingsControls(container, menuId, ctx) {
           ctx.render();
         } catch (err) {
           btn.disabled = false;
-          showToast(err.message || 'Failed to update servings', 'error');
+          console.warn('Update servings failed:', err);
+          showToast('Could not update servings. Please try again.', 'error');
         }
       }
     });
@@ -538,7 +542,8 @@ function setupServingsControls(container, menuId, ctx) {
           ctx.menu = await getMenu(menuId);
           ctx.render();
         } catch (err) {
-          showToast(err.message || 'Failed to update', 'error');
+          console.warn('Update servings failed:', err);
+          showToast('Could not update servings. Please try again.', 'error');
         }
       }, 500);
     });
@@ -561,7 +566,8 @@ function setupServingsControls(container, menuId, ctx) {
           showToast(`${neededBatches} batch${neededBatches !== 1 ? 'es' : ''} = ${neededBatches * batchYield} portions`);
           ctx.render();
         } catch (err) {
-          showToast(err.message || 'Failed to update', 'error');
+          console.warn('Update portions failed:', err);
+          showToast('Could not update portions. Please try again.', 'error');
         }
       }, 600);
     });
@@ -619,7 +625,8 @@ function setupDishRowActions(container, menuId, ctx) {
             showToast('Temp dish removed');
             ctx.render();
           } catch (err) {
-            showToast(err.message, 'error');
+            console.warn('Remove temp dish failed:', err);
+            showToast('Could not remove dish. Please try again.', 'error');
           }
         }},
       ]
@@ -633,7 +640,8 @@ function setupDishRowActions(container, menuId, ctx) {
             showToast('Dish removed');
             ctx.render();
           } catch (err) {
-            showToast(err.message, 'error');
+            console.warn('Remove dish failed:', err);
+            showToast('Could not remove dish. Please try again.', 'error');
           }
         }},
       ];
@@ -661,10 +669,11 @@ function setupCourseManagement(container, menuId, courses, isCoursed, styleLabel
         try {
           await deleteCourse(menuId, courseId);
           ctx.menu = await getMenu(menuId);
-          showToast(`${styleLabel} deleted`);
+          showToast(`${styleLabel} deleted`, 'success');
           ctx.render();
         } catch (err) {
-          showToast(err.message, 'error');
+          console.warn('Delete course failed:', err);
+          showToast(`Could not delete ${styleLabel}. Please try again.`, 'error');
         }
       }},
     ]);
@@ -738,7 +747,8 @@ function setupCourseManagement(container, menuId, courses, isCoursed, styleLabel
         showToast(`${styleLabel} added`);
         ctx.render();
       } catch (err) {
-        showToast(err.message, 'error');
+        console.warn('Create course failed:', err);
+        showToast(`Could not add ${styleLabel}. Please try again.`, 'error');
       }
     });
   });
@@ -759,7 +769,8 @@ function setupCourseManagement(container, menuId, courses, isCoursed, styleLabel
         ctx.render();
       } catch (err) {
         btn.disabled = false;
-        showToast(err.message, 'error');
+        console.warn('Apply template failed:', err);
+        showToast('Could not apply template. Please try again.', 'error');
       }
     });
   });
@@ -1098,7 +1109,8 @@ function showEditCourse(courseId, currentName, currentNotes, menuId, styleLabel,
       showToast(`${styleLabel} updated`);
       ctx.render();
     } catch (err) {
-      showToast(err.message, 'error');
+      console.warn('Update course failed:', err);
+      showToast('Could not update. Please try again.', 'error');
     }
   });
 }
@@ -1167,7 +1179,8 @@ async function showPrepareWeek(ctx) {
     } catch (err) {
       btn.disabled = false;
       btn.textContent = 'Generate Prep Tasks';
-      showToast(err.message || 'Failed to generate tasks', 'error');
+      console.warn('Generate tasks failed:', err);
+      showToast('Could not generate tasks. Please try again.', 'error');
     }
   });
 }
@@ -1263,7 +1276,8 @@ async function showScaleModal(menuId, ctx) {
       });
 
     } catch (err) {
-      resultDiv.innerHTML = `<div class="error" style="padding:12px;">${escapeHtml(err.message)}</div>`;
+      console.warn('Scale modal failed:', err);
+      resultDiv.innerHTML = '<div class="error" style="padding:12px;">Could not load scaling data. Please try again.</div>';
     }
   });
 }
@@ -1429,7 +1443,8 @@ async function showKitchenPrint(menuId) {
     html += `</body></html>`;
     printSheet(html);
   } catch (err) {
-    showToast('Failed to generate service sheet: ' + err.message, 'error');
+    console.warn('Service sheet generation failed:', err);
+    showToast('Could not generate service sheet. Please try again.', 'error');
   }
 }
 
@@ -1586,7 +1601,8 @@ async function showTempDishEditModal(dishId, menuId, ctx) {
       showToast('Temp dish updated');
       ctx.render();
     } catch (err) {
-      showToast(err.message, 'error');
+      console.warn('Update temp dish failed:', err);
+      showToast('Could not update dish. Please try again.', 'error');
     }
   });
 }
@@ -1641,7 +1657,8 @@ async function showDishPicker(menuId, ctx, targetCourseId) {
       ctx.menu = await getMenu(menuId);
       showToast(`"${name}" added as temp dish`);
     } catch (err) {
-      showToast(err.message, 'error');
+      console.warn('Quick add dish failed:', err);
+      showToast('Could not add dish. Please try again.', 'error');
     } finally {
       quickAddBtn.disabled = false;
       quickAddBtn.textContent = '+ Add Temp';
@@ -1678,7 +1695,8 @@ async function showDishPicker(menuId, ctx, targetCourseId) {
         ctx.menu = await getMenu(menuId);
         showToast('Dish added');
       } catch (err) {
-        showToast(err.message, 'error');
+        console.warn('Add dish to menu failed:', err);
+        showToast('Could not add dish. Please try again.', 'error');
       }
     });
   });
@@ -1696,7 +1714,8 @@ export async function renderMenuBuilder(container, menuId) {
   try {
     menu = await getMenu(menuId);
   } catch (err) {
-    container.innerHTML = `<div class="error">Failed to load menu: ${escapeHtml(err.message)}</div>`;
+    console.warn('Load menu failed:', err);
+    container.innerHTML = '<div class="error">Could not load menu. Please try again.</div>';
     return;
   }
 

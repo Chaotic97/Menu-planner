@@ -283,7 +283,8 @@ export async function renderCalendar(container) {
         showToast('Menu created');
         window.location.hash = `#/menus/${result.id}`;
       } catch (err) {
-        showToast(err.message, 'error');
+        console.warn('Create menu failed:', err);
+        showToast('Could not create menu. Please try again.', 'error');
       }
     });
   }
