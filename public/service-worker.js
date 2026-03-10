@@ -93,8 +93,8 @@ self.addEventListener('fetch', (event) => {
     event.respondWith(
       fetch(request)
         .then((res) => {
-          // Only cache successful JSON responses
-          if (res.ok) {
+          // Only cache successful JSON responses with valid Content-Type
+          if (res.ok && (res.headers.get('content-type') || '').includes('application/json')) {
             const clone = res.clone();
             caches.open(API_CACHE_NAME).then((cache) => cache.put(request, clone));
           }
