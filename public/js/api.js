@@ -338,6 +338,16 @@ export const authReset = (data) => authRequest('/auth/reset', { method: 'POST', 
 export const authLogout = () => authRequest('/auth/logout', { method: 'POST' });
 export const changePassword = (data) => request('/auth/change-password', { method: 'POST', body: data });
 
+// Passkey registration (authenticated)
+export const getPasskeyRegisterOptions = () => request('/auth/passkey/register-options', { method: 'POST' });
+export const verifyPasskeyRegister = (data) => request('/auth/passkey/register-verify', { method: 'POST', body: data });
+export const getPasskeys = () => request('/auth/passkeys');
+export const deletePasskey = (id) => request(`/auth/passkeys/${encodeURIComponent(id)}`, { method: 'DELETE' });
+
+// Passkey login (public)
+export const getPasskeyLoginOptions = () => authRequest('/auth/passkey/login-options', { method: 'POST' });
+export const verifyPasskeyLogin = (data) => authRequest('/auth/passkey/login-verify', { method: 'POST', body: data });
+
 // Service Notes
 export const getServiceNotes = (params) => {
   const qs = new URLSearchParams(params).toString();

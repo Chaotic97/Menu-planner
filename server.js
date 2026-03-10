@@ -34,6 +34,17 @@ app.use(cors({
 }));
 app.use(express.json({ limit: '1mb' }));
 
+// Derive a stable session secret: env var > DB setting > generate-and-persist
+function getSessionSecret() {
+  if (process.env.SESSION_SECRET) return process.env.SESSION_SECRET;
+  const db = getDb();
+  const row = db.prepare('SELECT value FROM settings WHERE key = ?').get('session_secret');
+  if (row) return row.value;
+  const secret = crypto.randomBytes(32).toString('hex');
+  db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').run('session_secret', secret);
+  return secret;
+}
+
 // Session middleware — persists to disk so logins survive server restarts
 app.use(session({
   store: new FileStore({
@@ -42,7 +53,7 @@ app.use(session({
     retries: 1,
     logFn: () => {}, // silence verbose logging
   }),
-  secret: process.env.SESSION_SECRET || crypto.randomBytes(32).toString('hex'),
+  secret: getSessionSecret(),
   resave: false,
   saveUninitialized: false,
   cookie: {
@@ -65,6 +76,9 @@ app.use(authMiddleware);
 
 app.use(express.static(path.join(__dirname, 'public')));
 app.use('/uploads', express.static(uploadsDir));
+app.use('/js/lib/simplewebauthn-browser.js', express.static(
+  path.join(__dirname, 'node_modules/@simplewebauthn/browser/dist/bundle/index.js')
+));
 
 // Create HTTP server for both Express and WebSocket
 const server = http.createServer(app);

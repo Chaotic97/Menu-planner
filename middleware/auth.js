@@ -4,6 +4,8 @@ const PUBLIC_PATHS = [
   '/api/auth/setup',
   '/api/auth/forgot',
   '/api/auth/reset',
+  '/api/auth/passkey/login-options',
+  '/api/auth/passkey/login-verify',
   '/api/calendar/callback',
 ];
 

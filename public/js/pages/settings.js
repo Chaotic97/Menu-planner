@@ -1,8 +1,9 @@
-import { getAllergenKeywords, addAllergenKeyword, deleteAllergenKeyword, changePassword, getDayPhases, updateDayPhases, getNotificationPreferences, updateNotificationPreferences, restoreBackup, getAiSettings, saveAiSettings, getAiUsage, getCalendarSettings, saveCalendarSettings, getCalendarAuthUrl, disconnectCalendar, getCalendarList } from '../api.js';
+import { getAllergenKeywords, addAllergenKeyword, deleteAllergenKeyword, changePassword, getDayPhases, updateDayPhases, getNotificationPreferences, updateNotificationPreferences, restoreBackup, getAiSettings, saveAiSettings, getAiUsage, getCalendarSettings, saveCalendarSettings, getCalendarAuthUrl, disconnectCalendar, getCalendarList, getPasskeys, getPasskeyRegisterOptions, verifyPasskeyRegister, deletePasskey } from '../api.js';
 import { showToast } from '../components/toast.js';
 import { escapeHtml } from '../utils/escapeHtml.js';
 import { restartNotifications } from '../utils/notifications.js';
 import { checkModelCached, preDownloadModel, deleteModelCache } from '../utils/speechToText.js';
+import { startRegistration } from '/js/lib/simplewebauthn-browser.js';
 
 const EU_14 = [
   'celery', 'crustaceans', 'eggs', 'fish', 'gluten', 'lupin',
@@ -727,6 +728,75 @@ function setupBackupSection(container) {
   });
 }
 
+/** Wire up passkey registration and management */
+async function setupPasskeySection(container) {
+  const listEl = container.querySelector('#st-passkey-list');
+  const registerBtn = container.querySelector('#st-passkey-register-btn');
+
+  async function loadPasskeys() {
+    try {
+      const passkeys = await getPasskeys();
+      if (!passkeys.length) {
+        listEl.innerHTML = '<p class="st-passkey-empty">No passkeys registered yet.</p>';
+        return;
+      }
+      listEl.innerHTML = passkeys.map(pk => {
+        const date = new Date(pk.created_at + 'Z').toLocaleDateString(undefined, {
+          year: 'numeric', month: 'short', day: 'numeric',
+        });
+        const shortId = pk.id.slice(0, 8) + '...';
+        return `
+          <div class="st-passkey-item">
+            <div class="st-passkey-info">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 7a4 4 0 1 0-4 4"/><path d="M11 15a4 4 0 0 0 4-4"/><path d="M15 11l4 4m0 0l2 2m-2-2l2-2m-2 2l-2 2"/></svg>
+              <span class="st-passkey-label">Passkey ${escapeHtml(shortId)}</span>
+              <span class="st-passkey-date">${escapeHtml(date)}</span>
+            </div>
+            <button class="btn btn-secondary btn-sm st-passkey-delete" data-id="${escapeHtml(pk.id)}">Remove</button>
+          </div>
+        `;
+      }).join('');
+
+      listEl.querySelectorAll('.st-passkey-delete').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          btn.disabled = true;
+          try {
+            await deletePasskey(btn.dataset.id);
+            showToast('Passkey removed', 'success');
+            await loadPasskeys();
+          } catch (err) {
+            showToast(err.message || 'Failed to remove passkey', 'error');
+            btn.disabled = false;
+          }
+        });
+      });
+    } catch {
+      listEl.innerHTML = '<p class="st-passkey-empty">Could not load passkeys.</p>';
+    }
+  }
+
+  registerBtn.addEventListener('click', async () => {
+    registerBtn.disabled = true;
+    registerBtn.textContent = 'Waiting for device...';
+    try {
+      const options = await getPasskeyRegisterOptions();
+      const regResp = await startRegistration(options);
+      await verifyPasskeyRegister(regResp);
+      showToast('Passkey registered successfully', 'success');
+      await loadPasskeys();
+    } catch (err) {
+      if (err.name !== 'NotAllowedError') {
+        showToast(err.message || 'Passkey registration failed', 'error');
+      }
+    } finally {
+      registerBtn.disabled = false;
+      registerBtn.textContent = 'Register new passkey';
+    }
+  });
+
+  await loadPasskeys();
+}
+
 // ── Main render function ──────────────────────────────────────────────────────
 
 export async function renderSettings(container) {
@@ -950,6 +1020,15 @@ export async function renderSettings(container) {
               </div>
             </form>
           </div>
+
+          <div class="card st-passkey-card">
+            <h3 class="st-card-heading">Passkeys</h3>
+            <p class="ak-intro">Sign in with your device's fingerprint, face, or security key instead of a password.</p>
+            <div id="st-passkey-list"></div>
+            <div class="st-form-actions">
+              <button type="button" class="btn btn-primary" id="st-passkey-register-btn">Register new passkey</button>
+            </div>
+          </div>
         </div>
       </section>
 
@@ -1103,6 +1182,7 @@ export async function renderSettings(container) {
   // Wire up all sections via extracted helpers
   setupSectionToggles(container);
   setupPasswordSection(container);
+  await setupPasskeySection(container);
   await setupAllergenKeywordsSection(container);
   await setupDayPhasesSection(container);
   await setupNotificationsSection(container);

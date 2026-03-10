@@ -369,6 +369,14 @@ async function initialize() {
     `ALTER TABLE ingredients DROP COLUMN in_stock`,
     // Add is_temporary flag for temp dishes that live within a menu
     `ALTER TABLE dishes ADD COLUMN is_temporary INTEGER DEFAULT 0`,
+    // WebAuthn passkey credentials
+    `CREATE TABLE IF NOT EXISTS passkey_credentials (
+      id         TEXT PRIMARY KEY,
+      public_key TEXT NOT NULL,
+      counter    INTEGER NOT NULL DEFAULT 0,
+      transports TEXT DEFAULT '[]',
+      created_at TEXT DEFAULT (datetime('now'))
+    )`,
   ];
 
   let migrationErrors = 0;

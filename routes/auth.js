@@ -5,9 +5,20 @@ const { getDb } = require('../db/database');
 const { sendPasswordResetEmail } = require('../services/emailService');
 const asyncHandler = require('../middleware/asyncHandler');
 const { createRateLimit } = require('../middleware/rateLimit');
+const {
+  generateRegistrationOptions,
+  verifyRegistrationResponse,
+  generateAuthenticationOptions,
+  verifyAuthenticationResponse,
+} = require('@simplewebauthn/server');
 
 const router = express.Router();
 const SALT_ROUNDS = 12;
+
+// WebAuthn config
+const RP_NAME = 'PlateStack';
+const RP_ID = process.env.RP_ID || (process.env.NODE_ENV === 'production' ? 'platestack.app' : 'localhost');
+const EXPECTED_ORIGIN = process.env.APP_URL || (process.env.NODE_ENV === 'production' ? 'https://platestack.app' : 'http://localhost:3000');
 
 // Strict limit for login/forgot/reset: 10 attempts per 15 min per IP
 const authRateLimit = createRateLimit({ windowMs: 15 * 60 * 1000, max: 10, message: 'Too many attempts. Please wait 15 minutes before trying again.' });
@@ -26,8 +37,10 @@ router.get('/status', asyncHandler(async (req, res) => {
   const passwordRow = getSetting(db, 'password_hash');
   const isSetup = !!passwordRow;
   const isAuthenticated = !!(req.session && req.session.authenticated);
+  const passkeyCount = db.prepare('SELECT COUNT(*) as count FROM passkey_credentials').get();
+  const hasPasskeys = passkeyCount && passkeyCount.count > 0;
 
-  res.json({ isSetup, isAuthenticated });
+  res.json({ isSetup, isAuthenticated, hasPasskeys });
 }));
 
 // POST /api/auth/setup - initial password + email setup
@@ -193,6 +206,189 @@ router.post('/change-password', authRateLimit, asyncHandler(async (req, res) => 
 
   const hash = await bcrypt.hash(newPassword, SALT_ROUNDS);
   setSetting(db, 'password_hash', hash);
+
+  res.json({ success: true });
+}));
+
+// ── WebAuthn Passkey Routes ──────────────────────────────────────────────────
+
+// Helper: get or create a stable user ID for WebAuthn
+function getWebAuthnUserId(db) {
+  const row = getSetting(db, 'webauthn_user_id');
+  if (row) return row.value;
+  const id = crypto.randomBytes(16).toString('hex');
+  setSetting(db, 'webauthn_user_id', id);
+  return id;
+}
+
+// POST /api/auth/passkey/register-options (authenticated)
+router.post('/passkey/register-options', asyncHandler(async (req, res) => {
+  if (!req.session || !req.session.authenticated) {
+    return res.status(401).json({ error: 'Not authenticated.' });
+  }
+
+  const db = getDb();
+  const userId = getWebAuthnUserId(db);
+  const existing = db.prepare('SELECT id, transports FROM passkey_credentials').all();
+
+  const options = await generateRegistrationOptions({
+    rpName: RP_NAME,
+    rpID: RP_ID,
+    userName: 'chef',
+    userID: Buffer.from(userId, 'hex'),
+    excludeCredentials: existing.map(c => ({
+      id: c.id,
+      transports: JSON.parse(c.transports || '[]'),
+    })),
+    authenticatorSelection: {
+      residentKey: 'preferred',
+      userVerification: 'preferred',
+    },
+  });
+
+  // Store challenge in session
+  req.session.webauthnChallenge = options.challenge;
+  req.session.save((err) => {
+    if (err) return res.status(500).json({ error: 'Session error.' });
+    res.json(options);
+  });
+}));
+
+// POST /api/auth/passkey/register-verify (authenticated)
+router.post('/passkey/register-verify', asyncHandler(async (req, res) => {
+  if (!req.session || !req.session.authenticated) {
+    return res.status(401).json({ error: 'Not authenticated.' });
+  }
+
+  const expectedChallenge = req.session.webauthnChallenge;
+  if (!expectedChallenge) {
+    return res.status(400).json({ error: 'No registration in progress.' });
+  }
+
+  delete req.session.webauthnChallenge;
+
+  const verification = await verifyRegistrationResponse({
+    response: req.body,
+    expectedChallenge,
+    expectedOrigin: EXPECTED_ORIGIN,
+    expectedRPID: RP_ID,
+  });
+
+  if (!verification.verified || !verification.registrationInfo) {
+    return res.status(400).json({ error: 'Passkey registration failed.' });
+  }
+
+  const { credential } = verification.registrationInfo;
+  const db = getDb();
+
+  db.prepare(
+    'INSERT INTO passkey_credentials (id, public_key, counter, transports) VALUES (?, ?, ?, ?)'
+  ).run(
+    credential.id,
+    Buffer.from(credential.publicKey).toString('base64url'),
+    credential.counter,
+    JSON.stringify(credential.transports || [])
+  );
+
+  req.session.save((err) => {
+    if (err) return res.status(500).json({ error: 'Session error.' });
+    res.json({ success: true });
+  });
+}));
+
+// POST /api/auth/passkey/login-options (public)
+router.post('/passkey/login-options', authRateLimit, asyncHandler(async (req, res) => {
+  const db = getDb();
+  const credentials = db.prepare('SELECT id, transports FROM passkey_credentials').all();
+
+  if (!credentials.length) {
+    return res.status(404).json({ error: 'No passkeys registered.' });
+  }
+
+  const options = await generateAuthenticationOptions({
+    rpID: RP_ID,
+    allowCredentials: credentials.map(c => ({
+      id: c.id,
+      transports: JSON.parse(c.transports || '[]'),
+    })),
+    userVerification: 'preferred',
+  });
+
+  // Store challenge in session
+  req.session.webauthnChallenge = options.challenge;
+  req.session.save((err) => {
+    if (err) return res.status(500).json({ error: 'Session error.' });
+    res.json(options);
+  });
+}));
+
+// POST /api/auth/passkey/login-verify (public)
+router.post('/passkey/login-verify', authRateLimit, asyncHandler(async (req, res) => {
+  const expectedChallenge = req.session.webauthnChallenge;
+  if (!expectedChallenge) {
+    return res.status(400).json({ error: 'No login in progress.' });
+  }
+
+  delete req.session.webauthnChallenge;
+
+  const db = getDb();
+  const credential = db.prepare('SELECT * FROM passkey_credentials WHERE id = ?').get(req.body.id);
+
+  if (!credential) {
+    return res.status(400).json({ error: 'Unknown passkey.' });
+  }
+
+  const verification = await verifyAuthenticationResponse({
+    response: req.body,
+    expectedChallenge,
+    expectedOrigin: EXPECTED_ORIGIN,
+    expectedRPID: RP_ID,
+    credential: {
+      id: credential.id,
+      publicKey: Buffer.from(credential.public_key, 'base64url'),
+      counter: credential.counter,
+      transports: JSON.parse(credential.transports || '[]'),
+    },
+  });
+
+  if (!verification.verified) {
+    return res.status(401).json({ error: 'Passkey verification failed.' });
+  }
+
+  // Update counter
+  db.prepare('UPDATE passkey_credentials SET counter = ? WHERE id = ?')
+    .run(verification.authenticationInfo.newCounter, credential.id);
+
+  req.session.authenticated = true;
+  req.session.save((err) => {
+    if (err) return res.status(500).json({ error: 'Session error.' });
+    res.json({ success: true });
+  });
+}));
+
+// GET /api/auth/passkeys (authenticated) - list registered passkeys
+router.get('/passkeys', asyncHandler(async (req, res) => {
+  if (!req.session || !req.session.authenticated) {
+    return res.status(401).json({ error: 'Not authenticated.' });
+  }
+
+  const db = getDb();
+  const passkeys = db.prepare('SELECT id, created_at FROM passkey_credentials ORDER BY created_at').all();
+  res.json(passkeys);
+}));
+
+// DELETE /api/auth/passkeys/:id (authenticated)
+router.delete('/passkeys/:id', asyncHandler(async (req, res) => {
+  if (!req.session || !req.session.authenticated) {
+    return res.status(401).json({ error: 'Not authenticated.' });
+  }
+
+  const db = getDb();
+  const result = db.prepare('DELETE FROM passkey_credentials WHERE id = ?').run(req.params.id);
+
+  if (result.changes === 0) {
+    return res.status(404).json({ error: 'Passkey not found.' });
+  }
 
   res.json({ success: true });
 }));

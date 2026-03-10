@@ -58,7 +58,7 @@ async function checkAuth() {
 
     if (!data.isAuthenticated) {
       showAuthUI(false);
-      renderLogin(appContent, 'login');
+      renderLogin(appContent, 'login', { hasPasskeys: data.hasPasskeys });
       return false;
     }
 
