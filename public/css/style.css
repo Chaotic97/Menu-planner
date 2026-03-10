@@ -96,7 +96,7 @@ html { overscroll-behavior: none; touch-action: manipulation; }
 
 /* --- Component-specific dark overrides (kept here so all dark-mode rules are in one place) --- */
 [data-theme="dark"] .favorite-btn { background: transparent; }
-[data-theme="dark"] .tag-badge { background: rgba(var(--primary-rgb),0.2); }
+[data-theme="dark"] .tag-badge { background: var(--surface); }
 [data-theme="dark"] .subs-badge { background: #3a2a1a; color: #ffb74d; }
 [data-theme="dark"] .po-category-row td { background: rgba(var(--primary-rgb),0.12); }
 [data-theme="dark"] .po-total-row td { background: #2a2a2a; }
@@ -2418,10 +2418,11 @@ textarea.input { resize: vertical; min-height: 80px; }
   display: inline-block;
   padding: 2px 8px;
   font-size: 0.7rem;
-  font-weight: 500;
-  background: rgba(var(--primary-rgb),0.1);
-  color: var(--primary);
-  border-radius: 12px;
+  font-weight: 600;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  border-radius: 20px;
 }
 
 .filter-favorites-btn {
@@ -4475,6 +4476,7 @@ textarea.input { resize: vertical; min-height: 80px; }
   background: var(--surface);
   border: 1px solid var(--border);
   color: var(--text-muted);
+  font-weight: 600;
 }
 
 .dv-section-block {
