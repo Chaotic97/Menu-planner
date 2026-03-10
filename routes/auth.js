@@ -5,12 +5,14 @@ const { getDb } = require('../db/database');
 const { sendPasswordResetEmail } = require('../services/emailService');
 const asyncHandler = require('../middleware/asyncHandler');
 const { createRateLimit } = require('../middleware/rateLimit');
-const {
-  generateRegistrationOptions,
-  verifyRegistrationResponse,
-  generateAuthenticationOptions,
-  verifyAuthenticationResponse,
-} = require('@simplewebauthn/server');
+// @simplewebauthn/server is ESM-only — lazy-load via dynamic import()
+let _webauthn = null;
+async function getWebAuthn() {
+  if (!_webauthn) {
+    _webauthn = await import('@simplewebauthn/server');
+  }
+  return _webauthn;
+}
 
 const router = express.Router();
 const SALT_ROUNDS = 12;
@@ -231,6 +233,7 @@ router.post('/passkey/register-options', asyncHandler(async (req, res) => {
   const userId = getWebAuthnUserId(db);
   const existing = db.prepare('SELECT id, transports FROM passkey_credentials').all();
 
+  const { generateRegistrationOptions } = await getWebAuthn();
   const options = await generateRegistrationOptions({
     rpName: RP_NAME,
     rpID: RP_ID,
@@ -267,6 +270,7 @@ router.post('/passkey/register-verify', asyncHandler(async (req, res) => {
 
   delete req.session.webauthnChallenge;
 
+  const { verifyRegistrationResponse } = await getWebAuthn();
   const verification = await verifyRegistrationResponse({
     response: req.body,
     expectedChallenge,
@@ -305,6 +309,7 @@ router.post('/passkey/login-options', authRateLimit, asyncHandler(async (req, re
     return res.status(404).json({ error: 'No passkeys registered.' });
   }
 
+  const { generateAuthenticationOptions } = await getWebAuthn();
   const options = await generateAuthenticationOptions({
     rpID: RP_ID,
     allowCredentials: credentials.map(c => ({
@@ -338,6 +343,7 @@ router.post('/passkey/login-verify', authRateLimit, asyncHandler(async (req, res
     return res.status(400).json({ error: 'Unknown passkey.' });
   }
 
+  const { verifyAuthenticationResponse } = await getWebAuthn();
   const verification = await verifyAuthenticationResponse({
     response: req.body,
     expectedChallenge,
