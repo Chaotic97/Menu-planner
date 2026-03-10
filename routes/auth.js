@@ -19,8 +19,10 @@ const SALT_ROUNDS = 12;
 
 // WebAuthn config
 const RP_NAME = 'PlateStack';
-const RP_ID = process.env.RP_ID || (process.env.NODE_ENV === 'production' ? 'platestack.app' : 'localhost');
-const EXPECTED_ORIGIN = process.env.APP_URL || (process.env.NODE_ENV === 'production' ? 'https://platestack.app' : 'http://localhost:3000');
+const IS_PROD = process.env.NODE_ENV === 'production' || process.env.APP_URL === 'https://platestack.app';
+const RP_ID = process.env.RP_ID || (IS_PROD ? 'platestack.app' : 'localhost');
+const EXPECTED_ORIGIN = process.env.APP_URL || (IS_PROD ? 'https://platestack.app' : 'http://localhost:3000');
+console.log(`[WebAuthn] RP_ID=${RP_ID}, EXPECTED_ORIGIN=${EXPECTED_ORIGIN}, NODE_ENV=${process.env.NODE_ENV}`);
 
 // Strict limit for login/forgot/reset: 10 attempts per 15 min per IP
 const authRateLimit = createRateLimit({ windowMs: 15 * 60 * 1000, max: 10, message: 'Too many attempts. Please wait 15 minutes before trying again.' });
