@@ -8,6 +8,15 @@ import { escapeHtml } from '../utils/escapeHtml.js';
 import { CATEGORIES } from '../data/categories.js';
 import { loadingHTML } from '../utils/loadingState.js';
 
+/** Auto-normalize units (g→kg at ≥1000, kg→g at <0.1, same for ml↔L) */
+function autoNormalize(qty, unit) {
+  if (unit === 'g' && qty >= 1000) return { qty: Math.round(qty / 100) / 10, unit: 'kg' };
+  if (unit === 'kg' && qty < 0.1 && qty > 0) return { qty: Math.round(qty * 10000) / 10, unit: 'g' };
+  if (unit === 'ml' && qty >= 1000) return { qty: Math.round(qty / 100) / 10, unit: 'L' };
+  if (unit === 'L' && qty < 0.1 && qty > 0) return { qty: Math.round(qty * 10000) / 10, unit: 'ml' };
+  return { qty: Math.round(qty * 100) / 100, unit };
+}
+
 export async function renderDishView(container, dishId) {
   container.innerHTML = loadingHTML('Loading...');
 
@@ -35,7 +44,7 @@ export async function renderDishView(container, dishId) {
       if (row.row_type === 'section') {
         html += `<div class="dv-ing-section">${escapeHtml(row.label)}</div>`;
       } else {
-        const qty = row.quantity ? `<span class="dv-ing-qty">${row.quantity} ${escapeHtml(row.unit)}</span>` : '';
+        const qty = row.quantity ? `<span class="dv-ing-qty" data-orig-qty="${row.quantity}" data-orig-unit="${escapeHtml(row.unit)}">${row.quantity} ${escapeHtml(row.unit)}</span>` : '';
         const prep = row.prep_note ? `<span class="dv-ing-prep">${escapeHtml(row.prep_note)}</span>` : '';
         const ingAllergens = row.allergens && row.allergens.length ? renderAllergenBadges(row.allergens, true) : '';
         html += `
@@ -102,7 +111,7 @@ export async function renderDishView(container, dishId) {
         <div class="dv-meta">
           <span class="dv-chip dv-chip-category">${escapeHtml(categoryLabel)}</span>
           ${dish.suggested_price ? `<span class="dv-chip dv-chip-price">$${Number(dish.suggested_price).toFixed(2)}</span>` : ''}
-          ${dish.batch_yield && dish.batch_yield > 1 ? `<span class="dv-chip">Makes ${dish.batch_yield} portions</span>` : ''}
+          ${dish.batch_yield && dish.batch_yield > 1 ? `<span class="dv-chip dv-chip-portions">Makes ${dish.batch_yield} portions</span>` : ''}
           ${tags.map(t => `<span class="dv-chip dv-chip-tag">${escapeHtml(t)}</span>`).join('')}
         </div>
 
@@ -120,8 +129,16 @@ export async function renderDishView(container, dishId) {
 
         <!-- Ingredients -->
         <div class="dv-card">
-          <h3 class="dv-card-title">Ingredients</h3>
+          <div class="dv-card-title-row">
+            <h3 class="dv-card-title" style="margin:0;">Ingredients</h3>
+            <div class="dv-scale-control">
+              <label for="dv-scale-input" class="dv-scale-label">Scale:</label>
+              <input type="number" id="dv-scale-input" class="input dv-scale-input" step="0.5" min="0.5" value="${dish.batch_yield || 1}" title="Scale recipe to this many portions">
+            </div>
+          </div>
+          <div id="dv-ingredients-container">
           ${renderIngredients()}
+          </div>
         </div>
 
         ${dish.components && dish.components.length ? `
@@ -219,12 +236,71 @@ export async function renderDishView(container, dishId) {
     photoEl.addEventListener('click', () => openLightbox(photoEl.src, dish.name));
   }
 
+  // Recipe scaling
+  const scaleInput = container.querySelector('#dv-scale-input');
+  const batchYield = dish.batch_yield || 1;
+  let activeMultiplier = 1;
+
+  function updateScaledDisplay() {
+    const target = parseFloat(scaleInput.value) || batchYield;
+    activeMultiplier = target / batchYield;
+
+    // Update ingredient quantities
+    const qtyEls = container.querySelectorAll('.dv-ing-qty[data-orig-qty]');
+    qtyEls.forEach(el => {
+      const origQty = parseFloat(el.dataset.origQty) || 0;
+      const origUnit = el.dataset.origUnit || '';
+      if (!origQty) return;
+      const scaled = origQty * activeMultiplier;
+      const norm = autoNormalize(scaled, origUnit);
+      el.textContent = `${norm.qty} ${norm.unit}`;
+    });
+
+    // Update "Makes X portions" chip
+    const portionChip = container.querySelector('.dv-chip-portions');
+    if (portionChip) {
+      portionChip.textContent = `Makes ${target} portions`;
+    }
+
+    // Update cost summary
+    const costRows = container.querySelectorAll('.dv-cost-row');
+    if (costRows.length && dish.cost) {
+      const combined = (dish.cost.combinedTotal ?? dish.cost.totalCost) * activeMultiplier;
+      const costPerPortion = combined / target;
+      const pct = dish.suggested_price ? Math.round((costPerPortion / dish.suggested_price) * 10000) / 100 : null;
+      const pctColor = pct === null ? '' : pct > 35 ? 'var(--danger)' : pct > 30 ? 'var(--warning)' : 'var(--success)';
+
+      // Re-render cost summary in place
+      const costCard = container.querySelector('.dv-sidebar .dv-card');
+      if (costCard) {
+        const titleEl = costCard.querySelector('.dv-card-title');
+        let html = '';
+        if (target > 1) {
+          html += `<div class="dv-cost-row"><span>Batch cost (${target} portions)</span><span>$${combined.toFixed(2)}</span></div>`;
+        }
+        html += `<div class="dv-cost-row"><span>${target > 1 ? 'Cost per portion' : 'Food cost'}</span>`;
+        html += `<span>$${costPerPortion.toFixed(2)}${pct !== null ? ` <span style="color:${pctColor};font-weight:700;">(${pct}%)</span>` : ''}</span></div>`;
+        if (dish.suggested_price) {
+          html += `<div class="dv-cost-row"><span>Selling price</span><span>$${Number(dish.suggested_price).toFixed(2)}</span></div>`;
+        }
+        // Keep title, replace content
+        costCard.innerHTML = '';
+        costCard.appendChild(titleEl);
+        costCard.insertAdjacentHTML('beforeend', html);
+      }
+    }
+  }
+
+  if (scaleInput) {
+    scaleInput.addEventListener('input', updateScaledDisplay);
+  }
+
   // Overflow action menu
   const overflowSlot = container.querySelector('#dv-overflow-slot');
   if (overflowSlot) {
     const menuTrigger = createActionMenu([
-      { label: 'Print Kitchen Sheet', onClick: () => printDishSheet(dish, { type: 'kitchen' }) },
-      { label: 'Print FoH Sheet', onClick: () => printDishSheet(dish, { type: 'foh' }) },
+      { label: 'Print Kitchen Sheet', onClick: () => printDishSheet(dish, { type: 'kitchen', multiplier: activeMultiplier, targetPortions: parseFloat(scaleInput?.value) || batchYield }) },
+      { label: 'Print FoH Sheet', onClick: () => printDishSheet(dish, { type: 'foh', multiplier: activeMultiplier, targetPortions: parseFloat(scaleInput?.value) || batchYield }) },
     ]);
     overflowSlot.appendChild(menuTrigger);
   }
@@ -246,7 +322,7 @@ export async function renderDishView(container, dishId) {
   window.addEventListener('hashchange', cleanup);
 }
 
-function printDishSheet(dish, { type = 'kitchen' } = {}) {
+function printDishSheet(dish, { type = 'kitchen', multiplier = 1, targetPortions = null } = {}) {
   const isFoh = type === 'foh';
   const allergens = dish.allergens || [];
   const sections = dish.ingredients || [];
@@ -255,6 +331,7 @@ function printDishSheet(dish, { type = 'kitchen' } = {}) {
   const directions = dish.directions || [];
   const categoryLabel = CATEGORIES.find(c => c.value === dish.category)?.label || dish.category || '';
   const sheetLabel = isFoh ? 'FoH Sheet' : 'Kitchen Sheet';
+  const isScaled = multiplier !== 1 && targetPortions;
 
   let html = `
     <html><head><title>${sheetLabel} - ${escapeHtml(dish.name)}</title>
@@ -283,10 +360,11 @@ function printDishSheet(dish, { type = 'kitchen' } = {}) {
       @media print { body { padding: 0; } }
     </style></head><body>
     <h1>${escapeHtml(dish.name)}</h1>
+    ${isScaled ? `<div style="font-size:0.85rem;color:#d84315;font-weight:700;margin-bottom:4px;">Scaled to ${targetPortions} portions (${multiplier.toFixed(2)}x)</div>` : ''}
     <div class="meta">
       <span>${escapeHtml(categoryLabel)}</span>
       ${dish.suggested_price ? `<span><strong>$${Number(dish.suggested_price).toFixed(2)}</strong></span>` : ''}
-      ${dish.batch_yield && dish.batch_yield > 1 ? `<span>Makes ${dish.batch_yield} portions</span>` : ''}
+      ${targetPortions ? `<span>Makes ${targetPortions} portions</span>` : (dish.batch_yield && dish.batch_yield > 1 ? `<span>Makes ${dish.batch_yield} portions</span>` : '')}
       <span style="float:right;color:#888;">Printed: ${new Date().toLocaleDateString()}</span>
     </div>
   `;
@@ -309,7 +387,8 @@ function printDishSheet(dish, { type = 'kitchen' } = {}) {
       if (row.row_type === 'section') {
         html += `<tr><td colspan="4" style="font-weight:700;padding-top:10px;border-bottom:1px solid #ccc;">${escapeHtml(row.label)}</td></tr>`;
       } else {
-        html += `<tr><td>${escapeHtml(row.ingredient_name)}</td><td>${row.quantity || ''}</td><td>${escapeHtml(row.unit || '')}</td><td>${escapeHtml(row.prep_note || '')}</td></tr>`;
+        const printQty = row.quantity ? autoNormalize(row.quantity * multiplier, row.unit) : null;
+        html += `<tr><td>${escapeHtml(row.ingredient_name)}</td><td>${printQty ? printQty.qty : ''}</td><td>${printQty ? escapeHtml(printQty.unit) : escapeHtml(row.unit || '')}</td><td>${escapeHtml(row.prep_note || '')}</td></tr>`;
       }
     }
     html += `</tbody></table>`;

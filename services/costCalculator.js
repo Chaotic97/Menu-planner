@@ -17,7 +17,30 @@ const CONVERSIONS = {
   g_to_ml: v => v,
   l_to_kg: v => v,
   kg_to_l: v => v,
+  // Volume sub-unit conversions
+  tsp_to_ml: v => v * 4.92892,
+  ml_to_tsp: v => v / 4.92892,
+  tbsp_to_ml: v => v * 14.7868,
+  ml_to_tbsp: v => v / 14.7868,
+  cup_to_ml: v => v * 236.588,
+  ml_to_cup: v => v / 236.588,
+  tsp_to_tbsp: v => v / 3,
+  tbsp_to_tsp: v => v * 3,
+  tsp_to_cup: v => v / 48,
+  cup_to_tsp: v => v * 48,
+  tbsp_to_cup: v => v / 16,
+  cup_to_tbsp: v => v * 16,
+  tsp_to_l: v => v * 4.92892 / 1000,
+  l_to_tsp: v => v * 1000 / 4.92892,
+  tbsp_to_l: v => v * 14.7868 / 1000,
+  l_to_tbsp: v => v * 1000 / 14.7868,
+  cup_to_l: v => v * 236.588 / 1000,
+  l_to_cup: v => v * 1000 / 236.588,
 };
+
+// Units grouped by category for density bridging
+const WEIGHT_UNITS = new Set(['g', 'kg', 'oz', 'lb']);
+const VOLUME_UNITS = new Set(['ml', 'l', 'tsp', 'tbsp', 'cup']);
 
 function normalizeUnit(unit) {
   if (!unit) return unit;
@@ -52,6 +75,47 @@ function convertUnits(quantity, fromUnit, toUnit) {
   return null; // incompatible units
 }
 
+/**
+ * Convert between any units, bridging weight↔volume via density when available.
+ * Returns converted value or null if conversion is not possible.
+ */
+function convertWithDensity(quantity, fromUnit, toUnit, gPerMl) {
+  const from = normalizeUnit(fromUnit);
+  const to = normalizeUnit(toUnit);
+
+  if (from === to) return quantity;
+
+  // 1. Try same-category conversion first
+  const direct = convertUnits(quantity, from, to);
+  if (direct !== null) return direct;
+
+  // 2. Need density for cross-category
+  if (!gPerMl || gPerMl <= 0) return null;
+
+  const fromIsWeight = WEIGHT_UNITS.has(from);
+  const fromIsVolume = VOLUME_UNITS.has(from);
+  const toIsWeight = WEIGHT_UNITS.has(to);
+  const toIsVolume = VOLUME_UNITS.has(to);
+
+  // 3. Volume → Weight: convert to ml (base volume), multiply by density → grams, convert to target weight
+  if (fromIsVolume && toIsWeight) {
+    const inMl = convertUnits(quantity, from, 'ml');
+    if (inMl === null) return null;
+    const inGrams = inMl * gPerMl;
+    return convertUnits(inGrams, 'g', to);
+  }
+
+  // 4. Weight → Volume: convert to grams (base weight), divide by density → ml, convert to target volume
+  if (fromIsWeight && toIsVolume) {
+    const inGrams = convertUnits(quantity, from, 'g');
+    if (inGrams === null) return null;
+    const inMl = inGrams / gPerMl;
+    return convertUnits(inMl, 'ml', to);
+  }
+
+  return null;
+}
+
 function round2(num) {
   return Math.round(num * 100) / 100;
 }
@@ -72,7 +136,10 @@ function calculateDishCost(dishIngredients) {
       continue;
     }
 
-    const converted = convertUnits(di.quantity, di.unit, di.base_unit);
+    // Try density-aware conversion first, fall back to basic
+    const converted = di.g_per_ml
+      ? convertWithDensity(di.quantity, di.unit, di.base_unit, di.g_per_ml)
+      : convertUnits(di.quantity, di.unit, di.base_unit);
 
     if (converted === null) {
       lineItems.push({
@@ -110,4 +177,4 @@ function suggestPrice(dishCost, targetPercent = 30) {
   return round2(dishCost / (targetPercent / 100));
 }
 
-module.exports = { calculateDishCost, calculateFoodCostPercent, suggestPrice, convertUnits, normalizeUnit, round2 };
+module.exports = { calculateDishCost, calculateFoodCostPercent, suggestPrice, convertUnits, convertWithDensity, normalizeUnit, round2 };

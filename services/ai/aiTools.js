@@ -7,6 +7,7 @@
 const { getDb } = require('../../db/database');
 const { saveSnapshot } = require('./aiHistory');
 const { getDishAllergens, getDishAllergensBatch } = require('../allergenDetector');
+const { round2 } = require('../costCalculator');
 
 // ─── Tool Definitions (sent to Haiku) ────────────────────────────
 
@@ -1207,16 +1208,35 @@ const handlers = {
       return { description: 'Dish not found', message: 'Could not find that dish.' };
     }
 
+    const batchYield = dish.batch_yield || 1;
+    const multiplier = input.target_portions / batchYield;
+
+    // Fetch ingredients for actual quantity calculation
+    const ingredients = db.prepare(`
+      SELECT di.quantity, di.unit, i.name AS ingredient_name, i.g_per_ml
+      FROM dish_ingredients di
+      JOIN ingredients i ON i.id = di.ingredient_id
+      WHERE di.dish_id = ?
+      ORDER BY di.sort_order, di.id
+    `).all(input.dish_id);
+
+    const scaledLines = ingredients.map(ing => {
+      const scaled = round2(ing.quantity * multiplier);
+      return `- ${ing.ingredient_name}: ${ing.quantity} ${ing.unit} → ${scaled} ${ing.unit}`;
+    });
+
+    const summary = `Scaling "${dish.name}" from ${batchYield} to ${input.target_portions} portions (${multiplier.toFixed(2)}x):\n${scaledLines.join('\n')}`;
+
     if (opts.preview) {
       return {
-        description: `Smart scaling advice for "${dish.name}" to ${input.target_portions} portions`,
-        message: `I'll provide scaling advice for "${dish.name}" from ${dish.batch_yield} to ${input.target_portions} portions.`,
+        description: `Scale "${dish.name}" to ${input.target_portions} portions`,
+        message: summary + '\n\nI can also provide advice on adjustments for salt, leavening, and timing at this scale.',
         needsAiProcessing: true,
       };
     }
 
-    // Text-only — Haiku provides advice, no DB mutation
-    return { success: true, message: 'Scaling advice provided.' };
+    // Advisory only — no DB mutation
+    return { success: true, message: summary };
   },
 
   convert_units(input, opts) {

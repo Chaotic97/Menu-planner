@@ -58,3 +58,57 @@ export function compatibleUnits(fromUnit) {
   if (!g) return [];
   return g.data.units.filter(u => u !== fromUnit);
 }
+
+/**
+ * Convert between any units, bridging weight↔volume via density (g/ml) when available.
+ * Returns converted value or null if conversion is not possible.
+ */
+export function convertWithDensity(value, fromUnit, toUnit, gPerMl) {
+  if (isNaN(value) || fromUnit === toUnit) return value;
+
+  // 1. Try same-category first
+  const direct = convertUnit(value, fromUnit, toUnit);
+  if (direct !== null) return direct;
+
+  // 2. Need density for cross-category
+  if (!gPerMl || gPerMl <= 0) return null;
+
+  const fromGroup = getUnitGroup(fromUnit);
+  const toGroup = getUnitGroup(toUnit);
+  if (!fromGroup || !toGroup) return null;
+
+  // Volume → Weight
+  if (fromGroup.group === 'volume' && toGroup.group === 'weight') {
+    const inMl = value * fromGroup.data.toBase[fromUnit]; // convert to ml
+    const inGrams = inMl * gPerMl;
+    return inGrams / toGroup.data.toBase[toUnit]; // convert grams to target
+  }
+
+  // Weight → Volume
+  if (fromGroup.group === 'weight' && toGroup.group === 'volume') {
+    const inGrams = value * fromGroup.data.toBase[fromUnit]; // convert to grams
+    const inMl = inGrams / gPerMl;
+    return inMl / toGroup.data.toBase[toUnit]; // convert ml to target
+  }
+
+  return null;
+}
+
+/**
+ * Return all units a given unit can convert to.
+ * Same-category always included; opposite category (weight↔volume) included when gPerMl is truthy.
+ */
+export function allCompatibleUnits(fromUnit, gPerMl) {
+  const sameCategory = compatibleUnits(fromUnit);
+  if (!gPerMl) return sameCategory;
+
+  const fromGroup = getUnitGroup(fromUnit);
+  if (!fromGroup) return sameCategory;
+
+  // Add units from the opposite category
+  const oppositeKey = fromGroup.group === 'weight' ? 'volume' : fromGroup.group === 'volume' ? 'weight' : null;
+  if (!oppositeKey) return sameCategory;
+
+  const oppositeUnits = UNIT_GROUPS[oppositeKey].units;
+  return [...sameCategory, ...oppositeUnits];
+}

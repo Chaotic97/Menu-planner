@@ -117,7 +117,7 @@ router.get('/:id', (req, res) => {
 
   // Get ingredients (ordered by sort_order)
   const ingRows = db.prepare(`
-    SELECT di.*, i.name AS ingredient_name, i.unit_cost, i.base_unit, i.category AS ingredient_category
+    SELECT di.*, i.name AS ingredient_name, i.unit_cost, i.base_unit, i.category AS ingredient_category, i.g_per_ml
     FROM dish_ingredients di
     JOIN ingredients i ON i.id = di.ingredient_id
     WHERE di.dish_id = ?
@@ -703,6 +703,9 @@ function saveIngredients(db, dishId, ingredients) {
   const updateIngredientCost = db.prepare(
     'UPDATE ingredients SET unit_cost = ?, base_unit = ? WHERE id = ?'
   );
+  const updateIngredientDensity = db.prepare(
+    'UPDATE ingredients SET g_per_ml = ? WHERE id = ?'
+  );
 
   for (const ing of seen.values()) {
     insertIngredient.run(ing.name);
@@ -715,6 +718,12 @@ function saveIngredients(db, dishId, ingredients) {
         updateIngredientCost.run(
           ing.unit_cost !== null ? parseFloat(ing.unit_cost) : null,
           ing.base_unit || ing.unit || 'g',
+          row.id
+        );
+      }
+      if (ing.g_per_ml !== undefined) {
+        updateIngredientDensity.run(
+          ing.g_per_ml !== null && ing.g_per_ml > 0 ? parseFloat(ing.g_per_ml) : null,
           row.id
         );
       }

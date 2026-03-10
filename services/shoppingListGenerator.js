@@ -1,5 +1,5 @@
 const { getDb } = require('../db/database');
-const { convertUnits, normalizeUnit, round2 } = require('./costCalculator');
+const { convertUnits, convertWithDensity, normalizeUnit, round2 } = require('./costCalculator');
 
 function generateShoppingList(menuId) {
   const db = getDb();
@@ -18,6 +18,7 @@ function generateShoppingList(menuId) {
       i.unit_cost,
       i.base_unit,
       i.category,
+      i.g_per_ml,
       d.name AS dish_name
     FROM menu_dishes md
     JOIN dishes d ON d.id = md.dish_id
@@ -42,15 +43,18 @@ function generateShoppingList(menuId) {
         total_quantity: 0,
         unit_cost: row.unit_cost,
         base_unit: row.base_unit,
+        g_per_ml: row.g_per_ml,
         used_in: [],
       };
     }
 
     const entry = aggregated[key];
 
-    // Try to convert to the same unit
+    // Try to convert to the same unit — use density if available for cross-category
     const targetUnit = entry.unit;
-    const converted = convertUnits(adjustedQty, row.unit, targetUnit);
+    const converted = entry.g_per_ml
+      ? convertWithDensity(adjustedQty, row.unit, targetUnit, entry.g_per_ml)
+      : convertUnits(adjustedQty, row.unit, targetUnit);
 
     if (converted !== null) {
       entry.total_quantity += converted;
@@ -81,7 +85,9 @@ function generateShoppingList(menuId) {
   let totalCost = 0;
   for (const item of Object.values(aggregated)) {
     if (item.unit_cost && item.unit_cost > 0) {
-      const qtyInBaseUnit = convertUnits(item.total_quantity, item.unit, item.base_unit);
+      const qtyInBaseUnit = item.g_per_ml
+        ? convertWithDensity(item.total_quantity, item.unit, item.base_unit, item.g_per_ml)
+        : convertUnits(item.total_quantity, item.unit, item.base_unit);
       if (qtyInBaseUnit !== null) {
         item.estimated_cost = round2(qtyInBaseUnit * item.unit_cost);
         totalCost += item.estimated_cost;

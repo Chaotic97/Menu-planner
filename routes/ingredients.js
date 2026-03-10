@@ -57,11 +57,14 @@ router.get('/', (req, res) => {
 // POST /api/ingredients - Create or upsert ingredient
 router.post('/', (req, res) => {
   const db = getDb();
-  const { name, unit_cost, base_unit, category } = req.body;
+  const { name, unit_cost, base_unit, category, g_per_ml } = req.body;
 
   if (!name) return res.status(400).json({ error: 'Name is required' });
   if (unit_cost !== undefined && (typeof unit_cost !== 'number' || isNaN(unit_cost) || unit_cost < 0)) {
     return res.status(400).json({ error: 'unit_cost must be a non-negative number' });
+  }
+  if (g_per_ml !== undefined && g_per_ml !== null && (typeof g_per_ml !== 'number' || isNaN(g_per_ml) || g_per_ml <= 0)) {
+    return res.status(400).json({ error: 'g_per_ml must be a positive number or null' });
   }
 
   const existing = db.prepare('SELECT id FROM ingredients WHERE name = ? COLLATE NOCASE').get(name);
@@ -73,6 +76,7 @@ router.post('/', (req, res) => {
     if (unit_cost !== undefined) { updates.push('unit_cost = ?'); params.push(unit_cost); }
     if (base_unit) { updates.push('base_unit = ?'); params.push(base_unit); }
     if (category) { updates.push('category = ?'); params.push(category); }
+    if (g_per_ml !== undefined) { updates.push('g_per_ml = ?'); params.push(g_per_ml); }
 
     if (updates.length) {
       params.push(existing.id);
@@ -96,10 +100,13 @@ router.post('/', (req, res) => {
 // PUT /api/ingredients/:id - Update ingredient
 router.put('/:id', (req, res) => {
   const db = getDb();
-  const { name, unit_cost, base_unit, category } = req.body;
+  const { name, unit_cost, base_unit, category, g_per_ml } = req.body;
 
   if (unit_cost !== undefined && (typeof unit_cost !== 'number' || isNaN(unit_cost) || unit_cost < 0)) {
     return res.status(400).json({ error: 'unit_cost must be a non-negative number' });
+  }
+  if (g_per_ml !== undefined && g_per_ml !== null && (typeof g_per_ml !== 'number' || isNaN(g_per_ml) || g_per_ml <= 0)) {
+    return res.status(400).json({ error: 'g_per_ml must be a positive number or null' });
   }
 
   const updates = [];
@@ -108,6 +115,7 @@ router.put('/:id', (req, res) => {
   if (unit_cost !== undefined) { updates.push('unit_cost = ?'); params.push(unit_cost); }
   if (base_unit) { updates.push('base_unit = ?'); params.push(base_unit); }
   if (category) { updates.push('category = ?'); params.push(category); }
+  if (g_per_ml !== undefined) { updates.push('g_per_ml = ?'); params.push(g_per_ml); }
 
   if (!updates.length) return res.status(400).json({ error: 'Nothing to update' });
 
@@ -160,6 +168,28 @@ router.post('/:id/allergens', (req, res) => {
 
   req.broadcast('ingredient_updated', { id: parseInt(req.params.id) }, req.headers['x-client-id']);
   res.json({ success: true });
+});
+
+// PATCH /api/ingredients/bulk-density - Bulk update density values
+router.patch('/bulk-density', (req, res) => {
+  const db = getDb();
+  const { items } = req.body;
+
+  if (!Array.isArray(items) || !items.length) {
+    return res.status(400).json({ error: 'items array is required' });
+  }
+
+  const update = db.prepare('UPDATE ingredients SET g_per_ml = ? WHERE id = ?');
+  let updated = 0;
+
+  for (const item of items) {
+    if (!item.id) continue;
+    if (item.g_per_ml !== null && (typeof item.g_per_ml !== 'number' || isNaN(item.g_per_ml) || item.g_per_ml <= 0)) continue;
+    const result = update.run(item.g_per_ml, item.id);
+    if (result.changes > 0) updated++;
+  }
+
+  res.json({ updated });
 });
 
 module.exports = router;

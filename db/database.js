@@ -369,6 +369,8 @@ async function initialize() {
     `ALTER TABLE ingredients DROP COLUMN in_stock`,
     // Add is_temporary flag for temp dishes that live within a menu
     `ALTER TABLE dishes ADD COLUMN is_temporary INTEGER DEFAULT 0`,
+    // Ingredient density for cross-category (weight↔volume) conversion
+    `ALTER TABLE ingredients ADD COLUMN g_per_ml REAL DEFAULT NULL`,
     // WebAuthn passkey credentials
     `CREATE TABLE IF NOT EXISTS passkey_credentials (
       id         TEXT PRIMARY KEY,

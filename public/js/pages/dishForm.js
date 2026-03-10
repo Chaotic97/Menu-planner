@@ -7,7 +7,7 @@ import { CATEGORIES } from '../data/categories.js';
 import { UNITS } from '../data/units.js';
 import { loadAllergenKeywords, detectAllergensClient, ALLERGEN_INFO } from '../data/allergenKeywords.js';
 import { escapeHtml } from '../utils/escapeHtml.js';
-import { convertUnit as rawConvert, compatibleUnits } from '../utils/unitConversion.js';
+import { convertUnit as rawConvert, compatibleUnits, convertWithDensity as rawConvertDensity, allCompatibleUnits } from '../utils/unitConversion.js';
 import { ALLERGEN_LIST, capitalize } from '../data/allergens.js';
 import { loadingHTML } from '../utils/loadingState.js';
 
@@ -30,8 +30,8 @@ function renderAllergenBadgesWithSource(allergens) {
   }).join('') + '</div>';
 }
 
-function convertUnit(qty, fromUnit, toUnit) {
-  const result = rawConvert(qty, fromUnit, toUnit);
+function convertUnit(qty, fromUnit, toUnit, gPerMl) {
+  const result = gPerMl ? rawConvertDensity(qty, fromUnit, toUnit, gPerMl) : rawConvert(qty, fromUnit, toUnit);
   if (result === null) return null;
   if (result >= 100) return Math.round(result * 10) / 10;
   if (result >= 10)  return Math.round(result * 100) / 100;
@@ -122,6 +122,13 @@ function setupAutocomplete(input, updateAllergenPreviewFn) {
           item.textContent = ing.name;
           item.addEventListener('click', () => {
             input.value = ing.name;
+            // Store density data on the ingredient row
+            const row = input.closest('.ingredient-row');
+            if (row && ing.g_per_ml) {
+              row.dataset.gPerMl = ing.g_per_ml;
+              const densityInput = row.querySelector('.ing-density');
+              if (densityInput) densityInput.value = ing.g_per_ml;
+            }
             removeDropdown();
             updateAllergenPreviewFn();
           });
@@ -272,19 +279,27 @@ function setupIngredientHandlers(ctx) {
 
       const fromUnit = row.querySelector('.ing-unit').value;
       const fromQty  = parseFloat(row.querySelector('.ing-qty').value) || 0;
-      const compat   = compatibleUnits(fromUnit);
+      const gPerMl   = parseFloat(row.dataset.gPerMl) || null;
+      const compat   = allCompatibleUnits(fromUnit, gPerMl);
       if (!compat.length) return;
 
+      // Determine which units are cross-category (need density)
+      const sameCat = new Set(compatibleUnits(fromUnit));
+
       const defaultTarget = compat[0];
-      const initialResult = fromQty ? convertUnit(fromQty, fromUnit, defaultTarget) : null;
+      const initialResult = fromQty ? convertUnit(fromQty, fromUnit, defaultTarget, gPerMl) : null;
+      const initialIsCross = !sameCat.has(defaultTarget);
 
       converterEl.innerHTML = `
         <div class="ing-converter-inner">
           <span class="ing-converter-label">Convert <strong>${fromQty || '?'} ${fromUnit}</strong> to:</span>
           <select class="input ing-converter-target" style="flex:0 0 auto;min-width:80px;">
-            ${compat.map(u => `<option value="${u}">${u}</option>`).join('')}
+            ${compat.map(u => {
+              const isCross = !sameCat.has(u);
+              return `<option value="${u}">${u}${isCross ? ' (density)' : ''}</option>`;
+            }).join('')}
           </select>
-          <span class="ing-converter-result">${initialResult !== null ? `= <strong>${initialResult} ${defaultTarget}</strong>` : '—'}</span>
+          <span class="ing-converter-result">${initialResult !== null ? `= <strong>${initialResult} ${defaultTarget}</strong>${initialIsCross ? ' <span class="ing-converter-density-tag">density</span>' : ''}` : '—'}</span>
           <button type="button" class="btn btn-sm btn-primary ing-converter-apply">Apply</button>
           <button type="button" class="btn btn-sm ing-converter-cancel">&#10005;</button>
         </div>
@@ -299,8 +314,9 @@ function setupIngredientHandlers(ctx) {
       function updateResult() {
         const qty = parseFloat(row.querySelector('.ing-qty').value) || 0;
         const to  = targetSel.value;
-        const r   = convertUnit(qty, fromUnit, to);
-        resultSpan.innerHTML = r !== null ? `= <strong>${r} ${to}</strong>` : '—';
+        const r   = convertUnit(qty, fromUnit, to, gPerMl);
+        const isCross = !sameCat.has(to);
+        resultSpan.innerHTML = r !== null ? `= <strong>${r} ${to}</strong>${isCross ? ' <span class="ing-converter-density-tag">density</span>' : ''}` : '—';
       }
 
       targetSel.addEventListener('change', updateResult);
@@ -309,11 +325,11 @@ function setupIngredientHandlers(ctx) {
       applyBtn.addEventListener('click', () => {
         const qty = parseFloat(row.querySelector('.ing-qty').value) || 0;
         const to  = targetSel.value;
-        const r   = convertUnit(qty, fromUnit, to);
+        const r   = convertUnit(qty, fromUnit, to, gPerMl);
         if (r === null) return;
         row.querySelector('.ing-qty').value = r;
         row.querySelector('.ing-unit').value = to;
-        const newCompat = compatibleUnits(to);
+        const newCompat = allCompatibleUnits(to, gPerMl);
         btn.disabled = !newCompat.length;
         btn.style.opacity = newCompat.length ? '' : '0.35';
         converterEl.style.display = 'none';
@@ -331,6 +347,25 @@ function setupIngredientHandlers(ctx) {
   ingredientsList.addEventListener('input', (e) => {
     if (e.target.classList.contains('ing-name')) {
       updatePreview();
+    }
+    if (e.target.classList.contains('ing-density')) {
+      const row = e.target.closest('.ingredient-row');
+      if (!row) return;
+      const val = parseFloat(e.target.value) || null;
+      if (val && val > 0) {
+        row.dataset.gPerMl = val;
+      } else {
+        delete row.dataset.gPerMl;
+      }
+      // Update converter button state
+      const unitSel = row.querySelector('.ing-unit');
+      const btn = row.querySelector('.ing-convert-btn');
+      if (unitSel && btn) {
+        const compat = allCompatibleUnits(unitSel.value, val);
+        btn.disabled = !compat.length;
+        btn.style.opacity = compat.length ? '' : '0.35';
+        btn.style.cursor = compat.length ? '' : 'not-allowed';
+      }
     }
   });
 
@@ -594,6 +629,7 @@ function collectFormData(ctx) {
     } else {
       const nameVal = row.querySelector('.ing-name').value.trim();
       if (!nameVal) return null;
+      const densityVal = row.querySelector('.ing-density')?.value;
       return {
         name: nameVal,
         quantity: parseFloat(row.querySelector('.ing-qty').value) || 0,
@@ -601,6 +637,7 @@ function collectFormData(ctx) {
         prep_note: row.querySelector('.ing-prep').value.trim(),
         unit_cost: row.querySelector('.ing-unit-cost').value !== '' ? parseFloat(row.querySelector('.ing-unit-cost').value) : null,
         base_unit: row.querySelector('.ing-base-unit').value,
+        g_per_ml: densityVal !== '' && densityVal !== undefined ? parseFloat(densityVal) || null : undefined,
         sort_order: idx,
       };
     }
@@ -952,6 +989,11 @@ export async function renderDishForm(container, dishId) {
           <div class="collapsible-section" id="section-ingredients">
             ${collapsibleHeader('Ingredients', ingredientSubtitle)}
             <div class="collapsible-section__body">
+              <div class="dv-scale-bar" style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">
+                <span class="text-muted" style="font-size:0.83rem;">Scale:</span>
+                <input type="number" id="df-scale-input" class="input" style="width:70px;padding:4px 8px;font-size:0.85rem;" step="0.5" min="0.5" placeholder="${dish ? (dish.batch_yield || 1) : 1}" title="Preview scaled quantities (non-destructive)">
+                <span class="text-muted" style="font-size:0.78rem;">portions (preview only)</span>
+              </div>
               <div id="ingredients-list">
                 ${ingredients.map((ing, i) =>
                   ing.row_type === 'section'
@@ -1151,8 +1193,68 @@ export async function renderDishForm(container, dishId) {
   setupDirectionHandlers(ctx);
   setupFormSubmit(ctx);
   setupSyncListener(isEdit, dishId);
+  setupFormScaling(ctx);
 }
 
+
+/** Non-destructive scaling overlay for dish form — shows scaled quantities without modifying fields */
+function setupFormScaling(ctx) {
+  const { container, dish } = ctx;
+  const scaleInput = container.querySelector('#df-scale-input');
+  if (!scaleInput) return;
+
+  const batchYield = (dish && dish.batch_yield) || 1;
+
+  function autoNormalize(qty, unit) {
+    if (unit === 'g' && qty >= 1000) return { qty: Math.round(qty / 100) / 10, unit: 'kg' };
+    if (unit === 'kg' && qty < 0.1 && qty > 0) return { qty: Math.round(qty * 10000) / 10, unit: 'g' };
+    if (unit === 'ml' && qty >= 1000) return { qty: Math.round(qty / 100) / 10, unit: 'L' };
+    if (unit === 'L' && qty < 0.1 && qty > 0) return { qty: Math.round(qty * 10000) / 10, unit: 'ml' };
+    return { qty: Math.round(qty * 100) / 100, unit };
+  }
+
+  function updateOverlays() {
+    const targetPortions = parseFloat(scaleInput.value);
+    const rows = container.querySelectorAll('.ingredient-row');
+
+    if (!targetPortions || targetPortions === batchYield) {
+      // Clear all overlays
+      rows.forEach(row => {
+        const badge = row.querySelector('.dv-scale-badge');
+        if (badge) badge.remove();
+      });
+      return;
+    }
+
+    const multiplier = targetPortions / batchYield;
+
+    rows.forEach(row => {
+      const qtyInput = row.querySelector('.ing-qty');
+      const unitSel = row.querySelector('.ing-unit');
+      if (!qtyInput || !unitSel) return;
+
+      const origQty = parseFloat(qtyInput.value) || 0;
+      if (!origQty) {
+        const existing = row.querySelector('.dv-scale-badge');
+        if (existing) existing.remove();
+        return;
+      }
+
+      const scaled = origQty * multiplier;
+      const norm = autoNormalize(scaled, unitSel.value);
+
+      let badge = row.querySelector('.dv-scale-badge');
+      if (!badge) {
+        badge = document.createElement('span');
+        badge.className = 'dv-scale-badge';
+        qtyInput.parentElement.appendChild(badge);
+      }
+      badge.textContent = `${norm.qty} ${norm.unit}`;
+    });
+  }
+
+  scaleInput.addEventListener('input', updateOverlays);
+}
 
 // ── Row templates ────────────────────────────────────────────────────────────
 
@@ -1171,10 +1273,11 @@ function sectionHeaderRow(header, index) {
 
 function ingredientRow(ing, index) {
   const currentUnit = ing?.unit || 'g';
-  const compat = compatibleUnits(currentUnit);
+  const gPerMl = ing?.g_per_ml || null;
+  const compat = allCompatibleUnits(currentUnit, gPerMl);
   const canConvert = compat.length > 0;
   return `
-    <div class="ingredient-row" data-index="${index}" draggable="true">
+    <div class="ingredient-row" data-index="${index}" draggable="true"${gPerMl ? ` data-g-per-ml="${gPerMl}"` : ''}>
       <span class="drag-handle" title="Drag to reorder">⠿</span>
       <div class="ing-main-controls">
         <div class="ing-field ing-name-field">
@@ -1204,6 +1307,10 @@ function ingredientRow(ing, index) {
           ${UNITS.map(u => `<option value="${u.value}" ${(ing && ing.base_unit ? ing.base_unit : currentUnit) === u.value ? 'selected' : ''}>${u.label}</option>`).join('')}
         </select>
         <span class="ing-cost-hint">${ing && ing.unit_cost ? `$${ing.unit_cost}/${ing.base_unit}` : 'No cost set'}</span>
+        <span class="ing-cost-label" style="margin-left:8px;">Density:</span>
+        <input type="number" class="input ing-density" placeholder="g/ml" step="0.01" min="0"
+               value="${gPerMl || ''}" style="width:70px;" title="Density in g/ml (for weight↔volume conversion)">
+        <span class="ing-cost-label">g/ml</span>
       </div>
       <div class="ing-converter" style="display:none;"></div>
     </div>

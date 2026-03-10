@@ -4667,6 +4667,58 @@ textarea.input { resize: vertical; min-height: 80px; }
 .dv-sub-swap { font-size: 0.9rem; }
 .dv-sub-notes { font-size: 0.8rem; color: var(--text-muted); font-style: italic; }
 
+/* --- Dish View: scaling controls --- */
+.dv-card-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+.dv-scale-control {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.dv-scale-label {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+.dv-scale-input {
+  width: 70px;
+  padding: 4px 8px;
+  font-size: 0.85rem;
+  text-align: center;
+}
+
+/* --- Dish Form: scaling badge overlay --- */
+.dv-scale-badge {
+  display: inline-block;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--primary);
+  background: rgba(var(--primary-rgb), 0.1);
+  border-radius: var(--radius-sm);
+  padding: 1px 6px;
+  margin-left: 6px;
+  white-space: nowrap;
+}
+
+/* --- Inline converter: density tag --- */
+.ing-converter-density-tag {
+  display: inline-block;
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+  background: var(--surface-alt, #f0f0ec);
+  border-radius: 3px;
+  padding: 1px 4px;
+  margin-left: 4px;
+  vertical-align: middle;
+}
+
 /* --- Dish View: responsive — single column on tablet/mobile --- */
 @media (max-width: 768px) {
   .dv-layout {
