@@ -72,7 +72,9 @@ export async function renderTodoView(container, menuId) {
       try {
         const settings = await getAiSettings();
         aiAvailable = !!settings.hasApiKey;
-      } catch {}
+      } catch (err) {
+        console.warn('AI settings check failed, falling back to standard generation:', err.message);
+      }
       if (aiAvailable) {
         await aiGenerateTasks(activeMenuId);
       } else {

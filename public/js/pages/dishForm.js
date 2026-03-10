@@ -37,91 +37,12 @@ function convertUnit(qty, fromUnit, toUnit) {
   return Math.round(result * 10000) / 10000;
 }
 
-export async function renderDishForm(container, dishId) {
-  const isEdit = !!dishId;
-  let dish = null;
-  let allergenKeywords = [];
+// ── HTML builder ────────────────────────────────────────────────────────────
 
-  container.innerHTML = '<div class="loading">Loading...</div>';
-
-  try {
-    allergenKeywords = await loadAllergenKeywords();
-    if (isEdit) {
-      dish = await getDish(dishId);
-    }
-  } catch (err) {
-    container.innerHTML = `<div class="error">Failed to load: ${escapeHtml(err.message)}</div>`;
-    return;
-  }
-
-  // Check for imported recipe data (from URL import)
-  let importedData = null;
-  if (!isEdit) {
-    try {
-      const stored = sessionStorage.getItem('importedRecipe');
-      if (stored) {
-        importedData = JSON.parse(stored);
-        sessionStorage.removeItem('importedRecipe');
-      }
-    } catch {}
-  }
-
-  // Build ingredients list from dish data or imported data
-  // dish.ingredients now contains merged rows: { row_type: 'ingredient'|'section', ... }
-  let ingredients;
-  if (dish) {
-    ingredients = dish.ingredients; // already has row_type from API
-  } else if (importedData && importedData.ingredients) {
-    ingredients = importedData.ingredients.map(ing => {
-      if (ing.section_header) {
-        return { row_type: 'section', label: ing.section_header };
-      }
-      return {
-        row_type: 'ingredient',
-        ingredient_name: ing.name,
-        quantity: ing.quantity,
-        unit: ing.unit,
-        prep_note: ing.prep_note || '',
-      };
-    });
-  } else {
-    ingredients = [];
-  }
-
-  // Tags
-  const existingTags = dish ? (dish.tags || []) : [];
-  // Substitutions
-  const existingSubs = dish ? (dish.substitutions || []) : [];
-  // Service Components (never populated from URL import)
-  const existingComponents = dish ? (dish.components || []) : [];
-  // Service Directions (plating/assembly steps)
-  const existingServiceDirections = dish ? (dish.service_directions || []) : [];
-
-  // Directions (structured steps)
-  let existingDirections;
-  if (dish && dish.directions && dish.directions.length) {
-    existingDirections = dish.directions;
-  } else if (importedData && importedData.directions && importedData.directions.length) {
-    existingDirections = importedData.directions;
-  } else if (importedData && importedData.instructions) {
-    // Parse legacy free-text instructions into direction steps
-    existingDirections = importedData.instructions
-      .split(/\n+/)
-      .map(line => line.trim())
-      .filter(line => line.length > 0)
-      .map(line => {
-        if (/^[^a-z]*:$/.test(line) || (line.endsWith(':') && !/^\d/.test(line))) {
-          return { type: 'section', text: line.replace(/:$/, '').trim() };
-        }
-        return { type: 'step', text: line };
-      });
-  } else {
-    existingDirections = [];
-  }
-
-  const backTo = sessionStorage.getItem('dishNav_backTo') || '#/dishes';
-
-  // Compute subtitle values for collapsible sections
+function buildDishFormHTML({
+  isEdit, dish, importedData, ingredients, existingTags, existingSubs,
+  existingComponents, existingServiceDirections, existingDirections, backTo,
+}) {
   const ingredientCount = ingredients.filter(r => r.row_type === 'ingredient').length;
   const ingredientSubtitle = ingredientCount ? `${ingredientCount} ingredient${ingredientCount !== 1 ? 's' : ''}` : '';
   const prepStepCount = existingDirections.filter(d => d.type === 'step').length;
@@ -134,7 +55,7 @@ export async function renderDishForm(container, dishId) {
     : '';
   const photoSubtitle = dish && dish.photo_path ? 'Uploaded' : '';
 
-  container.innerHTML = `
+  return `
     <div class="page-header">
       <a href="${backTo}" class="btn btn-back">&larr; Back</a>
       <h1>${isEdit ? 'Edit Dish' : 'New Dish'}</h1>
@@ -358,13 +279,373 @@ export async function renderDishForm(container, dishId) {
       </div>
     </form>
   `;
+}
+
+// ── Photo handlers ──────────────────────────────────────────────────────────
+
+function setupPhotoHandlers(container, { isEdit, dishId, photoInput }) {
+  const photoArea = container.querySelector('#photo-upload-area');
+
+  photoArea.addEventListener('click', (e) => {
+    if (e.target.closest('#photo-delete-btn')) return;
+    const preview = container.querySelector('#photo-preview');
+    if (preview && preview.tagName === 'IMG' && e.target === preview) {
+      openLightbox(preview.src, 'Preview');
+      return;
+    }
+    photoInput.click();
+  });
+
+  photoArea.addEventListener('click', async (e) => {
+    const deleteBtn = e.target.closest('#photo-delete-btn');
+    if (!deleteBtn) return;
+    e.stopPropagation();
+
+    if (isEdit) {
+      deleteBtn.disabled = true;
+      try {
+        await deleteDishPhoto(dishId);
+        showToast('Photo removed');
+      } catch (_err) {
+        showToast('Failed to remove photo', 'error');
+        deleteBtn.disabled = false;
+        return;
+      }
+    }
+
+    const wrap = container.querySelector('#photo-preview-wrap');
+    if (wrap) {
+      wrap.outerHTML = '<div class="photo-placeholder" id="photo-preview"><span>Tap to upload photo</span></div>';
+    }
+    photoInput.value = '';
+  });
+
+  photoInput.addEventListener('change', async () => {
+    const file = photoInput.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      const existingWrap = container.querySelector('#photo-preview-wrap');
+      const existingPlaceholder = container.querySelector('#photo-preview');
+      const newHtml = `<div class="photo-preview-wrap" id="photo-preview-wrap">
+        <img src="${evt.target.result}" alt="Dish photo" class="photo-preview" id="photo-preview">
+        <button type="button" class="photo-delete-btn" id="photo-delete-btn" title="Remove photo">&times;</button>
+      </div>`;
+      if (existingWrap) {
+        existingWrap.outerHTML = newHtml;
+      } else if (existingPlaceholder) {
+        existingPlaceholder.outerHTML = newHtml;
+      }
+    };
+    reader.readAsDataURL(file);
+
+    if (isEdit) {
+      const formData = new FormData();
+      formData.append('photo', file);
+      try {
+        await uploadDishPhoto(dishId, formData);
+        showToast('Photo updated');
+      } catch (_err) {
+        showToast('Photo upload failed', 'error');
+      }
+    }
+  });
+}
+
+// ── AI cleanup ──────────────────────────────────────────────────────────────
+
+function setupAiCleanup(container, dish) {
+  const aiCleanupBtn = container.querySelector('#ai-cleanup-btn');
+  const aiCleanupPreview = container.querySelector('#ai-cleanup-preview');
+  if (!aiCleanupBtn || !aiCleanupPreview) return;
+
+  aiCleanupBtn.addEventListener('click', async () => {
+    if (!dish) return;
+
+    aiCleanupBtn.disabled = true;
+    aiCleanupBtn.textContent = 'Thinking...';
+    aiCleanupPreview.style.display = 'block';
+    aiCleanupPreview.innerHTML = '<div class="cb-processing"><div class="cb-preview-spinner"></div><span>Cleaning up directions...</span></div>';
+
+    try {
+      const result = await aiCleanupRecipe(dish.id);
+
+      const beforeHtml = result.before.map(line => `<div class="ai-diff-line">${escapeHtml(line)}</div>`).join('');
+      const afterHtml = result.after.map(line => `<div class="ai-diff-line">${escapeHtml(line)}</div>`).join('');
+
+      aiCleanupPreview.innerHTML = `
+        <div class="ai-diff-container">
+          <div class="ai-diff-panel">
+            <div class="ai-diff-header">Before</div>
+            <div class="ai-diff-body">${beforeHtml}</div>
+          </div>
+          <div class="ai-diff-panel ai-diff-after">
+            <div class="ai-diff-header">After</div>
+            <div class="ai-diff-body">${afterHtml}</div>
+          </div>
+        </div>
+        <div class="ai-diff-actions">
+          <button class="btn btn-primary btn-sm" id="ai-cleanup-confirm">Apply Changes</button>
+          <button class="btn btn-secondary btn-sm" id="ai-cleanup-cancel">Cancel</button>
+        </div>
+      `;
+
+      container.querySelector('#ai-cleanup-confirm').addEventListener('click', async () => {
+        try {
+          const confirmResult = await aiConfirm(result.confirmationId);
+          if (confirmResult.success) {
+            showToast('Directions cleaned up', 'success', 15000, confirmResult.undoId ? {
+              label: 'Undo',
+              onClick: async () => {
+                try {
+                  await aiUndo(confirmResult.undoId);
+                  showToast('Directions restored', 'success');
+                  const { renderDishForm } = await import('./dishForm.js');
+                  renderDishForm(container.parentElement || container, dish.id);
+                } catch (err) {
+                  showToast('Undo failed: ' + err.message, 'error');
+                }
+              },
+            } : undefined);
+
+            const { renderDishForm } = await import('./dishForm.js');
+            renderDishForm(container.parentElement || container, dish.id);
+          } else {
+            showToast(confirmResult.response || 'Failed to apply', 'error');
+          }
+        } catch (err) {
+          showToast(err.message || 'Failed to apply changes', 'error');
+        }
+      });
+
+      container.querySelector('#ai-cleanup-cancel').addEventListener('click', () => {
+        aiCleanupPreview.style.display = 'none';
+        aiCleanupPreview.innerHTML = '';
+      });
+
+    } catch (err) {
+      aiCleanupPreview.innerHTML = `<div class="ai-cleanup-error">${escapeHtml(err.message || 'Cleanup failed')}</div>`;
+    } finally {
+      aiCleanupBtn.disabled = false;
+      aiCleanupBtn.innerHTML = `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.5 5.5L19 10l-5.5 1.5L12 17l-1.5-5.5L5 10l5.5-1.5L12 3z"/></svg> Clean up with AI`;
+    }
+  });
+}
+
+// ── Form data collection ────────────────────────────────────────────────────
+
+function collectFormData(container, { ingredientsList, subsList, manualCostsList, componentsList, directionsList, svcDirectionsList, dish }) {
+  const name = container.querySelector('#dish-name').value.trim();
+
+  // Collect ALL rows in DOM order (ingredients + section headers)
+  const allRows = ingredientsList.querySelectorAll('.ingredient-row, .section-header-row');
+  const ingData = Array.from(allRows).map((row, idx) => {
+    if (row.classList.contains('section-header-row')) {
+      const label = row.querySelector('.section-header-label').value.trim();
+      return label ? { section_header: label, sort_order: idx } : null;
+    } else {
+      const nameVal = row.querySelector('.ing-name').value.trim();
+      if (!nameVal) return null;
+      return {
+        name: nameVal,
+        quantity: parseFloat(row.querySelector('.ing-qty').value) || 0,
+        unit: row.querySelector('.ing-unit').value,
+        prep_note: row.querySelector('.ing-prep').value.trim(),
+        unit_cost: row.querySelector('.ing-unit-cost').value !== '' ? parseFloat(row.querySelector('.ing-unit-cost').value) : null,
+        base_unit: row.querySelector('.ing-base-unit').value,
+        sort_order: idx,
+      };
+    }
+  }).filter(Boolean);
+
+  // Collect tags
+  const tagsInput = container.querySelector('#dish-tags').value;
+  const tags = tagsInput.split(',').map(t => t.trim()).filter(Boolean);
+
+  // Collect substitutions
+  const subRows = subsList.querySelectorAll('.substitution-row');
+  const substitutions = Array.from(subRows).map(row => ({
+    allergen: row.querySelector('.sub-allergen').value,
+    original_ingredient: row.querySelector('.sub-original').value.trim(),
+    substitute_ingredient: row.querySelector('.sub-substitute').value.trim(),
+    notes: row.querySelector('.sub-notes')?.value.trim() || '',
+  })).filter(s => s.allergen && s.original_ingredient && s.substitute_ingredient);
+
+  // Collect manual cost items
+  const costRows = manualCostsList.querySelectorAll('.manual-cost-row');
+  const manual_costs = Array.from(costRows).map(row => ({
+    label: row.querySelector('.manual-cost-label').value.trim(),
+    amount: parseFloat(row.querySelector('.manual-cost-amount').value) || 0,
+  })).filter(item => item.label || item.amount > 0);
+
+  // Collect service components
+  const compRows = componentsList.querySelectorAll('.component-row');
+  const components = Array.from(compRows).map((row, idx) => ({
+    name: row.querySelector('.comp-name').value.trim(),
+    sort_order: idx,
+  })).filter(c => c.name);
+
+  // Collect directions
+  const dirRows = directionsList.querySelectorAll('.dir-step-row, .dir-section-row');
+  const directions = Array.from(dirRows).map((row, idx) => {
+    if (row.classList.contains('dir-section-row')) {
+      const label = row.querySelector('.dir-section-label').value.trim();
+      return label ? { type: 'section', text: label, sort_order: idx } : null;
+    } else {
+      const text = row.querySelector('.dir-text').value.trim();
+      return text ? { type: 'step', text, sort_order: idx } : null;
+    }
+  }).filter(Boolean);
+
+  // Collect service directions
+  const svcDirRows = svcDirectionsList.querySelectorAll('.svc-dir-step-row, .svc-dir-section-row');
+  const service_directions = Array.from(svcDirRows).map((row, idx) => {
+    if (row.classList.contains('svc-dir-section-row')) {
+      const label = row.querySelector('.svc-dir-section-label').value.trim();
+      return label ? { type: 'section', text: label, sort_order: idx } : null;
+    } else {
+      const text = row.querySelector('.svc-dir-text').value.trim();
+      return text ? { type: 'step', text, sort_order: idx } : null;
+    }
+  }).filter(Boolean);
+
+  // If directions were added, clear legacy chefs_notes; otherwise preserve it
+  const hasDirections = directions.some(d => d.type === 'step');
+
+  return {
+    name,
+    description: container.querySelector('#dish-desc').value.trim(),
+    category: container.querySelector('#dish-category').value,
+    chefs_notes: hasDirections ? '' : (dish ? dish.chefs_notes || '' : ''),
+    service_notes: container.querySelector('#dish-service-notes').value.trim(),
+    suggested_price: parseFloat(container.querySelector('#dish-price').value) || 0,
+    batch_yield: parseFloat(container.querySelector('#dish-batch-yield').value) || 1,
+    ingredients: ingData,
+    tags,
+    substitutions,
+    manual_costs,
+    components,
+    directions,
+    service_directions,
+  };
+}
+
+// ── Sync listener ───────────────────────────────────────────────────────────
+
+function setupSyncListener(dishId) {
+  const onUpdate = (e) => {
+    if (e.detail && String(e.detail.id) === String(dishId)) {
+      showToast('This dish was updated on another device', 'info', 5000, {
+        label: 'Reload',
+        onClick: () => { window.location.reload(); }
+      });
+    }
+  };
+  window.addEventListener('sync:dish_updated', onUpdate);
+  const cleanup = () => {
+    window.removeEventListener('sync:dish_updated', onUpdate);
+    window.removeEventListener('hashchange', cleanup);
+  };
+  window.addEventListener('hashchange', cleanup);
+}
+
+// ── Main render ─────────────────────────────────────────────────────────────
+
+export async function renderDishForm(container, dishId) {
+  const isEdit = !!dishId;
+  let dish = null;
+  let allergenKeywords = [];
+
+  container.innerHTML = '<div class="loading">Loading...</div>';
+
+  try {
+    allergenKeywords = await loadAllergenKeywords();
+    if (isEdit) {
+      dish = await getDish(dishId);
+    }
+  } catch (err) {
+    container.innerHTML = `<div class="error">Failed to load: ${escapeHtml(err.message)}</div>`;
+    return;
+  }
+
+  // Check for imported recipe data (from URL import)
+  let importedData = null;
+  if (!isEdit) {
+    try {
+      const stored = sessionStorage.getItem('importedRecipe');
+      if (stored) {
+        importedData = JSON.parse(stored);
+        sessionStorage.removeItem('importedRecipe');
+      }
+    } catch {}
+  }
+
+  // Build ingredients list from dish data or imported data
+  // dish.ingredients now contains merged rows: { row_type: 'ingredient'|'section', ... }
+  let ingredients;
+  if (dish) {
+    ingredients = dish.ingredients; // already has row_type from API
+  } else if (importedData && importedData.ingredients) {
+    ingredients = importedData.ingredients.map(ing => {
+      if (ing.section_header) {
+        return { row_type: 'section', label: ing.section_header };
+      }
+      return {
+        row_type: 'ingredient',
+        ingredient_name: ing.name,
+        quantity: ing.quantity,
+        unit: ing.unit,
+        prep_note: ing.prep_note || '',
+      };
+    });
+  } else {
+    ingredients = [];
+  }
+
+  // Tags
+  const existingTags = dish ? (dish.tags || []) : [];
+  // Substitutions
+  const existingSubs = dish ? (dish.substitutions || []) : [];
+  // Service Components (never populated from URL import)
+  const existingComponents = dish ? (dish.components || []) : [];
+  // Service Directions (plating/assembly steps)
+  const existingServiceDirections = dish ? (dish.service_directions || []) : [];
+
+  // Directions (structured steps)
+  let existingDirections;
+  if (dish && dish.directions && dish.directions.length) {
+    existingDirections = dish.directions;
+  } else if (importedData && importedData.directions && importedData.directions.length) {
+    existingDirections = importedData.directions;
+  } else if (importedData && importedData.instructions) {
+    // Parse legacy free-text instructions into direction steps
+    existingDirections = importedData.instructions
+      .split(/\n+/)
+      .map(line => line.trim())
+      .filter(line => line.length > 0)
+      .map(line => {
+        if (/^[^a-z]*:$/.test(line) || (line.endsWith(':') && !/^\d/.test(line))) {
+          return { type: 'section', text: line.replace(/:$/, '').trim() };
+        }
+        return { type: 'step', text: line };
+      });
+  } else {
+    existingDirections = [];
+  }
+
+  const backTo = sessionStorage.getItem('dishNav_backTo') || '#/dishes';
+
+  container.innerHTML = buildDishFormHTML({
+    isEdit, dish, importedData, ingredients, existingTags, existingSubs,
+    existingComponents, existingServiceDirections, existingDirections, backTo,
+  });
 
   // Wire up interactions
   const form = container.querySelector('#dish-form');
   const ingredientsList = container.querySelector('#ingredients-list');
   const addBtn = container.querySelector('#add-ingredient');
   const addSectionBtn = container.querySelector('#add-section-header');
-  const photoArea = container.querySelector('#photo-upload-area');
   const photoInput = container.querySelector('#photo-input');
   const allergenPreview = container.querySelector('#allergen-preview');
   const subsList = container.querySelector('#substitutions-list');
@@ -417,73 +698,7 @@ export async function renderDishForm(container, dishId) {
   }
 
   // Photo upload + lightbox
-  photoArea.addEventListener('click', (e) => {
-    if (e.target.closest('#photo-delete-btn')) return; // handled separately
-    const preview = container.querySelector('#photo-preview');
-    if (preview && preview.tagName === 'IMG' && e.target === preview) {
-      openLightbox(preview.src, dish ? dish.name : 'Preview');
-      return;
-    }
-    photoInput.click();
-  });
-
-  // Photo delete button
-  photoArea.addEventListener('click', async (e) => {
-    const deleteBtn = e.target.closest('#photo-delete-btn');
-    if (!deleteBtn) return;
-    e.stopPropagation();
-
-    if (isEdit) {
-      deleteBtn.disabled = true;
-      try {
-        await deleteDishPhoto(dishId);
-        showToast('Photo removed');
-      } catch (err) {
-        showToast('Failed to remove photo', 'error');
-        deleteBtn.disabled = false;
-        return;
-      }
-    }
-
-    // Reset UI to placeholder
-    const wrap = container.querySelector('#photo-preview-wrap');
-    if (wrap) {
-      wrap.outerHTML = '<div class="photo-placeholder" id="photo-preview"><span>Tap to upload photo</span></div>';
-    }
-    photoInput.value = '';
-  });
-
-  photoInput.addEventListener('change', async () => {
-    const file = photoInput.files[0];
-    if (!file) return;
-
-    const reader = new FileReader();
-    reader.onload = (evt) => {
-      const existingWrap = container.querySelector('#photo-preview-wrap');
-      const existingPlaceholder = container.querySelector('#photo-preview');
-      const newHtml = `<div class="photo-preview-wrap" id="photo-preview-wrap">
-        <img src="${evt.target.result}" alt="Dish photo" class="photo-preview" id="photo-preview">
-        <button type="button" class="photo-delete-btn" id="photo-delete-btn" title="Remove photo">&times;</button>
-      </div>`;
-      if (existingWrap) {
-        existingWrap.outerHTML = newHtml;
-      } else if (existingPlaceholder) {
-        existingPlaceholder.outerHTML = newHtml;
-      }
-    };
-    reader.readAsDataURL(file);
-
-    if (isEdit) {
-      const formData = new FormData();
-      formData.append('photo', file);
-      try {
-        await uploadDishPhoto(dishId, formData);
-        showToast('Photo updated');
-      } catch (err) {
-        showToast('Photo upload failed', 'error');
-      }
-    }
-  });
+  setupPhotoHandlers(container, { isEdit, dishId, photoInput });
 
   // Add ingredient row
   addBtn.addEventListener('click', () => {
@@ -829,85 +1044,7 @@ export async function renderDishForm(container, dishId) {
   });
 
   // AI Cleanup button
-  const aiCleanupBtn = container.querySelector('#ai-cleanup-btn');
-  const aiCleanupPreview = container.querySelector('#ai-cleanup-preview');
-
-  if (aiCleanupBtn && aiCleanupPreview) {
-    aiCleanupBtn.addEventListener('click', async () => {
-      if (!dish) return;
-
-      aiCleanupBtn.disabled = true;
-      aiCleanupBtn.textContent = 'Thinking...';
-      aiCleanupPreview.style.display = 'block';
-      aiCleanupPreview.innerHTML = '<div class="cb-processing"><div class="cb-preview-spinner"></div><span>Cleaning up directions...</span></div>';
-
-      try {
-        const result = await aiCleanupRecipe(dish.id);
-
-        // Show before/after diff
-        const beforeHtml = result.before.map(line => `<div class="ai-diff-line">${escapeHtml(line)}</div>`).join('');
-        const afterHtml = result.after.map(line => `<div class="ai-diff-line">${escapeHtml(line)}</div>`).join('');
-
-        aiCleanupPreview.innerHTML = `
-          <div class="ai-diff-container">
-            <div class="ai-diff-panel">
-              <div class="ai-diff-header">Before</div>
-              <div class="ai-diff-body">${beforeHtml}</div>
-            </div>
-            <div class="ai-diff-panel ai-diff-after">
-              <div class="ai-diff-header">After</div>
-              <div class="ai-diff-body">${afterHtml}</div>
-            </div>
-          </div>
-          <div class="ai-diff-actions">
-            <button class="btn btn-primary btn-sm" id="ai-cleanup-confirm">Apply Changes</button>
-            <button class="btn btn-secondary btn-sm" id="ai-cleanup-cancel">Cancel</button>
-          </div>
-        `;
-
-        container.querySelector('#ai-cleanup-confirm').addEventListener('click', async () => {
-          try {
-            const confirmResult = await aiConfirm(result.confirmationId);
-            if (confirmResult.success) {
-              showToast('Directions cleaned up', 'success', 15000, confirmResult.undoId ? {
-                label: 'Undo',
-                onClick: async () => {
-                  try {
-                    await aiUndo(confirmResult.undoId);
-                    showToast('Directions restored', 'success');
-                    // Reload the form
-                    const { renderDishForm } = await import('./dishForm.js');
-                    renderDishForm(container.parentElement || container, dish.id);
-                  } catch (err) {
-                    showToast('Undo failed: ' + err.message, 'error');
-                  }
-                },
-              } : undefined);
-
-              // Reload the dish form to show new directions
-              const { renderDishForm } = await import('./dishForm.js');
-              renderDishForm(container.parentElement || container, dish.id);
-            } else {
-              showToast(confirmResult.response || 'Failed to apply', 'error');
-            }
-          } catch (err) {
-            showToast(err.message || 'Failed to apply changes', 'error');
-          }
-        });
-
-        container.querySelector('#ai-cleanup-cancel').addEventListener('click', () => {
-          aiCleanupPreview.style.display = 'none';
-          aiCleanupPreview.innerHTML = '';
-        });
-
-      } catch (err) {
-        aiCleanupPreview.innerHTML = `<div class="ai-cleanup-error">${escapeHtml(err.message || 'Cleanup failed')}</div>`;
-      } finally {
-        aiCleanupBtn.disabled = false;
-        aiCleanupBtn.innerHTML = `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.5 5.5L19 10l-5.5 1.5L12 17l-1.5-5.5L5 10l5.5-1.5L12 3z"/></svg> Clean up with AI`;
-      }
-    });
-  }
+  setupAiCleanup(container, dish);
 
   setupDirectionDragDrop(directionsList);
 
@@ -963,97 +1100,7 @@ export async function renderDishForm(container, dishId) {
     const submitBtns = container.querySelectorAll('button[type="submit"], #header-save-btn');
     submitBtns.forEach(b => { b.disabled = true; b.dataset.origText = b.textContent; b.textContent = 'Saving…'; });
 
-    // Collect ALL rows in DOM order (ingredients + section headers)
-    const allRows = ingredientsList.querySelectorAll('.ingredient-row, .section-header-row');
-    const ingData = Array.from(allRows).map((row, idx) => {
-      if (row.classList.contains('section-header-row')) {
-        const label = row.querySelector('.section-header-label').value.trim();
-        return label ? { section_header: label, sort_order: idx } : null;
-      } else {
-        const nameVal = row.querySelector('.ing-name').value.trim();
-        if (!nameVal) return null;
-        return {
-          name: nameVal,
-          quantity: parseFloat(row.querySelector('.ing-qty').value) || 0,
-          unit: row.querySelector('.ing-unit').value,
-          prep_note: row.querySelector('.ing-prep').value.trim(),
-          unit_cost: row.querySelector('.ing-unit-cost').value !== '' ? parseFloat(row.querySelector('.ing-unit-cost').value) : null,
-          base_unit: row.querySelector('.ing-base-unit').value,
-          sort_order: idx,
-        };
-      }
-    }).filter(Boolean);
-
-    // Collect tags
-    const tagsInput = container.querySelector('#dish-tags').value;
-    const tags = tagsInput.split(',').map(t => t.trim()).filter(Boolean);
-
-    // Collect substitutions
-    const subRows = subsList.querySelectorAll('.substitution-row');
-    const substitutions = Array.from(subRows).map(row => ({
-      allergen: row.querySelector('.sub-allergen').value,
-      original_ingredient: row.querySelector('.sub-original').value.trim(),
-      substitute_ingredient: row.querySelector('.sub-substitute').value.trim(),
-      notes: row.querySelector('.sub-notes')?.value.trim() || '',
-    })).filter(s => s.allergen && s.original_ingredient && s.substitute_ingredient);
-
-    // Collect manual cost items
-    const costRows = manualCostsList.querySelectorAll('.manual-cost-row');
-    const manual_costs = Array.from(costRows).map(row => ({
-      label: row.querySelector('.manual-cost-label').value.trim(),
-      amount: parseFloat(row.querySelector('.manual-cost-amount').value) || 0,
-    })).filter(item => item.label || item.amount > 0);
-
-    // Collect service components
-    const compRows = componentsList.querySelectorAll('.component-row');
-    const components = Array.from(compRows).map((row, idx) => ({
-      name: row.querySelector('.comp-name').value.trim(),
-      sort_order: idx,
-    })).filter(c => c.name);
-
-    // Collect directions
-    const dirRows = directionsList.querySelectorAll('.dir-step-row, .dir-section-row');
-    const directions = Array.from(dirRows).map((row, idx) => {
-      if (row.classList.contains('dir-section-row')) {
-        const label = row.querySelector('.dir-section-label').value.trim();
-        return label ? { type: 'section', text: label, sort_order: idx } : null;
-      } else {
-        const text = row.querySelector('.dir-text').value.trim();
-        return text ? { type: 'step', text, sort_order: idx } : null;
-      }
-    }).filter(Boolean);
-
-    // Collect service directions
-    const svcDirRows = svcDirectionsList.querySelectorAll('.svc-dir-step-row, .svc-dir-section-row');
-    const service_directions = Array.from(svcDirRows).map((row, idx) => {
-      if (row.classList.contains('svc-dir-section-row')) {
-        const label = row.querySelector('.svc-dir-section-label').value.trim();
-        return label ? { type: 'section', text: label, sort_order: idx } : null;
-      } else {
-        const text = row.querySelector('.svc-dir-text').value.trim();
-        return text ? { type: 'step', text, sort_order: idx } : null;
-      }
-    }).filter(Boolean);
-
-    // If directions were added, clear legacy chefs_notes; otherwise preserve it
-    const hasDirections = directions.some(d => d.type === 'step');
-
-    const data = {
-      name,
-      description: container.querySelector('#dish-desc').value.trim(),
-      category: container.querySelector('#dish-category').value,
-      chefs_notes: hasDirections ? '' : (dish ? dish.chefs_notes || '' : ''),
-      service_notes: container.querySelector('#dish-service-notes').value.trim(),
-      suggested_price: parseFloat(container.querySelector('#dish-price').value) || 0,
-      batch_yield: parseFloat(container.querySelector('#dish-batch-yield').value) || 1,
-      ingredients: ingData,
-      tags,
-      substitutions,
-      manual_costs,
-      components,
-      directions,
-      service_directions,
-    };
+    const data = collectFormData(container, { ingredientsList, subsList, manualCostsList, componentsList, directionsList, svcDirectionsList, dish });
 
     try {
       if (isEdit) {
@@ -1090,20 +1137,7 @@ export async function renderDishForm(container, dishId) {
 
   // Sync listener (edit mode)
   if (isEdit) {
-    const onUpdate = (e) => {
-      if (e.detail && String(e.detail.id) === String(dishId)) {
-        showToast('This dish was updated on another device', 'info', 5000, {
-          label: 'Reload',
-          onClick: () => { window.location.reload(); }
-        });
-      }
-    };
-    window.addEventListener('sync:dish_updated', onUpdate);
-    const cleanup = () => {
-      window.removeEventListener('sync:dish_updated', onUpdate);
-      window.removeEventListener('hashchange', cleanup);
-    };
-    window.addEventListener('hashchange', cleanup);
+    setupSyncListener(dishId);
   }
 }
 

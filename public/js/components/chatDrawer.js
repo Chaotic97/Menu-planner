@@ -719,7 +719,7 @@ function appendConfirmation(data, messagesEl) {
         // Track in conversation history so AI has context for continuation
         conversationHistory.push({ role: 'assistant', content: responseText });
         if (currentConversationId) {
-          addConversationMessage(currentConversationId, 'assistant', responseText).catch(() => {});
+          addConversationMessage(currentConversationId, 'assistant', responseText).catch(err => console.warn('Failed to save message:', err.message));
         }
 
         if (result.undoId) {
@@ -746,7 +746,7 @@ function appendConfirmation(data, messagesEl) {
           appendMessage('user', resumeText);
           conversationHistory.push({ role: 'user', content: resumeText });
           if (currentConversationId) {
-            addConversationMessage(currentConversationId, 'user', resumeText).catch(() => {});
+            addConversationMessage(currentConversationId, 'user', resumeText).catch(err => console.warn('Failed to save message:', err.message));
           }
 
           const input = drawerEl.querySelector('.chat-drawer-input');
@@ -793,7 +793,7 @@ function appendConfirmation(data, messagesEl) {
     appendMessage('user', skipText);
     conversationHistory.push({ role: 'user', content: skipText });
     if (currentConversationId) {
-      addConversationMessage(currentConversationId, 'user', skipText).catch(() => {});
+      addConversationMessage(currentConversationId, 'user', skipText).catch(err => console.warn('Failed to save message:', err.message));
     }
 
     const input = drawerEl.querySelector('.chat-drawer-input');
