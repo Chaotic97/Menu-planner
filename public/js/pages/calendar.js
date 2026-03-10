@@ -20,6 +20,10 @@ function getFirstDayOfWeek(year, month) {
   return new Date(year, month, 1).getDay();
 }
 
+function dayOfWeekName(year, month, day) {
+  return new Date(year, month, day).toLocaleDateString(undefined, { weekday: 'short' });
+}
+
 export async function renderCalendar(container) {
   const today = new Date();
   let viewYear = today.getFullYear();
@@ -27,6 +31,9 @@ export async function renderCalendar(container) {
   let menus = [];
   let gcalEvents = [];
   let gcalConfigured = false;
+
+  const defaultView = window.innerWidth <= 480 ? 'list' : 'month';
+  let currentView = localStorage.getItem('calendarView') || defaultView;
 
   container.innerHTML = loadingHTML('Loading calendar...');
 
@@ -63,7 +70,6 @@ export async function renderCalendar(container) {
   function buildGcalMap() {
     const map = {};
     for (const evt of gcalEvents) {
-      // Extract date from datetime or date string
       const dateStr = evt.start.slice(0, 10);
       if (!map[dateStr]) map[dateStr] = [];
       map[dateStr].push(evt);
@@ -71,76 +77,7 @@ export async function renderCalendar(container) {
     return map;
   }
 
-  function render() {
-    const menuMap = buildMenuMap();
-    const gcalMap = buildGcalMap();
-    const daysInMonth = getDaysInMonth(viewYear, viewMonth);
-    const firstDay = getFirstDayOfWeek(viewYear, viewMonth);
-    const todayStr = toDateStr(today);
-
-    const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-
-    let gridCells = '';
-
-    // Leading empty cells
-    for (let i = 0; i < firstDay; i++) {
-      gridCells += '<div class="cal-cell cal-cell--empty"></div>';
-    }
-
-    for (let day = 1; day <= daysInMonth; day++) {
-      const dateStr = `${viewYear}-${String(viewMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-      const isToday = dateStr === todayStr;
-      const dayMenus = menuMap[dateStr] || [];
-      const dayGcal = gcalMap[dateStr] || [];
-      const isPast = dateStr < todayStr;
-
-      // Build maps for linked gcal events (gcal_event_id → menu)
-      const linkedGcalIds = new Set();
-      const gcalToMenu = {};
-      for (const m of dayMenus) {
-        if (m.gcal_event_id) {
-          linkedGcalIds.add(m.gcal_event_id);
-          gcalToMenu[m.gcal_event_id] = m;
-        }
-      }
-
-      // Non-linked menus (standalone, not created from a gcal event)
-      const standaloneMenus = dayMenus.filter(m => !m.gcal_event_id);
-
-      gridCells += `
-        <div class="cal-cell ${isToday ? 'cal-cell--today' : ''} ${isPast ? 'cal-cell--past' : ''}" data-date="${dateStr}">
-          <div class="cal-day-num">${day}</div>
-          ${standaloneMenus.map(m => `
-            <a href="#/menus/${m.id}" class="cal-event" title="${escapeHtml(m.name)}${m.dish_count ? ' (' + m.dish_count + ' dishes)' : ''}">
-              ${escapeHtml(m.name)}
-            </a>
-          `).join('')}
-          ${dayGcal.map(e => {
-            const linkedMenu = gcalToMenu[e.id];
-            if (linkedMenu) {
-              // Linked: show as gcal-styled badge that links to the menu
-              return `<a href="#/menus/${linkedMenu.id}" class="cal-gcal-event cal-gcal-event--linked" title="${escapeHtml(e.summary)} — ${escapeHtml(linkedMenu.name)}${linkedMenu.dish_count ? ' (' + linkedMenu.dish_count + ' dishes)' : ''}">
-                <span class="cal-gcal-label">${escapeHtml(e.summary)}</span>
-              </a>`;
-            }
-            // Unlinked: show with "+" button to create menu
-            return `<div class="cal-gcal-event" data-gcal-id="${escapeHtml(e.id)}" data-gcal-date="${dateStr}" title="${escapeHtml(e.summary)}${e.location ? ' — ' + escapeHtml(e.location) : ''}">
-              <span class="cal-gcal-label">${escapeHtml(e.summary)}</span>
-              <button class="cal-gcal-menu-btn" data-gcal-id="${escapeHtml(e.id)}" data-gcal-date="${dateStr}" title="Create menu from this event" aria-label="Create menu from ${escapeHtml(e.summary)}">+</button>
-            </div>`;
-          }).join('')}
-        </div>
-      `;
-    }
-
-    // Trailing empty cells
-    const totalCells = firstDay + daysInMonth;
-    const remaining = totalCells % 7 === 0 ? 0 : 7 - (totalCells % 7);
-    for (let i = 0; i < remaining; i++) {
-      gridCells += '<div class="cal-cell cal-cell--empty"></div>';
-    }
-
-    // House menu indicator
+  function renderShell() {
     const houseMenu = menus.find(m => m.menu_type === 'standard');
 
     const gcalStatusHtml = gcalConfigured
@@ -158,64 +95,199 @@ export async function renderCalendar(container) {
         <h2 class="cal-month-title">${escapeHtml(monthName(viewYear, viewMonth))}</h2>
         <button class="btn btn-ghost" id="cal-next" aria-label="Next month">&rarr;</button>
         <button class="btn btn-ghost cal-today-btn" id="cal-today-btn">Today</button>
+        <div class="cal-view-toggle">
+          <button class="btn btn-ghost cal-view-btn ${currentView === 'month' ? 'cal-view-btn--active' : ''}" data-view="month" aria-label="Month view">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="3" y1="10" x2="21" y2="10"/><line x1="9" y1="4" x2="9" y2="10"/><line x1="15" y1="4" x2="15" y2="10"/></svg>
+            Month
+          </button>
+          <button class="btn btn-ghost cal-view-btn ${currentView === 'list' ? 'cal-view-btn--active' : ''}" data-view="list" aria-label="List view">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><circle cx="4" cy="6" r="1"/><circle cx="4" cy="12" r="1"/><circle cx="4" cy="18" r="1"/></svg>
+            List
+          </button>
+        </div>
       </div>
       ${gcalConfigured ? `<div class="cal-legend">
         <span class="cal-legend-item"><span class="cal-legend-dot cal-legend-dot--menu"></span> Menu</span>
         <span class="cal-legend-item"><span class="cal-legend-dot cal-legend-dot--gcal"></span> Google Calendar</span>
         <span class="cal-legend-item"><span class="cal-legend-dot cal-legend-dot--linked"></span> Menu from event</span>
       </div>` : ''}
+      <div class="cal-grid-wrapper">
+        <div class="cal-content"></div>
+      </div>
+    `;
+
+    // Nav listeners — attached once
+    container.querySelector('#cal-prev').addEventListener('click', () => {
+      viewMonth--;
+      if (viewMonth < 0) { viewMonth = 11; viewYear--; }
+      updateMonthTitle();
+      renderContent('right');
+    });
+    container.querySelector('#cal-next').addEventListener('click', () => {
+      viewMonth++;
+      if (viewMonth > 11) { viewMonth = 0; viewYear++; }
+      updateMonthTitle();
+      renderContent('left');
+    });
+    container.querySelector('#cal-today-btn').addEventListener('click', () => {
+      const wasForward = viewYear > today.getFullYear() ||
+        (viewYear === today.getFullYear() && viewMonth > today.getMonth());
+      viewYear = today.getFullYear();
+      viewMonth = today.getMonth();
+      updateMonthTitle();
+      renderContent(wasForward ? 'right' : 'left');
+    });
+
+    // View toggle listeners
+    container.querySelectorAll('.cal-view-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const newView = btn.dataset.view;
+        if (newView === currentView) return;
+        currentView = newView;
+        localStorage.setItem('calendarView', currentView);
+        container.querySelectorAll('.cal-view-btn').forEach(b => b.classList.remove('cal-view-btn--active'));
+        btn.classList.add('cal-view-btn--active');
+        renderContent(null);
+      });
+    });
+
+    // Swipe navigation
+    setupSwipe(container.querySelector('.cal-grid-wrapper'));
+  }
+
+  function updateMonthTitle() {
+    const titleEl = container.querySelector('.cal-month-title');
+    if (titleEl) titleEl.textContent = monthName(viewYear, viewMonth);
+  }
+
+  function renderContent(direction) {
+    const contentEl = container.querySelector('.cal-content');
+    if (!contentEl) return;
+
+    if (direction) {
+      const animClass = direction === 'left' ? 'cal-slide-left' : 'cal-slide-right';
+      contentEl.classList.add(animClass);
+      const onEnd = () => {
+        contentEl.classList.remove(animClass);
+        contentEl.removeEventListener('animationend', onEnd);
+      };
+      contentEl.addEventListener('animationend', onEnd);
+      // Fallback removal
+      setTimeout(() => contentEl.classList.remove(animClass), 350);
+    }
+
+    if (currentView === 'month') {
+      renderMonth(contentEl);
+    } else {
+      renderList(contentEl);
+    }
+  }
+
+  function renderMonth(contentEl) {
+    const menuMap = buildMenuMap();
+    const gcalMap = buildGcalMap();
+    const daysInMonth = getDaysInMonth(viewYear, viewMonth);
+    const firstDay = getFirstDayOfWeek(viewYear, viewMonth);
+    const todayStr = toDateStr(today);
+    const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    const MAX_VISIBLE = 2;
+
+    let gridCells = '';
+
+    // Leading empty cells
+    for (let i = 0; i < firstDay; i++) {
+      gridCells += '<div class="cal-cell cal-cell--empty"></div>';
+    }
+
+    for (let day = 1; day <= daysInMonth; day++) {
+      const dateStr = `${viewYear}-${String(viewMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+      const isToday = dateStr === todayStr;
+      const dayMenus = menuMap[dateStr] || [];
+      const dayGcal = gcalMap[dateStr] || [];
+      const isPast = dateStr < todayStr;
+
+      // Build maps for linked gcal events
+      const linkedGcalIds = new Set();
+      const gcalToMenu = {};
+      for (const m of dayMenus) {
+        if (m.gcal_event_id) {
+          linkedGcalIds.add(m.gcal_event_id);
+          gcalToMenu[m.gcal_event_id] = m;
+        }
+      }
+
+      const standaloneMenus = dayMenus.filter(m => !m.gcal_event_id);
+
+      // Build all event HTML snippets
+      const allEventHtmls = [];
+
+      for (const m of standaloneMenus) {
+        allEventHtmls.push(`<a href="#/menus/${m.id}" class="cal-event" title="${escapeHtml(m.name)}${m.dish_count ? ' (' + m.dish_count + ' dishes)' : ''}">${escapeHtml(m.name)}</a>`);
+      }
+
+      for (const e of dayGcal) {
+        const linkedMenu = gcalToMenu[e.id];
+        if (linkedMenu) {
+          allEventHtmls.push(`<a href="#/menus/${linkedMenu.id}" class="cal-gcal-event cal-gcal-event--linked" title="${escapeHtml(e.summary)} — ${escapeHtml(linkedMenu.name)}${linkedMenu.dish_count ? ' (' + linkedMenu.dish_count + ' dishes)' : ''}"><span class="cal-gcal-label">${escapeHtml(e.summary)}</span></a>`);
+        } else {
+          allEventHtmls.push(`<div class="cal-gcal-event" data-gcal-id="${escapeHtml(e.id)}" data-gcal-date="${dateStr}" title="${escapeHtml(e.summary)}${e.location ? ' — ' + escapeHtml(e.location) : ''}"><span class="cal-gcal-label">${escapeHtml(e.summary)}</span><button class="cal-gcal-menu-btn" data-gcal-id="${escapeHtml(e.id)}" data-gcal-date="${dateStr}" title="Create menu from this event" aria-label="Create menu from ${escapeHtml(e.summary)}">+</button></div>`);
+        }
+      }
+
+      const visibleHtmls = allEventHtmls.slice(0, MAX_VISIBLE);
+      const overflowCount = allEventHtmls.length - MAX_VISIBLE;
+
+      gridCells += `
+        <div class="cal-cell ${isToday ? 'cal-cell--today' : ''} ${isPast ? 'cal-cell--past' : ''}" data-date="${dateStr}">
+          <div class="cal-day-num ${isToday ? 'cal-day-num--today' : ''}">${day}</div>
+          ${visibleHtmls.join('')}
+          ${overflowCount > 0 ? `<span class="cal-more-link" data-date="${dateStr}">+${overflowCount} more</span>` : ''}
+        </div>
+      `;
+    }
+
+    // Trailing empty cells
+    const totalCells = firstDay + daysInMonth;
+    const remaining = totalCells % 7 === 0 ? 0 : 7 - (totalCells % 7);
+    for (let i = 0; i < remaining; i++) {
+      gridCells += '<div class="cal-cell cal-cell--empty"></div>';
+    }
+
+    contentEl.innerHTML = `
       <div class="cal-grid">
         ${dayNames.map(d => `<div class="cal-header">${d}</div>`).join('')}
         ${gridCells}
       </div>
     `;
 
-    // Navigation
-    container.querySelector('#cal-prev').addEventListener('click', () => {
-      viewMonth--;
-      if (viewMonth < 0) { viewMonth = 11; viewYear--; }
-      render();
-    });
-    container.querySelector('#cal-next').addEventListener('click', () => {
-      viewMonth++;
-      if (viewMonth > 11) { viewMonth = 0; viewYear++; }
-      render();
-    });
-    container.querySelector('#cal-today-btn').addEventListener('click', () => {
-      viewYear = today.getFullYear();
-      viewMonth = today.getMonth();
-      render();
-    });
+    // Cell click listeners
+    const menuMap2 = buildMenuMap();
+    const gcalMap2 = buildGcalMap();
 
-    // Click empty date to create menu
-    container.querySelectorAll('.cal-cell[data-date]').forEach(cell => {
+    contentEl.querySelectorAll('.cal-cell[data-date]').forEach(cell => {
       cell.addEventListener('click', (e) => {
-        // Don't trigger if clicking an event link, gcal event, or button
-        if (e.target.closest('.cal-event') || e.target.closest('.cal-gcal-event') || e.target.closest('.cal-gcal-menu-btn')) return;
+        if (e.target.closest('.cal-event') || e.target.closest('.cal-gcal-event') || e.target.closest('.cal-gcal-menu-btn') || e.target.closest('.cal-more-link')) return;
         const dateStr = cell.dataset.date;
-        const dayMenus = menuMap[dateStr] || [];
-        const dayGcalEvents = gcalMap[dateStr] || [];
+        const dayMenus = menuMap2[dateStr] || [];
+        const dayGcalEvents = gcalMap2[dateStr] || [];
         const hasUnlinkedGcal = dayGcalEvents.some(ev => !dayMenus.some(m => m.gcal_event_id === ev.id));
-        // If there's exactly one menu and no unlinked gcal events, navigate to it
         if (dayMenus.length === 1 && !hasUnlinkedGcal) {
           window.location.hash = `#/menus/${dayMenus[0].id}`;
           return;
         }
-        // If no menus and no gcal events, open new menu modal with date pre-filled
         if (dayMenus.length === 0 && dayGcalEvents.length === 0) {
           openNewMenuModal(dateStr);
         }
-        // Otherwise let user click the individual badges
       });
     });
 
-    // Prevent event link clicks from bubbling to cell click
-    container.querySelectorAll('.cal-event, .cal-gcal-event--linked').forEach(link => {
+    // Prevent event link clicks from bubbling
+    contentEl.querySelectorAll('.cal-event, .cal-gcal-event--linked').forEach(link => {
       link.addEventListener('click', (e) => e.stopPropagation());
     });
 
     // Google Calendar "Create Menu" buttons
-    container.querySelectorAll('.cal-gcal-menu-btn').forEach(btn => {
+    contentEl.querySelectorAll('.cal-gcal-menu-btn').forEach(btn => {
       btn.addEventListener('click', (e) => {
         e.stopPropagation();
         const gcalId = btn.dataset.gcalId;
@@ -226,6 +298,166 @@ export async function renderCalendar(container) {
         }
       });
     });
+
+    // "+N more" links — switch to list view filtered to that date
+    contentEl.querySelectorAll('.cal-more-link').forEach(link => {
+      link.addEventListener('click', (e) => {
+        e.stopPropagation();
+        currentView = 'list';
+        localStorage.setItem('calendarView', 'list');
+        container.querySelectorAll('.cal-view-btn').forEach(b => b.classList.remove('cal-view-btn--active'));
+        const listBtn = container.querySelector('.cal-view-btn[data-view="list"]');
+        if (listBtn) listBtn.classList.add('cal-view-btn--active');
+        renderContent(null);
+      });
+    });
+  }
+
+  function renderList(contentEl) {
+    const menuMap = buildMenuMap();
+    const gcalMap = buildGcalMap();
+    const daysInMonth = getDaysInMonth(viewYear, viewMonth);
+    const todayStr = toDateStr(today);
+
+    // Collect days with events
+    const daysWithEvents = [];
+    for (let day = 1; day <= daysInMonth; day++) {
+      const dateStr = `${viewYear}-${String(viewMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+      const dayMenus = menuMap[dateStr] || [];
+      const dayGcal = gcalMap[dateStr] || [];
+      if (dayMenus.length > 0 || dayGcal.length > 0) {
+        daysWithEvents.push({ day, dateStr, dayMenus, dayGcal });
+      }
+    }
+
+    if (daysWithEvents.length === 0) {
+      contentEl.innerHTML = `<div class="cal-list-empty">No events this month</div>`;
+      return;
+    }
+
+    let listHtml = '<div class="cal-list">';
+
+    for (const { day, dateStr, dayMenus, dayGcal } of daysWithEvents) {
+      const isToday = dateStr === todayStr;
+      const isPast = dateStr < todayStr;
+      const dayName = dayOfWeekName(viewYear, viewMonth, day);
+
+      // Build linked gcal map for this day
+      const gcalToMenu = {};
+      for (const m of dayMenus) {
+        if (m.gcal_event_id) {
+          gcalToMenu[m.gcal_event_id] = m;
+        }
+      }
+
+      const standaloneMenus = dayMenus.filter(m => !m.gcal_event_id);
+
+      // Build combined event list sorted: standalone menus first, then gcal
+      let eventsHtml = '';
+
+      for (const m of standaloneMenus) {
+        eventsHtml += `
+          <a href="#/menus/${m.id}" class="cal-list-event cal-list-event--menu">
+            <span class="cal-list-event-badge cal-list-event-badge--menu">Menu</span>
+            <span class="cal-list-event-name">${escapeHtml(m.name)}</span>
+            ${m.dish_count ? `<span class="cal-list-event-meta">${m.dish_count} dish${m.dish_count !== 1 ? 'es' : ''}</span>` : ''}
+          </a>
+        `;
+      }
+
+      for (const e of dayGcal) {
+        const linkedMenu = gcalToMenu[e.id];
+        if (linkedMenu) {
+          eventsHtml += `
+            <a href="#/menus/${linkedMenu.id}" class="cal-list-event cal-list-event--linked">
+              <span class="cal-list-event-badge cal-list-event-badge--linked">Event</span>
+              <span class="cal-list-event-name">${escapeHtml(e.summary)}</span>
+              ${linkedMenu.dish_count ? `<span class="cal-list-event-meta">${linkedMenu.dish_count} dish${linkedMenu.dish_count !== 1 ? 'es' : ''}</span>` : ''}
+            </a>
+          `;
+        } else {
+          eventsHtml += `
+            <div class="cal-list-event cal-list-event--gcal">
+              <span class="cal-list-event-badge cal-list-event-badge--gcal">GCal</span>
+              <span class="cal-list-event-name">${escapeHtml(e.summary)}</span>
+              <button class="cal-gcal-menu-btn" data-gcal-id="${escapeHtml(e.id)}" data-gcal-date="${dateStr}" title="Create menu from this event" aria-label="Create menu from ${escapeHtml(e.summary)}">+</button>
+            </div>
+          `;
+        }
+      }
+
+      listHtml += `
+        <div class="cal-list-day ${isToday ? 'cal-list-day--today' : ''} ${isPast ? 'cal-list-day--past' : ''}" data-date="${dateStr}">
+          <div class="cal-list-date">
+            <span class="cal-list-date-dayname">${dayName}</span>
+            <span class="cal-list-date-num ${isToday ? 'cal-day-num--today' : ''}">${day}</span>
+          </div>
+          <div class="cal-list-events">
+            ${eventsHtml}
+          </div>
+        </div>
+      `;
+    }
+
+    listHtml += '</div>';
+    contentEl.innerHTML = listHtml;
+
+    // Click listeners for gcal create-menu buttons in list view
+    contentEl.querySelectorAll('.cal-gcal-menu-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const gcalId = btn.dataset.gcalId;
+        const dateStr = btn.dataset.gcalDate;
+        const evt = gcalEvents.find(ev => ev.id === gcalId);
+        if (evt) {
+          openNewMenuModal(dateStr, evt);
+        }
+      });
+    });
+
+    // Click on day row (empty area) to create menu
+    contentEl.querySelectorAll('.cal-list-day').forEach(row => {
+      row.addEventListener('click', (e) => {
+        if (e.target.closest('.cal-list-event') || e.target.closest('.cal-gcal-menu-btn')) return;
+        const dateStr = row.dataset.date;
+        openNewMenuModal(dateStr);
+      });
+    });
+  }
+
+  function setupSwipe(el) {
+    if (!el) return;
+    let startX = 0;
+    let startY = 0;
+
+    el.addEventListener('touchstart', (e) => {
+      startX = e.touches[0].clientX;
+      startY = e.touches[0].clientY;
+    }, { passive: true });
+
+    el.addEventListener('touchend', (e) => {
+      const endX = e.changedTouches[0].clientX;
+      const endY = e.changedTouches[0].clientY;
+      const diffX = endX - startX;
+      const diffY = endY - startY;
+
+      // Only trigger if horizontal swipe is dominant and exceeds threshold
+      if (Math.abs(diffX) < 50 || Math.abs(diffX) < Math.abs(diffY)) return;
+
+      if (diffX < 0) {
+        // Swipe left = next month
+        viewMonth++;
+        if (viewMonth > 11) { viewMonth = 0; viewYear++; }
+        updateMonthTitle();
+        renderContent('left');
+      } else {
+        // Swipe right = prev month
+        viewMonth--;
+        if (viewMonth < 0) { viewMonth = 11; viewYear--; }
+        updateMonthTitle();
+        renderContent('right');
+      }
+    }, { passive: true });
   }
 
   function openNewMenuModal(prefillDate, gcalEvent) {
@@ -290,13 +522,15 @@ export async function renderCalendar(container) {
     });
   }
 
+  // Initial load
   await Promise.all([loadMenus(), loadGcalEvents()]);
-  render();
+  renderShell();
+  renderContent(null);
 
   // Real-time sync
   const syncHandler = async () => {
     await loadMenus();
-    render();
+    renderContent(null);
   };
   const syncEvents = ['sync:menu_created', 'sync:menu_updated', 'sync:menu_deleted'];
   for (const evt of syncEvents) window.addEventListener(evt, syncHandler);
