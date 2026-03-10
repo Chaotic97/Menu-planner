@@ -78,8 +78,8 @@ app.use(authMiddleware);
 
 app.use(express.static(path.join(__dirname, 'public')));
 app.use('/uploads', express.static(uploadsDir));
-app.use('/js/lib/simplewebauthn-browser.js', express.static(
-  path.join(__dirname, 'node_modules/@simplewebauthn/browser/dist/bundle/index.js')
+app.use('/js/lib/simplewebauthn-browser', express.static(
+  path.join(__dirname, 'node_modules/@simplewebauthn/browser/esm')
 ));
 
 // Create HTTP server for both Express and WebSocket

@@ -1,5 +1,5 @@
 import { authSetup, authLogin, authForgot, authReset, getPasskeyLoginOptions, verifyPasskeyLogin } from '../api.js';
-import { startAuthentication } from '/js/lib/simplewebauthn-browser.js';
+import { startAuthentication } from '/js/lib/simplewebauthn-browser/index.js';
 
 export function renderLogin(container, mode = 'login', options = {}) {
   // mode: 'setup', 'login', 'forgot', 'reset'

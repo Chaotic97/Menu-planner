@@ -3,7 +3,7 @@ import { showToast } from '../components/toast.js';
 import { escapeHtml } from '../utils/escapeHtml.js';
 import { restartNotifications } from '../utils/notifications.js';
 import { checkModelCached, preDownloadModel, deleteModelCache } from '../utils/speechToText.js';
-import { startRegistration } from '/js/lib/simplewebauthn-browser.js';
+import { startRegistration } from '/js/lib/simplewebauthn-browser/index.js';
 
 const EU_14 = [
   'celery', 'crustaceans', 'eggs', 'fish', 'gluten', 'lupin',
