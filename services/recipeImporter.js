@@ -36,12 +36,13 @@ async function validateUrl(url) {
 
   // Resolve hostname and check for private IP ranges (with timeout)
   try {
+    let dnsTimer;
     const addresses = await Promise.race([
       dnsResolve(hostname),
-      new Promise((_, reject) =>
-        setTimeout(() => reject(new Error('DNS lookup timed out')), DNS_TIMEOUT_MS)
-      )
-    ]);
+      new Promise((_, reject) => {
+        dnsTimer = setTimeout(() => reject(new Error('DNS lookup timed out')), DNS_TIMEOUT_MS);
+      })
+    ]).finally(() => clearTimeout(dnsTimer));
     for (const ip of addresses) {
       if (isPrivateIP(ip)) {
         throw new Error('Cannot fetch from private or internal network addresses.');

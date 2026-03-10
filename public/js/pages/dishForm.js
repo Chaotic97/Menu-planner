@@ -37,6 +37,745 @@ function convertUnit(qty, fromUnit, toUnit) {
   return Math.round(result * 10000) / 10000;
 }
 
+// ── Extracted helper functions ──────────────────────────────────────────────
+
+/** Update the allergen preview badges based on current ingredient names */
+function updateAllergenPreview(ingredientsList, allergenPreview, allergenKeywords) {
+  const names = Array.from(ingredientsList.querySelectorAll('.ing-name'))
+    .map(el => el.value.trim())
+    .filter(Boolean);
+
+  if (!names.length) {
+    allergenPreview.innerHTML = '<span class="text-muted">Add ingredients to detect allergens</span>';
+    return;
+  }
+
+  const allergenEntries = [];
+  for (const name of names) {
+    const detected = detectAllergensClient([name], allergenKeywords);
+    for (const allergen of detected) {
+      allergenEntries.push({ allergen, ingredient_name: name });
+    }
+  }
+
+  if (allergenEntries.length) {
+    allergenPreview.innerHTML = renderAllergenBadgesWithSource(allergenEntries);
+  } else {
+    allergenPreview.innerHTML = '<span class="text-muted">No allergens detected</span>';
+  }
+}
+
+/** Update the ingredient count subtitle on the collapsible section */
+function updateIngredientSubtitle(container) {
+  const count = container.querySelectorAll('.ingredient-row').length;
+  const el = container.querySelector('#section-ingredients .collapsible-section__subtitle');
+  if (el) {
+    el.textContent = count ? `${count} ingredient${count !== 1 ? 's' : ''}` : '';
+  }
+}
+
+/** Update both prep and service direction subtitles */
+function updateDirectionSubtitles(container) {
+  const prepCount = container.querySelectorAll('#directions-list .dir-step-row').length;
+  const prepEl = container.querySelector('#section-prep-directions .collapsible-section__subtitle');
+  if (prepEl) {
+    prepEl.textContent = prepCount ? `${prepCount} step${prepCount !== 1 ? 's' : ''}` : '';
+  }
+  const svcCount = container.querySelectorAll('#service-directions-list .dir-step-row').length;
+  const svcEl = container.querySelector('#section-svc-directions .collapsible-section__subtitle');
+  if (svcEl) {
+    svcEl.textContent = svcCount ? `${svcCount} step${svcCount !== 1 ? 's' : ''}` : '';
+  }
+}
+
+/** Set up ingredient name autocomplete with debounced API lookup */
+function setupAutocomplete(input, updateAllergenPreviewFn) {
+  let dropdown = null;
+  let acDebounce = null;
+
+  input.addEventListener('input', () => {
+    clearTimeout(acDebounce);
+    const val = input.value.trim();
+    if (val.length < 2) {
+      removeDropdown();
+      return;
+    }
+
+    acDebounce = setTimeout(async () => {
+      const currentVal = input.value.trim();
+      if (currentVal !== val) return;
+
+      try {
+        const results = await getIngredients(val);
+        if (!results.length) {
+          removeDropdown();
+          return;
+        }
+
+        removeDropdown();
+        dropdown = document.createElement('div');
+        dropdown.className = 'autocomplete-dropdown';
+        results.slice(0, 8).forEach(ing => {
+          const item = document.createElement('div');
+          item.className = 'autocomplete-item';
+          item.textContent = ing.name;
+          item.addEventListener('click', () => {
+            input.value = ing.name;
+            removeDropdown();
+            updateAllergenPreviewFn();
+          });
+          dropdown.appendChild(item);
+        });
+
+        input.parentElement.style.position = 'relative';
+        input.parentElement.appendChild(dropdown);
+      } catch {
+        removeDropdown();
+      }
+    }, 250);
+  });
+
+  input.addEventListener('blur', () => {
+    setTimeout(removeDropdown, 200);
+  });
+
+  function removeDropdown() {
+    if (dropdown) {
+      dropdown.remove();
+      dropdown = null;
+    }
+  }
+}
+
+/** Wire up photo upload area: click, delete, file input change */
+function setupPhotoHandlers(ctx) {
+  const { container, photoArea, photoInput, isEdit, dishId, dish } = ctx;
+
+  photoArea.addEventListener('click', (e) => {
+    if (e.target.closest('#photo-delete-btn')) return;
+    const preview = container.querySelector('#photo-preview');
+    if (preview && preview.tagName === 'IMG' && e.target === preview) {
+      openLightbox(preview.src, dish ? dish.name : 'Preview');
+      return;
+    }
+    photoInput.click();
+  });
+
+  photoArea.addEventListener('click', async (e) => {
+    const deleteBtn = e.target.closest('#photo-delete-btn');
+    if (!deleteBtn) return;
+    e.stopPropagation();
+
+    if (isEdit) {
+      deleteBtn.disabled = true;
+      try {
+        await deleteDishPhoto(dishId);
+        showToast('Photo removed');
+      } catch (_err) {
+        showToast('Failed to remove photo', 'error');
+        deleteBtn.disabled = false;
+        return;
+      }
+    }
+
+    const wrap = container.querySelector('#photo-preview-wrap');
+    if (wrap) {
+      wrap.outerHTML = '<div class="photo-placeholder" id="photo-preview"><span>Tap to upload photo</span></div>';
+    }
+    photoInput.value = '';
+  });
+
+  photoInput.addEventListener('change', async () => {
+    const file = photoInput.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      const existingWrap = container.querySelector('#photo-preview-wrap');
+      const existingPlaceholder = container.querySelector('#photo-preview');
+      const newHtml = `<div class="photo-preview-wrap" id="photo-preview-wrap">
+        <img src="${evt.target.result}" alt="Dish photo" class="photo-preview" id="photo-preview">
+        <button type="button" class="photo-delete-btn" id="photo-delete-btn" title="Remove photo">&times;</button>
+      </div>`;
+      if (existingWrap) {
+        existingWrap.outerHTML = newHtml;
+      } else if (existingPlaceholder) {
+        existingPlaceholder.outerHTML = newHtml;
+      }
+    };
+    reader.readAsDataURL(file);
+
+    if (isEdit) {
+      const formData = new FormData();
+      formData.append('photo', file);
+      try {
+        await uploadDishPhoto(dishId, formData);
+        showToast('Photo updated');
+      } catch (_err) {
+        showToast('Photo upload failed', 'error');
+      }
+    }
+  });
+}
+
+/** Wire up ingredient add, section add, remove, unit converter, live allergen preview */
+function setupIngredientHandlers(ctx) {
+  const { container, ingredientsList, allergenPreview, allergenKeywords, counters } = ctx;
+  const addBtn = container.querySelector('#add-ingredient');
+  const addSectionBtn = container.querySelector('#add-section-header');
+
+  const updatePreview = () => updateAllergenPreview(ingredientsList, allergenPreview, allergenKeywords);
+  const updateSubtitle = () => updateIngredientSubtitle(container);
+
+  addBtn.addEventListener('click', () => {
+    counters.ingredient++;
+    const div = document.createElement('div');
+    div.innerHTML = ingredientRow(null, counters.ingredient);
+    ingredientsList.appendChild(div.firstElementChild);
+    setupAutocomplete(ingredientsList.lastElementChild.querySelector('.ing-name'), updatePreview);
+    updatePreview();
+    updateSubtitle();
+  });
+
+  addSectionBtn.addEventListener('click', () => {
+    counters.section++;
+    const div = document.createElement('div');
+    div.innerHTML = sectionHeaderRow(null, `s${counters.section}`);
+    ingredientsList.appendChild(div.firstElementChild);
+  });
+
+  ingredientsList.addEventListener('click', (e) => {
+    if (e.target.closest('.remove-ingredient')) {
+      e.target.closest('.ingredient-row').remove();
+      updatePreview();
+      updateSubtitle();
+      return;
+    }
+
+    if (e.target.closest('.remove-section-header')) {
+      e.target.closest('.section-header-row').remove();
+      return;
+    }
+
+    if (e.target.closest('.ing-convert-btn')) {
+      const btn = e.target.closest('.ing-convert-btn');
+      const row = btn.closest('.ingredient-row');
+      const converterEl = row.querySelector('.ing-converter');
+      if (!converterEl) return;
+
+      if (converterEl.style.display !== 'none' && converterEl.innerHTML) {
+        converterEl.style.display = 'none';
+        converterEl.innerHTML = '';
+        return;
+      }
+
+      const fromUnit = row.querySelector('.ing-unit').value;
+      const fromQty  = parseFloat(row.querySelector('.ing-qty').value) || 0;
+      const compat   = compatibleUnits(fromUnit);
+      if (!compat.length) return;
+
+      const defaultTarget = compat[0];
+      const initialResult = fromQty ? convertUnit(fromQty, fromUnit, defaultTarget) : null;
+
+      converterEl.innerHTML = `
+        <div class="ing-converter-inner">
+          <span class="ing-converter-label">Convert <strong>${fromQty || '?'} ${fromUnit}</strong> to:</span>
+          <select class="input ing-converter-target" style="flex:0 0 auto;min-width:80px;">
+            ${compat.map(u => `<option value="${u}">${u}</option>`).join('')}
+          </select>
+          <span class="ing-converter-result">${initialResult !== null ? `= <strong>${initialResult} ${defaultTarget}</strong>` : '—'}</span>
+          <button type="button" class="btn btn-sm btn-primary ing-converter-apply">Apply</button>
+          <button type="button" class="btn btn-sm ing-converter-cancel">&#10005;</button>
+        </div>
+      `;
+      converterEl.style.display = 'block';
+
+      const targetSel    = converterEl.querySelector('.ing-converter-target');
+      const resultSpan   = converterEl.querySelector('.ing-converter-result');
+      const applyBtn     = converterEl.querySelector('.ing-converter-apply');
+      const cancelBtn    = converterEl.querySelector('.ing-converter-cancel');
+
+      function updateResult() {
+        const qty = parseFloat(row.querySelector('.ing-qty').value) || 0;
+        const to  = targetSel.value;
+        const r   = convertUnit(qty, fromUnit, to);
+        resultSpan.innerHTML = r !== null ? `= <strong>${r} ${to}</strong>` : '—';
+      }
+
+      targetSel.addEventListener('change', updateResult);
+      row.querySelector('.ing-qty').addEventListener('input', updateResult);
+
+      applyBtn.addEventListener('click', () => {
+        const qty = parseFloat(row.querySelector('.ing-qty').value) || 0;
+        const to  = targetSel.value;
+        const r   = convertUnit(qty, fromUnit, to);
+        if (r === null) return;
+        row.querySelector('.ing-qty').value = r;
+        row.querySelector('.ing-unit').value = to;
+        const newCompat = compatibleUnits(to);
+        btn.disabled = !newCompat.length;
+        btn.style.opacity = newCompat.length ? '' : '0.35';
+        converterEl.style.display = 'none';
+        converterEl.innerHTML = '';
+        showToast(`Converted: ${qty} ${fromUnit} \u2192 ${r} ${to}`);
+      });
+
+      cancelBtn.addEventListener('click', () => {
+        converterEl.style.display = 'none';
+        converterEl.innerHTML = '';
+      });
+    }
+  });
+
+  ingredientsList.addEventListener('input', (e) => {
+    if (e.target.classList.contains('ing-name')) {
+      updatePreview();
+    }
+  });
+
+  ingredientsList.querySelectorAll('.ing-name').forEach(input => setupAutocomplete(input, updatePreview));
+}
+
+/** Wire up substitution add/remove, manual allergen toggles, manual cost items */
+function setupSubstitutionAndAllergenHandlers(ctx) {
+  const { container, subsList, isEdit, dishId, manualAllergens, counters } = ctx;
+  const addSubBtn = container.querySelector('#add-substitution');
+
+  addSubBtn.addEventListener('click', () => {
+    counters.sub++;
+    const div = document.createElement('div');
+    div.innerHTML = substitutionRow(null, counters.sub);
+    subsList.appendChild(div.firstElementChild);
+  });
+
+  subsList.addEventListener('click', (e) => {
+    if (e.target.closest('.remove-sub')) {
+      e.target.closest('.substitution-row').remove();
+    }
+  });
+
+  const allergenToggleGrid = container.querySelector('#allergen-manual-toggles');
+  allergenToggleGrid.addEventListener('click', async (e) => {
+    const btn = e.target.closest('.allergen-toggle');
+    if (!btn) return;
+    const allergen = btn.dataset.allergen;
+    const isActive = btn.classList.contains('active');
+
+    if (isEdit) {
+      try {
+        await updateDishAllergen(dishId, { allergen, action: isActive ? 'remove' : 'add' });
+        btn.classList.toggle('active');
+        showToast(isActive ? `Removed ${allergen}` : `Added ${allergen}`);
+      } catch (_err) {
+        showToast('Failed to update allergen', 'error');
+      }
+    } else {
+      btn.classList.toggle('active');
+      if (!isActive) {
+        manualAllergens.add(allergen);
+      } else {
+        manualAllergens.delete(allergen);
+      }
+    }
+  });
+
+  const manualCostsList = container.querySelector('#manual-costs-list');
+  const addManualCostBtn = container.querySelector('#add-manual-cost');
+
+  addManualCostBtn.addEventListener('click', () => {
+    counters.manualCost++;
+    const div = document.createElement('div');
+    div.innerHTML = manualCostRow(null, counters.manualCost);
+    manualCostsList.appendChild(div.firstElementChild);
+  });
+
+  manualCostsList.addEventListener('click', (e) => {
+    if (e.target.closest('.remove-manual-cost')) {
+      e.target.closest('.manual-cost-row').remove();
+    }
+  });
+}
+
+/** Wire up service component add/remove and drag-drop */
+function setupComponentHandlers(ctx) {
+  const { container, counters } = ctx;
+  const componentsList = container.querySelector('#components-list');
+
+  container.querySelector('#add-component').addEventListener('click', () => {
+    const div = document.createElement('div');
+    div.innerHTML = componentRow(null, counters.component++);
+    componentsList.appendChild(div.firstElementChild);
+  });
+
+  componentsList.addEventListener('click', (e) => {
+    if (e.target.closest('.remove-component')) {
+      e.target.closest('.component-row').remove();
+    }
+  });
+
+  setupComponentDragDrop(componentsList);
+}
+
+/** Wire up prep and service direction add/remove, drag-drop, and AI cleanup */
+function setupDirectionHandlers(ctx) {
+  const { container, dish, counters } = ctx;
+  const directionsList = container.querySelector('#directions-list');
+  const svcDirectionsList = container.querySelector('#service-directions-list');
+
+  const updateSubtitles = () => updateDirectionSubtitles(container);
+
+  container.querySelector('#add-direction-step').addEventListener('click', () => {
+    counters.dirStep++;
+    const div = document.createElement('div');
+    div.innerHTML = directionStepRow(null, counters.dirStep);
+    directionsList.appendChild(div.firstElementChild);
+    const rows = directionsList.querySelectorAll('.dir-step-row');
+    const last = rows[rows.length - 1];
+    if (last) last.querySelector('.dir-text').focus();
+    updateSubtitles();
+  });
+
+  container.querySelector('#add-direction-section').addEventListener('click', () => {
+    counters.dirStep++;
+    const div = document.createElement('div');
+    div.innerHTML = directionSectionRow(null, counters.dirStep);
+    directionsList.appendChild(div.firstElementChild);
+    const rows = directionsList.querySelectorAll('.dir-section-row');
+    const last = rows[rows.length - 1];
+    if (last) last.querySelector('.dir-section-label').focus();
+  });
+
+  directionsList.addEventListener('click', (e) => {
+    if (e.target.closest('.remove-dir-step')) {
+      e.target.closest('.dir-step-row').remove();
+      updateSubtitles();
+      return;
+    }
+    if (e.target.closest('.remove-dir-section')) {
+      e.target.closest('.dir-section-row').remove();
+    }
+  });
+
+  // AI Cleanup button
+  const aiCleanupBtn = container.querySelector('#ai-cleanup-btn');
+  const aiCleanupPreview = container.querySelector('#ai-cleanup-preview');
+
+  if (aiCleanupBtn && aiCleanupPreview) {
+    aiCleanupBtn.addEventListener('click', async () => {
+      if (!dish) return;
+
+      aiCleanupBtn.disabled = true;
+      aiCleanupBtn.textContent = 'Thinking...';
+      aiCleanupPreview.style.display = 'block';
+      aiCleanupPreview.innerHTML = '<div class="cb-processing"><div class="cb-preview-spinner"></div><span>Cleaning up directions...</span></div>';
+
+      try {
+        const result = await aiCleanupRecipe(dish.id);
+
+        const beforeHtml = result.before.map(line => `<div class="ai-diff-line">${escapeHtml(line)}</div>`).join('');
+        const afterHtml = result.after.map(line => `<div class="ai-diff-line">${escapeHtml(line)}</div>`).join('');
+
+        aiCleanupPreview.innerHTML = `
+          <div class="ai-diff-container">
+            <div class="ai-diff-panel">
+              <div class="ai-diff-header">Before</div>
+              <div class="ai-diff-body">${beforeHtml}</div>
+            </div>
+            <div class="ai-diff-panel ai-diff-after">
+              <div class="ai-diff-header">After</div>
+              <div class="ai-diff-body">${afterHtml}</div>
+            </div>
+          </div>
+          <div class="ai-diff-actions">
+            <button class="btn btn-primary btn-sm" id="ai-cleanup-confirm">Apply Changes</button>
+            <button class="btn btn-secondary btn-sm" id="ai-cleanup-cancel">Cancel</button>
+          </div>
+        `;
+
+        container.querySelector('#ai-cleanup-confirm').addEventListener('click', async () => {
+          try {
+            const confirmResult = await aiConfirm(result.confirmationId);
+            if (confirmResult.success) {
+              showToast('Directions cleaned up', 'success', 15000, confirmResult.undoId ? {
+                label: 'Undo',
+                onClick: async () => {
+                  try {
+                    await aiUndo(confirmResult.undoId);
+                    showToast('Directions restored', 'success');
+                    const { renderDishForm } = await import('./dishForm.js');
+                    renderDishForm(container.parentElement || container, dish.id);
+                  } catch (err) {
+                    showToast('Undo failed: ' + err.message, 'error');
+                  }
+                },
+              } : undefined);
+
+              const { renderDishForm } = await import('./dishForm.js');
+              renderDishForm(container.parentElement || container, dish.id);
+            } else {
+              showToast(confirmResult.response || 'Failed to apply', 'error');
+            }
+          } catch (err) {
+            showToast(err.message || 'Failed to apply changes', 'error');
+          }
+        });
+
+        container.querySelector('#ai-cleanup-cancel').addEventListener('click', () => {
+          aiCleanupPreview.style.display = 'none';
+          aiCleanupPreview.innerHTML = '';
+        });
+
+      } catch (err) {
+        aiCleanupPreview.innerHTML = `<div class="ai-cleanup-error">${escapeHtml(err.message || 'Cleanup failed')}</div>`;
+      } finally {
+        aiCleanupBtn.disabled = false;
+        aiCleanupBtn.innerHTML = `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.5 5.5L19 10l-5.5 1.5L12 17l-1.5-5.5L5 10l5.5-1.5L12 3z"/></svg> Clean up with AI`;
+      }
+    });
+  }
+
+  setupDirectionDragDrop(directionsList);
+
+  // Service Directions
+  container.querySelector('#add-svc-direction-step').addEventListener('click', () => {
+    counters.svcDirStep++;
+    const div = document.createElement('div');
+    div.innerHTML = serviceDirectionStepRow(null, counters.svcDirStep);
+    svcDirectionsList.appendChild(div.firstElementChild);
+    const rows = svcDirectionsList.querySelectorAll('.svc-dir-step-row');
+    const last = rows[rows.length - 1];
+    if (last) last.querySelector('.svc-dir-text').focus();
+    updateSubtitles();
+  });
+
+  container.querySelector('#add-svc-direction-section').addEventListener('click', () => {
+    counters.svcDirStep++;
+    const div = document.createElement('div');
+    div.innerHTML = serviceDirectionSectionRow(null, counters.svcDirStep);
+    svcDirectionsList.appendChild(div.firstElementChild);
+    const rows = svcDirectionsList.querySelectorAll('.svc-dir-section-row');
+    const last = rows[rows.length - 1];
+    if (last) last.querySelector('.svc-dir-section-label').focus();
+  });
+
+  svcDirectionsList.addEventListener('click', (e) => {
+    if (e.target.closest('.remove-svc-dir-step')) {
+      e.target.closest('.svc-dir-step-row').remove();
+      updateSubtitles();
+      return;
+    }
+    if (e.target.closest('.remove-svc-dir-section')) {
+      e.target.closest('.svc-dir-section-row').remove();
+    }
+  });
+
+  setupServiceDirectionDragDrop(svcDirectionsList);
+}
+
+/** Collect all form data from the DOM and return a data object ready for API */
+function collectFormData(ctx) {
+  const { container, dish } = ctx;
+  const ingredientsList = container.querySelector('#ingredients-list');
+  const subsList = container.querySelector('#substitutions-list');
+  const manualCostsList = container.querySelector('#manual-costs-list');
+  const componentsList = container.querySelector('#components-list');
+  const directionsList = container.querySelector('#directions-list');
+  const svcDirectionsList = container.querySelector('#service-directions-list');
+
+  const allRows = ingredientsList.querySelectorAll('.ingredient-row, .section-header-row');
+  const ingData = Array.from(allRows).map((row, idx) => {
+    if (row.classList.contains('section-header-row')) {
+      const label = row.querySelector('.section-header-label').value.trim();
+      return label ? { section_header: label, sort_order: idx } : null;
+    } else {
+      const nameVal = row.querySelector('.ing-name').value.trim();
+      if (!nameVal) return null;
+      return {
+        name: nameVal,
+        quantity: parseFloat(row.querySelector('.ing-qty').value) || 0,
+        unit: row.querySelector('.ing-unit').value,
+        prep_note: row.querySelector('.ing-prep').value.trim(),
+        unit_cost: row.querySelector('.ing-unit-cost').value !== '' ? parseFloat(row.querySelector('.ing-unit-cost').value) : null,
+        base_unit: row.querySelector('.ing-base-unit').value,
+        sort_order: idx,
+      };
+    }
+  }).filter(Boolean);
+
+  const tagsInput = container.querySelector('#dish-tags').value;
+  const tags = tagsInput.split(',').map(t => t.trim()).filter(Boolean);
+
+  const subRows = subsList.querySelectorAll('.substitution-row');
+  const substitutions = Array.from(subRows).map(row => ({
+    allergen: row.querySelector('.sub-allergen').value,
+    original_ingredient: row.querySelector('.sub-original').value.trim(),
+    substitute_ingredient: row.querySelector('.sub-substitute').value.trim(),
+    notes: row.querySelector('.sub-notes')?.value.trim() || '',
+  })).filter(s => s.allergen && s.original_ingredient && s.substitute_ingredient);
+
+  const costRows = manualCostsList.querySelectorAll('.manual-cost-row');
+  const manual_costs = Array.from(costRows).map(row => ({
+    label: row.querySelector('.manual-cost-label').value.trim(),
+    amount: parseFloat(row.querySelector('.manual-cost-amount').value) || 0,
+  })).filter(item => item.label || item.amount > 0);
+
+  const compRows = componentsList.querySelectorAll('.component-row');
+  const components = Array.from(compRows).map((row, idx) => ({
+    name: row.querySelector('.comp-name').value.trim(),
+    sort_order: idx,
+  })).filter(c => c.name);
+
+  const dirRows = directionsList.querySelectorAll('.dir-step-row, .dir-section-row');
+  const directions = Array.from(dirRows).map((row, idx) => {
+    if (row.classList.contains('dir-section-row')) {
+      const label = row.querySelector('.dir-section-label').value.trim();
+      return label ? { type: 'section', text: label, sort_order: idx } : null;
+    } else {
+      const text = row.querySelector('.dir-text').value.trim();
+      return text ? { type: 'step', text, sort_order: idx } : null;
+    }
+  }).filter(Boolean);
+
+  const svcDirRows = svcDirectionsList.querySelectorAll('.svc-dir-step-row, .svc-dir-section-row');
+  const service_directions = Array.from(svcDirRows).map((row, idx) => {
+    if (row.classList.contains('svc-dir-section-row')) {
+      const label = row.querySelector('.svc-dir-section-label').value.trim();
+      return label ? { type: 'section', text: label, sort_order: idx } : null;
+    } else {
+      const text = row.querySelector('.svc-dir-text').value.trim();
+      return text ? { type: 'step', text, sort_order: idx } : null;
+    }
+  }).filter(Boolean);
+
+  const hasDirections = directions.some(d => d.type === 'step');
+  const name = container.querySelector('#dish-name').value.trim();
+
+  return {
+    name,
+    description: container.querySelector('#dish-desc').value.trim(),
+    category: container.querySelector('#dish-category').value,
+    chefs_notes: hasDirections ? '' : (dish ? dish.chefs_notes || '' : ''),
+    service_notes: container.querySelector('#dish-service-notes').value.trim(),
+    suggested_price: parseFloat(container.querySelector('#dish-price').value) || 0,
+    batch_yield: parseFloat(container.querySelector('#dish-batch-yield').value) || 1,
+    ingredients: ingData,
+    tags,
+    substitutions,
+    manual_costs,
+    components,
+    directions,
+    service_directions,
+  };
+}
+
+/** Wire up the form submit handler */
+function setupFormSubmit(ctx) {
+  const { container, form, isEdit, dishId, photoInput, manualAllergens } = ctx;
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+
+    const name = container.querySelector('#dish-name').value.trim();
+    if (!name) {
+      showToast('Dish name is required', 'error');
+      return;
+    }
+
+    const submitBtns = container.querySelectorAll('button[type="submit"], #header-save-btn');
+    submitBtns.forEach(b => { b.disabled = true; b.dataset.origText = b.textContent; b.textContent = 'Saving\u2026'; });
+
+    const data = collectFormData(ctx);
+
+    try {
+      if (isEdit) {
+        await updateDish(dishId, data);
+        showToast('Dish updated');
+      } else {
+        const result = await createDish(data);
+        const file = photoInput.files[0];
+        if (file) {
+          const formData = new FormData();
+          formData.append('photo', file);
+          await uploadDishPhoto(result.id, formData);
+        }
+        for (const allergen of manualAllergens) {
+          try {
+            await updateDishAllergen(result.id, { allergen, action: 'add' });
+          } catch {}
+        }
+        showToast('Dish created');
+      }
+      const savedBackTo = sessionStorage.getItem('dishNav_backTo');
+      if (savedBackTo) {
+        sessionStorage.removeItem('dishNav_backTo');
+        window.location.hash = savedBackTo;
+      } else {
+        window.location.hash = '#/dishes';
+      }
+    } catch (err) {
+      submitBtns.forEach(b => { b.disabled = false; b.textContent = b.dataset.origText || (isEdit ? 'Save Changes' : 'Create Dish'); });
+      showToast(err.message, 'error');
+    }
+  });
+}
+
+/** Set up WebSocket sync listener for edit mode */
+function setupSyncListener(isEdit, dishId) {
+  if (!isEdit) return;
+
+  const onUpdate = (e) => {
+    if (e.detail && String(e.detail.id) === String(dishId)) {
+      showToast('This dish was updated on another device', 'info', 5000, {
+        label: 'Reload',
+        onClick: () => { window.location.reload(); }
+      });
+    }
+  };
+  window.addEventListener('sync:dish_updated', onUpdate);
+  const cleanup = () => {
+    window.removeEventListener('sync:dish_updated', onUpdate);
+    window.removeEventListener('hashchange', cleanup);
+  };
+  window.addEventListener('hashchange', cleanup);
+}
+
+/** Set up collapsible sections */
+function setupCollapsibles(ctx) {
+  const { container, dish, isEdit } = ctx;
+
+  makeCollapsible(container.querySelector('#section-photo'), { open: !!(dish && dish.photo_path) || !isEdit, storageKey: 'dish_sec_photo' });
+  makeCollapsible(container.querySelector('#section-ingredients'), { open: true, storageKey: 'dish_sec_ingredients' });
+  makeCollapsible(container.querySelector('#section-allergens'), { open: false, storageKey: 'dish_sec_allergens' });
+  makeCollapsible(container.querySelector('#section-substitutions'), { open: false, storageKey: 'dish_sec_subs' });
+  makeCollapsible(container.querySelector('#section-components'), { open: false, storageKey: 'dish_sec_components' });
+  makeCollapsible(container.querySelector('#section-costing'), { open: false, storageKey: 'dish_sec_costing' });
+  makeCollapsible(container.querySelector('#section-manual-costs'), { open: false, storageKey: 'dish_sec_manualcosts' });
+  makeCollapsible(container.querySelector('#section-prep-directions'), { open: true, storageKey: 'dish_sec_prep_directions' });
+  makeCollapsible(container.querySelector('#section-svc-directions'), { open: false, storageKey: 'dish_sec_svc_directions' });
+  makeCollapsible(container.querySelector('#section-service-notes'), { open: false, storageKey: 'dish_sec_servicenotes' });
+}
+
+/** Set up overflow menu (duplicate button, edit mode only) */
+function setupOverflowMenu(ctx) {
+  const { container, dishId } = ctx;
+
+  const overflowSlot = container.querySelector('#dish-overflow-menu');
+  if (overflowSlot) {
+    const menuBtn = createActionMenu([
+      { label: 'Duplicate', icon: '\u29C9', onClick: async () => {
+        try {
+          const result = await duplicateDish(dishId);
+          showToast('Dish duplicated');
+          window.location.hash = `#/dishes/${result.id}/edit`;
+        } catch (err) {
+          showToast(err.message, 'error');
+        }
+      }},
+    ]);
+    overflowSlot.appendChild(menuBtn);
+  }
+}
+
 export async function renderDishForm(container, dishId) {
   const isEdit = !!dishId;
   let dish = null;
@@ -359,51 +1098,32 @@ export async function renderDishForm(container, dishId) {
     </form>
   `;
 
-  // Wire up interactions
+  // Wire up interactions — build context object and delegate to extracted helpers
   const form = container.querySelector('#dish-form');
   const ingredientsList = container.querySelector('#ingredients-list');
-  const addBtn = container.querySelector('#add-ingredient');
-  const addSectionBtn = container.querySelector('#add-section-header');
   const photoArea = container.querySelector('#photo-upload-area');
   const photoInput = container.querySelector('#photo-input');
   const allergenPreview = container.querySelector('#allergen-preview');
   const subsList = container.querySelector('#substitutions-list');
-  const addSubBtn = container.querySelector('#add-substitution');
+  const manualAllergens = new Set();
 
-  let ingredientCounter = ingredients.length;
-  let sectionCounter = 0;
-  let subCounter = existingSubs.length;
-  let manualCostCounter = (dish && dish.manual_costs ? dish.manual_costs.length : 0);
-  const manualAllergens = new Set(); // tracks manually toggled allergens in create mode
+  const ctx = {
+    container, form, isEdit, dishId, dish, allergenKeywords,
+    ingredientsList, photoArea, photoInput, allergenPreview,
+    subsList, manualAllergens,
+    counters: {
+      ingredient: ingredients.length,
+      section: 0,
+      sub: existingSubs.length,
+      manualCost: (dish && dish.manual_costs ? dish.manual_costs.length : 0),
+      component: existingComponents.length,
+      dirStep: existingDirections.length,
+      svcDirStep: existingServiceDirections.length,
+    }
+  };
 
-  // Overflow menu (edit mode only)
-  const overflowSlot = container.querySelector('#dish-overflow-menu');
-  if (overflowSlot) {
-    const menuBtn = createActionMenu([
-      { label: 'Duplicate', icon: '⧉', onClick: async () => {
-        try {
-          const result = await duplicateDish(dishId);
-          showToast('Dish duplicated');
-          window.location.hash = `#/dishes/${result.id}/edit`;
-        } catch (err) {
-          showToast(err.message, 'error');
-        }
-      }},
-    ]);
-    overflowSlot.appendChild(menuBtn);
-  }
-
-  // Collapsible sections
-  makeCollapsible(container.querySelector('#section-photo'), { open: !!(dish && dish.photo_path) || !isEdit, storageKey: 'dish_sec_photo' });
-  makeCollapsible(container.querySelector('#section-ingredients'), { open: true, storageKey: 'dish_sec_ingredients' });
-  makeCollapsible(container.querySelector('#section-allergens'), { open: false, storageKey: 'dish_sec_allergens' });
-  makeCollapsible(container.querySelector('#section-substitutions'), { open: false, storageKey: 'dish_sec_subs' });
-  makeCollapsible(container.querySelector('#section-components'), { open: false, storageKey: 'dish_sec_components' });
-  makeCollapsible(container.querySelector('#section-costing'), { open: false, storageKey: 'dish_sec_costing' });
-  makeCollapsible(container.querySelector('#section-manual-costs'), { open: false, storageKey: 'dish_sec_manualcosts' });
-  makeCollapsible(container.querySelector('#section-prep-directions'), { open: true, storageKey: 'dish_sec_prep_directions' });
-  makeCollapsible(container.querySelector('#section-svc-directions'), { open: false, storageKey: 'dish_sec_svc_directions' });
-  makeCollapsible(container.querySelector('#section-service-notes'), { open: false, storageKey: 'dish_sec_servicenotes' });
+  setupCollapsibles(ctx);
+  setupOverflowMenu(ctx);
 
   // Header save button (edit mode only)
   const headerSaveBtn = container.querySelector('#header-save-btn');
@@ -413,699 +1133,19 @@ export async function renderDishForm(container, dishId) {
 
   // If imported data has ingredients, trigger allergen preview
   if (importedData && ingredients.length) {
-    setTimeout(() => updateAllergenPreview(), 0);
+    setTimeout(() => updateAllergenPreview(ingredientsList, allergenPreview, allergenKeywords), 0);
   }
 
-  // Photo upload + lightbox
-  photoArea.addEventListener('click', (e) => {
-    if (e.target.closest('#photo-delete-btn')) return; // handled separately
-    const preview = container.querySelector('#photo-preview');
-    if (preview && preview.tagName === 'IMG' && e.target === preview) {
-      openLightbox(preview.src, dish ? dish.name : 'Preview');
-      return;
-    }
-    photoInput.click();
-  });
-
-  // Photo delete button
-  photoArea.addEventListener('click', async (e) => {
-    const deleteBtn = e.target.closest('#photo-delete-btn');
-    if (!deleteBtn) return;
-    e.stopPropagation();
-
-    if (isEdit) {
-      deleteBtn.disabled = true;
-      try {
-        await deleteDishPhoto(dishId);
-        showToast('Photo removed');
-      } catch (err) {
-        showToast('Failed to remove photo', 'error');
-        deleteBtn.disabled = false;
-        return;
-      }
-    }
-
-    // Reset UI to placeholder
-    const wrap = container.querySelector('#photo-preview-wrap');
-    if (wrap) {
-      wrap.outerHTML = '<div class="photo-placeholder" id="photo-preview"><span>Tap to upload photo</span></div>';
-    }
-    photoInput.value = '';
-  });
-
-  photoInput.addEventListener('change', async () => {
-    const file = photoInput.files[0];
-    if (!file) return;
-
-    const reader = new FileReader();
-    reader.onload = (evt) => {
-      const existingWrap = container.querySelector('#photo-preview-wrap');
-      const existingPlaceholder = container.querySelector('#photo-preview');
-      const newHtml = `<div class="photo-preview-wrap" id="photo-preview-wrap">
-        <img src="${evt.target.result}" alt="Dish photo" class="photo-preview" id="photo-preview">
-        <button type="button" class="photo-delete-btn" id="photo-delete-btn" title="Remove photo">&times;</button>
-      </div>`;
-      if (existingWrap) {
-        existingWrap.outerHTML = newHtml;
-      } else if (existingPlaceholder) {
-        existingPlaceholder.outerHTML = newHtml;
-      }
-    };
-    reader.readAsDataURL(file);
-
-    if (isEdit) {
-      const formData = new FormData();
-      formData.append('photo', file);
-      try {
-        await uploadDishPhoto(dishId, formData);
-        showToast('Photo updated');
-      } catch (err) {
-        showToast('Photo upload failed', 'error');
-      }
-    }
-  });
-
-  // Add ingredient row
-  addBtn.addEventListener('click', () => {
-    ingredientCounter++;
-    const div = document.createElement('div');
-    div.innerHTML = ingredientRow(null, ingredientCounter);
-    ingredientsList.appendChild(div.firstElementChild);
-    setupAutocomplete(ingredientsList.lastElementChild.querySelector('.ing-name'));
-    updateAllergenPreview();
-    updateIngredientSubtitle();
-  });
-
-  // Add section header row
-  addSectionBtn.addEventListener('click', () => {
-    sectionCounter++;
-    const div = document.createElement('div');
-    div.innerHTML = sectionHeaderRow(null, `s${sectionCounter}`);
-    ingredientsList.appendChild(div.firstElementChild);
-  });
-
-  // Clicks inside ingredients list (remove ingredient, remove section, unit converter)
-  ingredientsList.addEventListener('click', (e) => {
-    // Remove ingredient row
-    if (e.target.closest('.remove-ingredient')) {
-      e.target.closest('.ingredient-row').remove();
-      updateAllergenPreview();
-      updateIngredientSubtitle();
-      return;
-    }
-
-    // Remove section header row
-    if (e.target.closest('.remove-section-header')) {
-      e.target.closest('.section-header-row').remove();
-      return;
-    }
-
-    // Unit converter button
-    if (e.target.closest('.ing-convert-btn')) {
-      const btn = e.target.closest('.ing-convert-btn');
-      const row = btn.closest('.ingredient-row');
-      const converterEl = row.querySelector('.ing-converter');
-      if (!converterEl) return;
-
-      // Toggle
-      if (converterEl.style.display !== 'none' && converterEl.innerHTML) {
-        converterEl.style.display = 'none';
-        converterEl.innerHTML = '';
-        return;
-      }
-
-      const fromUnit = row.querySelector('.ing-unit').value;
-      const fromQty  = parseFloat(row.querySelector('.ing-qty').value) || 0;
-      const compat   = compatibleUnits(fromUnit);
-      if (!compat.length) return;
-
-      const defaultTarget = compat[0];
-      const initialResult = fromQty ? convertUnit(fromQty, fromUnit, defaultTarget) : null;
-
-      converterEl.innerHTML = `
-        <div class="ing-converter-inner">
-          <span class="ing-converter-label">Convert <strong>${fromQty || '?'} ${fromUnit}</strong> to:</span>
-          <select class="input ing-converter-target" style="flex:0 0 auto;min-width:80px;">
-            ${compat.map(u => `<option value="${u}">${u}</option>`).join('')}
-          </select>
-          <span class="ing-converter-result">${initialResult !== null ? `= <strong>${initialResult} ${defaultTarget}</strong>` : '—'}</span>
-          <button type="button" class="btn btn-sm btn-primary ing-converter-apply">Apply</button>
-          <button type="button" class="btn btn-sm ing-converter-cancel">✕</button>
-        </div>
-      `;
-      converterEl.style.display = 'block';
-
-      const targetSel    = converterEl.querySelector('.ing-converter-target');
-      const resultSpan   = converterEl.querySelector('.ing-converter-result');
-      const applyBtn     = converterEl.querySelector('.ing-converter-apply');
-      const cancelBtn    = converterEl.querySelector('.ing-converter-cancel');
-
-      function updateResult() {
-        const qty = parseFloat(row.querySelector('.ing-qty').value) || 0;
-        const to  = targetSel.value;
-        const r   = convertUnit(qty, fromUnit, to);
-        resultSpan.innerHTML = r !== null ? `= <strong>${r} ${to}</strong>` : '—';
-      }
-
-      targetSel.addEventListener('change', updateResult);
-      row.querySelector('.ing-qty').addEventListener('input', updateResult);
-
-      applyBtn.addEventListener('click', () => {
-        const qty = parseFloat(row.querySelector('.ing-qty').value) || 0;
-        const to  = targetSel.value;
-        const r   = convertUnit(qty, fromUnit, to);
-        if (r === null) return;
-        row.querySelector('.ing-qty').value = r;
-        // Update the unit select
-        row.querySelector('.ing-unit').value = to;
-        // Refresh convert button availability
-        const newCompat = compatibleUnits(to);
-        btn.disabled = !newCompat.length;
-        btn.style.opacity = newCompat.length ? '' : '0.35';
-        converterEl.style.display = 'none';
-        converterEl.innerHTML = '';
-        showToast(`Converted: ${qty} ${fromUnit} → ${r} ${to}`);
-      });
-
-      cancelBtn.addEventListener('click', () => {
-        converterEl.style.display = 'none';
-        converterEl.innerHTML = '';
-      });
-    }
-  });
-
-  // Live allergen preview on ingredient name change
-  ingredientsList.addEventListener('input', (e) => {
-    if (e.target.classList.contains('ing-name')) {
-      updateAllergenPreview();
-    }
-  });
-
-  // Add substitution row
-  addSubBtn.addEventListener('click', () => {
-    subCounter++;
-    const div = document.createElement('div');
-    div.innerHTML = substitutionRow(null, subCounter);
-    subsList.appendChild(div.firstElementChild);
-  });
-
-  // Remove substitution row
-  subsList.addEventListener('click', (e) => {
-    if (e.target.closest('.remove-sub')) {
-      e.target.closest('.substitution-row').remove();
-    }
-  });
-
-  // Manual allergen toggles
-  const allergenToggleGrid = container.querySelector('#allergen-manual-toggles');
-  allergenToggleGrid.addEventListener('click', async (e) => {
-    const btn = e.target.closest('.allergen-toggle');
-    if (!btn) return;
-    const allergen = btn.dataset.allergen;
-    const isActive = btn.classList.contains('active');
-
-    if (isEdit) {
-      try {
-        await updateDishAllergen(dishId, { allergen, action: isActive ? 'remove' : 'add' });
-        btn.classList.toggle('active');
-        showToast(isActive ? `Removed ${allergen}` : `Added ${allergen}`);
-      } catch (err) {
-        showToast('Failed to update allergen', 'error');
-      }
-    } else {
-      btn.classList.toggle('active');
-      if (!isActive) {
-        manualAllergens.add(allergen);
-      } else {
-        manualAllergens.delete(allergen);
-      }
-    }
-  });
-
-  // Manual cost items
-  const manualCostsList = container.querySelector('#manual-costs-list');
-  const addManualCostBtn = container.querySelector('#add-manual-cost');
-
-  addManualCostBtn.addEventListener('click', () => {
-    manualCostCounter++;
-    const div = document.createElement('div');
-    div.innerHTML = manualCostRow(null, manualCostCounter);
-    manualCostsList.appendChild(div.firstElementChild);
-  });
-
-  manualCostsList.addEventListener('click', (e) => {
-    if (e.target.closest('.remove-manual-cost')) {
-      e.target.closest('.manual-cost-row').remove();
-    }
-  });
-
-  function updateAllergenPreview() {
-    const names = Array.from(ingredientsList.querySelectorAll('.ing-name'))
-      .map(el => el.value.trim())
-      .filter(Boolean);
-
-    if (!names.length) {
-      allergenPreview.innerHTML = '<span class="text-muted">Add ingredients to detect allergens</span>';
-      return;
-    }
-
-    // Detect per-ingredient and build allergens with source info
-    const allergenEntries = [];
-    for (const name of names) {
-      const detected = detectAllergensClient([name], allergenKeywords);
-      for (const allergen of detected) {
-        allergenEntries.push({ allergen, ingredient_name: name });
-      }
-    }
-
-    if (allergenEntries.length) {
-      allergenPreview.innerHTML = renderAllergenBadgesWithSource(allergenEntries);
-    } else {
-      allergenPreview.innerHTML = '<span class="text-muted">No allergens detected</span>';
-    }
-  }
-
-  // Dynamic subtitle updaters for collapsible sections
-  function updateIngredientSubtitle() {
-    const count = container.querySelectorAll('.ingredient-row').length;
-    const el = container.querySelector('#section-ingredients .collapsible-section__subtitle');
-    if (el) {
-      el.textContent = count ? `${count} ingredient${count !== 1 ? 's' : ''}` : '';
-    }
-  }
-
-  function updateDirectionSubtitles() {
-    const prepCount = container.querySelectorAll('#directions-list .dir-step-row').length;
-    const prepEl = container.querySelector('#section-prep-directions .collapsible-section__subtitle');
-    if (prepEl) {
-      prepEl.textContent = prepCount ? `${prepCount} step${prepCount !== 1 ? 's' : ''}` : '';
-    }
-    const svcCount = container.querySelectorAll('#service-directions-list .dir-step-row').length;
-    const svcEl = container.querySelector('#section-svc-directions .collapsible-section__subtitle');
-    if (svcEl) {
-      svcEl.textContent = svcCount ? `${svcCount} step${svcCount !== 1 ? 's' : ''}` : '';
-    }
-  }
-
-  // Ingredient autocomplete
-  function setupAutocomplete(input) {
-    let dropdown = null;
-    let acDebounce = null;
-
-    input.addEventListener('input', () => {
-      clearTimeout(acDebounce);
-      const val = input.value.trim();
-      if (val.length < 2) {
-        removeDropdown();
-        return;
-      }
-
-      acDebounce = setTimeout(async () => {
-        // Stale check: if user has changed input since timeout was set, skip
-        const currentVal = input.value.trim();
-        if (currentVal !== val) return;
-
-        try {
-          const results = await getIngredients(val);
-          if (!results.length) {
-            removeDropdown();
-            return;
-          }
-
-          removeDropdown();
-          dropdown = document.createElement('div');
-          dropdown.className = 'autocomplete-dropdown';
-          results.slice(0, 8).forEach(ing => {
-            const item = document.createElement('div');
-            item.className = 'autocomplete-item';
-            item.textContent = ing.name;
-            item.addEventListener('click', () => {
-              input.value = ing.name;
-              removeDropdown();
-              updateAllergenPreview();
-            });
-            dropdown.appendChild(item);
-          });
-
-          input.parentElement.style.position = 'relative';
-          input.parentElement.appendChild(dropdown);
-        } catch {
-          removeDropdown();
-        }
-      }, 250);
-    });
-
-    input.addEventListener('blur', () => {
-      setTimeout(removeDropdown, 200);
-    });
-
-    function removeDropdown() {
-      if (dropdown) {
-        dropdown.remove();
-        dropdown = null;
-      }
-    }
-  }
-
-  // Set up autocomplete on existing rows
-  ingredientsList.querySelectorAll('.ing-name').forEach(setupAutocomplete);
-
-  // ── Drag-and-drop ────────────────────────────────────────────────────────────
+  setupPhotoHandlers(ctx);
+  setupIngredientHandlers(ctx);
   setupIngredientDragDrop(ingredientsList);
-
-  // ── Service Components ───────────────────────────────────────────────────────
-  const componentsList = container.querySelector('#components-list');
-  let componentCounter = existingComponents.length;
-
-  container.querySelector('#add-component').addEventListener('click', () => {
-    const div = document.createElement('div');
-    div.innerHTML = componentRow(null, componentCounter++);
-    componentsList.appendChild(div.firstElementChild);
-  });
-
-  componentsList.addEventListener('click', (e) => {
-    if (e.target.closest('.remove-component')) {
-      e.target.closest('.component-row').remove();
-    }
-  });
-
-  setupComponentDragDrop(componentsList);
-
-  // ── Directions ─────────────────────────────────────────────────────────────
-  const directionsList = container.querySelector('#directions-list');
-  let dirStepCounter = existingDirections.length;
-
-  container.querySelector('#add-direction-step').addEventListener('click', () => {
-    dirStepCounter++;
-    const div = document.createElement('div');
-    div.innerHTML = directionStepRow(null, dirStepCounter);
-    directionsList.appendChild(div.firstElementChild);
-    // Focus the new textarea
-    const rows = directionsList.querySelectorAll('.dir-step-row');
-    const last = rows[rows.length - 1];
-    if (last) last.querySelector('.dir-text').focus();
-    updateDirectionSubtitles();
-  });
-
-  container.querySelector('#add-direction-section').addEventListener('click', () => {
-    dirStepCounter++;
-    const div = document.createElement('div');
-    div.innerHTML = directionSectionRow(null, dirStepCounter);
-    directionsList.appendChild(div.firstElementChild);
-    const rows = directionsList.querySelectorAll('.dir-section-row');
-    const last = rows[rows.length - 1];
-    if (last) last.querySelector('.dir-section-label').focus();
-  });
-
-  directionsList.addEventListener('click', (e) => {
-    if (e.target.closest('.remove-dir-step')) {
-      e.target.closest('.dir-step-row').remove();
-      updateDirectionSubtitles();
-      return;
-    }
-    if (e.target.closest('.remove-dir-section')) {
-      e.target.closest('.dir-section-row').remove();
-    }
-  });
-
-  // AI Cleanup button
-  const aiCleanupBtn = container.querySelector('#ai-cleanup-btn');
-  const aiCleanupPreview = container.querySelector('#ai-cleanup-preview');
-
-  if (aiCleanupBtn && aiCleanupPreview) {
-    aiCleanupBtn.addEventListener('click', async () => {
-      if (!dish) return;
-
-      aiCleanupBtn.disabled = true;
-      aiCleanupBtn.textContent = 'Thinking...';
-      aiCleanupPreview.style.display = 'block';
-      aiCleanupPreview.innerHTML = '<div class="cb-processing"><div class="cb-preview-spinner"></div><span>Cleaning up directions...</span></div>';
-
-      try {
-        const result = await aiCleanupRecipe(dish.id);
-
-        // Show before/after diff
-        const beforeHtml = result.before.map(line => `<div class="ai-diff-line">${escapeHtml(line)}</div>`).join('');
-        const afterHtml = result.after.map(line => `<div class="ai-diff-line">${escapeHtml(line)}</div>`).join('');
-
-        aiCleanupPreview.innerHTML = `
-          <div class="ai-diff-container">
-            <div class="ai-diff-panel">
-              <div class="ai-diff-header">Before</div>
-              <div class="ai-diff-body">${beforeHtml}</div>
-            </div>
-            <div class="ai-diff-panel ai-diff-after">
-              <div class="ai-diff-header">After</div>
-              <div class="ai-diff-body">${afterHtml}</div>
-            </div>
-          </div>
-          <div class="ai-diff-actions">
-            <button class="btn btn-primary btn-sm" id="ai-cleanup-confirm">Apply Changes</button>
-            <button class="btn btn-secondary btn-sm" id="ai-cleanup-cancel">Cancel</button>
-          </div>
-        `;
-
-        container.querySelector('#ai-cleanup-confirm').addEventListener('click', async () => {
-          try {
-            const confirmResult = await aiConfirm(result.confirmationId);
-            if (confirmResult.success) {
-              showToast('Directions cleaned up', 'success', 15000, confirmResult.undoId ? {
-                label: 'Undo',
-                onClick: async () => {
-                  try {
-                    await aiUndo(confirmResult.undoId);
-                    showToast('Directions restored', 'success');
-                    // Reload the form
-                    const { renderDishForm } = await import('./dishForm.js');
-                    renderDishForm(container.parentElement || container, dish.id);
-                  } catch (err) {
-                    showToast('Undo failed: ' + err.message, 'error');
-                  }
-                },
-              } : undefined);
-
-              // Reload the dish form to show new directions
-              const { renderDishForm } = await import('./dishForm.js');
-              renderDishForm(container.parentElement || container, dish.id);
-            } else {
-              showToast(confirmResult.response || 'Failed to apply', 'error');
-            }
-          } catch (err) {
-            showToast(err.message || 'Failed to apply changes', 'error');
-          }
-        });
-
-        container.querySelector('#ai-cleanup-cancel').addEventListener('click', () => {
-          aiCleanupPreview.style.display = 'none';
-          aiCleanupPreview.innerHTML = '';
-        });
-
-      } catch (err) {
-        aiCleanupPreview.innerHTML = `<div class="ai-cleanup-error">${escapeHtml(err.message || 'Cleanup failed')}</div>`;
-      } finally {
-        aiCleanupBtn.disabled = false;
-        aiCleanupBtn.innerHTML = `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.5 5.5L19 10l-5.5 1.5L12 17l-1.5-5.5L5 10l5.5-1.5L12 3z"/></svg> Clean up with AI`;
-      }
-    });
-  }
-
-  setupDirectionDragDrop(directionsList);
-
-  // ── Service Directions ──────────────────────────────────────────────────────
-  const svcDirectionsList = container.querySelector('#service-directions-list');
-  let svcDirStepCounter = existingServiceDirections.length;
-
-  container.querySelector('#add-svc-direction-step').addEventListener('click', () => {
-    svcDirStepCounter++;
-    const div = document.createElement('div');
-    div.innerHTML = serviceDirectionStepRow(null, svcDirStepCounter);
-    svcDirectionsList.appendChild(div.firstElementChild);
-    const rows = svcDirectionsList.querySelectorAll('.svc-dir-step-row');
-    const last = rows[rows.length - 1];
-    if (last) last.querySelector('.svc-dir-text').focus();
-    updateDirectionSubtitles();
-  });
-
-  container.querySelector('#add-svc-direction-section').addEventListener('click', () => {
-    svcDirStepCounter++;
-    const div = document.createElement('div');
-    div.innerHTML = serviceDirectionSectionRow(null, svcDirStepCounter);
-    svcDirectionsList.appendChild(div.firstElementChild);
-    const rows = svcDirectionsList.querySelectorAll('.svc-dir-section-row');
-    const last = rows[rows.length - 1];
-    if (last) last.querySelector('.svc-dir-section-label').focus();
-  });
-
-  svcDirectionsList.addEventListener('click', (e) => {
-    if (e.target.closest('.remove-svc-dir-step')) {
-      e.target.closest('.svc-dir-step-row').remove();
-      updateDirectionSubtitles();
-      return;
-    }
-    if (e.target.closest('.remove-svc-dir-section')) {
-      e.target.closest('.svc-dir-section-row').remove();
-    }
-  });
-
-  setupServiceDirectionDragDrop(svcDirectionsList);
-
-  // Form submit
-  form.addEventListener('submit', async (e) => {
-    e.preventDefault();
-
-    const name = container.querySelector('#dish-name').value.trim();
-    if (!name) {
-      showToast('Dish name is required', 'error');
-      return;
-    }
-
-    // Disable all submit buttons to prevent duplicate submissions
-    const submitBtns = container.querySelectorAll('button[type="submit"], #header-save-btn');
-    submitBtns.forEach(b => { b.disabled = true; b.dataset.origText = b.textContent; b.textContent = 'Saving…'; });
-
-    // Collect ALL rows in DOM order (ingredients + section headers)
-    const allRows = ingredientsList.querySelectorAll('.ingredient-row, .section-header-row');
-    const ingData = Array.from(allRows).map((row, idx) => {
-      if (row.classList.contains('section-header-row')) {
-        const label = row.querySelector('.section-header-label').value.trim();
-        return label ? { section_header: label, sort_order: idx } : null;
-      } else {
-        const nameVal = row.querySelector('.ing-name').value.trim();
-        if (!nameVal) return null;
-        return {
-          name: nameVal,
-          quantity: parseFloat(row.querySelector('.ing-qty').value) || 0,
-          unit: row.querySelector('.ing-unit').value,
-          prep_note: row.querySelector('.ing-prep').value.trim(),
-          unit_cost: row.querySelector('.ing-unit-cost').value !== '' ? parseFloat(row.querySelector('.ing-unit-cost').value) : null,
-          base_unit: row.querySelector('.ing-base-unit').value,
-          sort_order: idx,
-        };
-      }
-    }).filter(Boolean);
-
-    // Collect tags
-    const tagsInput = container.querySelector('#dish-tags').value;
-    const tags = tagsInput.split(',').map(t => t.trim()).filter(Boolean);
-
-    // Collect substitutions
-    const subRows = subsList.querySelectorAll('.substitution-row');
-    const substitutions = Array.from(subRows).map(row => ({
-      allergen: row.querySelector('.sub-allergen').value,
-      original_ingredient: row.querySelector('.sub-original').value.trim(),
-      substitute_ingredient: row.querySelector('.sub-substitute').value.trim(),
-      notes: row.querySelector('.sub-notes')?.value.trim() || '',
-    })).filter(s => s.allergen && s.original_ingredient && s.substitute_ingredient);
-
-    // Collect manual cost items
-    const costRows = manualCostsList.querySelectorAll('.manual-cost-row');
-    const manual_costs = Array.from(costRows).map(row => ({
-      label: row.querySelector('.manual-cost-label').value.trim(),
-      amount: parseFloat(row.querySelector('.manual-cost-amount').value) || 0,
-    })).filter(item => item.label || item.amount > 0);
-
-    // Collect service components
-    const compRows = componentsList.querySelectorAll('.component-row');
-    const components = Array.from(compRows).map((row, idx) => ({
-      name: row.querySelector('.comp-name').value.trim(),
-      sort_order: idx,
-    })).filter(c => c.name);
-
-    // Collect directions
-    const dirRows = directionsList.querySelectorAll('.dir-step-row, .dir-section-row');
-    const directions = Array.from(dirRows).map((row, idx) => {
-      if (row.classList.contains('dir-section-row')) {
-        const label = row.querySelector('.dir-section-label').value.trim();
-        return label ? { type: 'section', text: label, sort_order: idx } : null;
-      } else {
-        const text = row.querySelector('.dir-text').value.trim();
-        return text ? { type: 'step', text, sort_order: idx } : null;
-      }
-    }).filter(Boolean);
-
-    // Collect service directions
-    const svcDirRows = svcDirectionsList.querySelectorAll('.svc-dir-step-row, .svc-dir-section-row');
-    const service_directions = Array.from(svcDirRows).map((row, idx) => {
-      if (row.classList.contains('svc-dir-section-row')) {
-        const label = row.querySelector('.svc-dir-section-label').value.trim();
-        return label ? { type: 'section', text: label, sort_order: idx } : null;
-      } else {
-        const text = row.querySelector('.svc-dir-text').value.trim();
-        return text ? { type: 'step', text, sort_order: idx } : null;
-      }
-    }).filter(Boolean);
-
-    // If directions were added, clear legacy chefs_notes; otherwise preserve it
-    const hasDirections = directions.some(d => d.type === 'step');
-
-    const data = {
-      name,
-      description: container.querySelector('#dish-desc').value.trim(),
-      category: container.querySelector('#dish-category').value,
-      chefs_notes: hasDirections ? '' : (dish ? dish.chefs_notes || '' : ''),
-      service_notes: container.querySelector('#dish-service-notes').value.trim(),
-      suggested_price: parseFloat(container.querySelector('#dish-price').value) || 0,
-      batch_yield: parseFloat(container.querySelector('#dish-batch-yield').value) || 1,
-      ingredients: ingData,
-      tags,
-      substitutions,
-      manual_costs,
-      components,
-      directions,
-      service_directions,
-    };
-
-    try {
-      if (isEdit) {
-        await updateDish(dishId, data);
-        showToast('Dish updated');
-      } else {
-        const result = await createDish(data);
-        const file = photoInput.files[0];
-        if (file) {
-          const formData = new FormData();
-          formData.append('photo', file);
-          await uploadDishPhoto(result.id, formData);
-        }
-        // Save manually toggled allergens
-        for (const allergen of manualAllergens) {
-          try {
-            await updateDishAllergen(result.id, { allergen, action: 'add' });
-          } catch {}
-        }
-        showToast('Dish created');
-      }
-      const savedBackTo = sessionStorage.getItem('dishNav_backTo');
-      if (savedBackTo) {
-        sessionStorage.removeItem('dishNav_backTo');
-        window.location.hash = savedBackTo;
-      } else {
-        window.location.hash = '#/dishes';
-      }
-    } catch (err) {
-      submitBtns.forEach(b => { b.disabled = false; b.textContent = b.dataset.origText || (isEdit ? 'Save Changes' : 'Create Dish'); });
-      showToast(err.message, 'error');
-    }
-  });
-
-  // Sync listener (edit mode)
-  if (isEdit) {
-    const onUpdate = (e) => {
-      if (e.detail && String(e.detail.id) === String(dishId)) {
-        showToast('This dish was updated on another device', 'info', 5000, {
-          label: 'Reload',
-          onClick: () => { window.location.reload(); }
-        });
-      }
-    };
-    window.addEventListener('sync:dish_updated', onUpdate);
-    const cleanup = () => {
-      window.removeEventListener('sync:dish_updated', onUpdate);
-      window.removeEventListener('hashchange', cleanup);
-    };
-    window.addEventListener('hashchange', cleanup);
-  }
+  setupSubstitutionAndAllergenHandlers(ctx);
+  setupComponentHandlers(ctx);
+  setupDirectionHandlers(ctx);
+  setupFormSubmit(ctx);
+  setupSyncListener(isEdit, dishId);
 }
+
 
 // ── Row templates ────────────────────────────────────────────────────────────
 

@@ -31,6 +31,10 @@ class DbWrapper {
   exec(sql) {
     this._db.run(sql);
   }
+
+  cancelPendingSave() {
+    // No-op in tests — no disk writes to cancel
+  }
 }
 
 class StmtWrapper {
@@ -360,6 +364,7 @@ async function createTestApp() {
     broadcasts,
     /** Restore the original getDb after tests complete */
     cleanup() {
+      wrapper.cancelPendingSave();
       dbModule.getDb = originalGetDb;
     },
   };
