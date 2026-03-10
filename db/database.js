@@ -371,10 +371,23 @@ async function initialize() {
     `ALTER TABLE dishes ADD COLUMN is_temporary INTEGER DEFAULT 0`,
   ];
 
-  for (const sql of MIGRATIONS) {
-    try { sqlDb.run(sql); } catch {}
+  let migrationErrors = 0;
+  for (let i = 0; i < MIGRATIONS.length; i++) {
+    try { sqlDb.run(MIGRATIONS[i]); } catch (err) {
+      // Expected for already-applied migrations (e.g. duplicate column).
+      // Log unexpected failures to aid debugging.
+      const snippet = MIGRATIONS[i].substring(0, 80).replace(/\s+/g, ' ');
+      if (!/duplicate column|already exists/i.test(err.message)) {
+        console.warn(`Migration ${i} failed: ${snippet}… — ${err.message}`);
+        migrationErrors++;
+      }
+    }
   }
-  console.log('Migrations applied.');
+  if (migrationErrors) {
+    console.warn(`Migrations applied with ${migrationErrors} unexpected error(s).`);
+  } else {
+    console.log('Migrations applied.');
+  }
 
   // Auto-purge soft-deleted records older than 7 days
   try { sqlDb.run("DELETE FROM dishes WHERE deleted_at IS NOT NULL AND deleted_at < datetime('now', '-7 days')"); } catch {}

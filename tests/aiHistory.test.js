@@ -5,10 +5,6 @@
  * Tests snapshot save/restore/cleanup logic.
  */
 
-jest.mock('../middleware/rateLimit', () => ({
-  createRateLimit: () => (_req, _res, next) => next(),
-}));
-
 const { createTestApp } = require('./helpers/setupTestApp');
 
 let db, cleanup;

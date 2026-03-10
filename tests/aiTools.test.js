@@ -5,10 +5,6 @@
  * Tests tool definitions and handler preview/execute paths.
  */
 
-jest.mock('../middleware/rateLimit', () => ({
-  createRateLimit: () => (_req, _res, next) => next(),
-}));
-
 const { createTestApp } = require('./helpers/setupTestApp');
 
 let db, cleanup;

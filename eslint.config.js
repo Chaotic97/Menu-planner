@@ -92,6 +92,8 @@ module.exports = [
       'no-empty': ['error', { allowEmptyCatch: true }],
       'no-var': 'error',
       'prefer-const': 'warn',
+      'eqeqeq': ['warn', 'always'],
+      'no-throw-literal': 'error',
     },
   },
 ];
