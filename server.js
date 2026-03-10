@@ -34,15 +34,17 @@ app.use(cors({
 }));
 app.use(express.json({ limit: '1mb' }));
 
-// Derive a stable session secret: env var > DB setting > generate-and-persist
+// Derive a stable session secret: env var > file > generate-and-persist
 function getSessionSecret() {
   if (process.env.SESSION_SECRET) return process.env.SESSION_SECRET;
-  const db = getDb();
-  const row = db.prepare('SELECT value FROM settings WHERE key = ?').get('session_secret');
-  if (row) return row.value;
-  const secret = crypto.randomBytes(32).toString('hex');
-  db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').run('session_secret', secret);
-  return secret;
+  const secretPath = path.join(sessionsDir, '.secret');
+  try {
+    return fs.readFileSync(secretPath, 'utf8').trim();
+  } catch {
+    const secret = crypto.randomBytes(32).toString('hex');
+    fs.writeFileSync(secretPath, secret, { mode: 0o600 });
+    return secret;
+  }
 }
 
 // Session middleware — persists to disk so logins survive server restarts
