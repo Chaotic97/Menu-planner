@@ -1148,7 +1148,7 @@ async function showPrepareWeek(ctx) {
           try { ad = d.active_days ? JSON.parse(d.active_days) : null; } catch { /* ignore */ }
           return ad !== null && ad.length < scheduleDays.length;
         });
-        return daySpecific.length ? `<p style="margin:0;font-size:0.85rem;color:var(--text-secondary);">${daySpecific.length} dish${daySpecific.length !== 1 ? 'es' : ''} with day-specific schedules</p>` : '';
+        return daySpecific.length ? `<p style="margin:0;font-size:0.85rem;color:var(--text-muted);">${daySpecific.length} dish${daySpecific.length !== 1 ? 'es' : ''} with day-specific schedules</p>` : '';
       })()}
     </div>
     <button id="generate-week-btn" class="btn btn-primary" style="width:100%;margin-top:16px;">Generate Prep Tasks</button>

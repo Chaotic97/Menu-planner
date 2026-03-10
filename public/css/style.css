@@ -88,8 +88,6 @@ html { overscroll-behavior: none; touch-action: manipulation; }
 [data-theme="dark"] .special-image { background: #3a3a3a; }
 [data-theme="dark"] .photo-placeholder { background: #333; }
 [data-theme="dark"] .mb-no-thumb { background: #333; }
-[data-theme="dark"] .menu-status.active { background: #1b3a2a; color: var(--success); }
-[data-theme="dark"] .menu-status.inactive { background: #3a2020; color: var(--danger); }
 [data-theme="dark"] .allergen-badge { color: #1a1a1a; }
 [data-theme="dark"] .modal-overlay { background: rgba(0,0,0,0.6); }
 [data-theme="dark"] .autocomplete-item:hover { background: rgba(var(--primary-rgb),0.15); }
@@ -682,7 +680,7 @@ textarea.input { resize: vertical; min-height: 80px; }
   width: 100%;
   height: 180px;
   overflow: hidden;
-  background: #e8e8e0;
+  background: var(--bg);
 }
 
 .card-image img {
@@ -1047,7 +1045,10 @@ textarea.input { resize: vertical; min-height: 80px; }
   margin-bottom: 8px;
   border: 1px solid var(--border);
   flex-wrap: wrap;
+  transition: background 0.15s;
 }
+
+.mb-dish-row:hover { background: rgba(var(--primary-rgb), 0.03); }
 
 .mb-dish-thumb {
   width: 50px;
@@ -1093,14 +1094,16 @@ textarea.input { resize: vertical; min-height: 80px; }
   text-transform: uppercase;
 }
 
-.menu-status.active { background: #e8f5e9; color: var(--success); }
-.menu-status.inactive { background: #fbe9e7; color: var(--danger); }
+.menu-status.active { background: rgba(var(--success-rgb), 0.12); color: var(--success); }
+.menu-status.inactive { background: rgba(var(--danger-rgb), 0.12); color: var(--danger); }
 
 .menu-stats {
   font-size: 0.85rem;
   color: var(--text-muted);
   margin-top: 8px;
 }
+
+.allergen-cover-badges { margin-top: 4px; }
 
 /* ============================
    Menu Pricing Bar
@@ -1317,7 +1320,8 @@ textarea.input { resize: vertical; min-height: 80px; }
 }
 
 .ml-section-header h2 {
-  font-size: var(--text-md);
+  font-size: var(--text-lg);
+  font-weight: 600;
   margin-bottom: 12px;
   color: var(--text);
 }
@@ -1428,11 +1432,12 @@ textarea.input { resize: vertical; min-height: 80px; }
   box-shadow: var(--shadow);
   overflow: hidden;
   margin-bottom: 12px;
-  transition: box-shadow 0.2s;
+  transition: box-shadow 0.2s, transform 0.2s;
 }
 
 .special-card:hover {
   box-shadow: var(--shadow-lg);
+  transform: translateY(-2px);
 }
 
 .special-card.special-inactive {
@@ -1443,7 +1448,7 @@ textarea.input { resize: vertical; min-height: 80px; }
   width: 140px;
   min-height: 120px;
   flex-shrink: 0;
-  background: #e8e8e0;
+  background: var(--bg);
 }
 
 .special-image img {
@@ -1547,10 +1552,15 @@ textarea.input { resize: vertical; min-height: 80px; }
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 12px 0;
+  padding: 12px 8px;
   border-bottom: 1px solid var(--border);
   gap: 12px;
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  transition: background 0.15s;
 }
+
+.mb-picker-item:hover { background: rgba(var(--primary-rgb), 0.04); }
 
 .mb-picker-info { flex: 1; }
 .mb-picker-info strong { display: block; margin-bottom: 2px; }
@@ -1705,9 +1715,11 @@ textarea.input { resize: vertical; min-height: 80px; }
   border-radius: var(--radius-sm);
   margin-bottom: 4px;
   cursor: pointer;
-  transition: opacity 0.2s;
+  transition: opacity 0.2s, background 0.15s;
   min-height: 44px;
 }
+
+.todo-item:hover { background: rgba(var(--primary-rgb), 0.04); }
 
 .todo-item input[type="checkbox"] {
   margin-top: 4px;
@@ -2413,7 +2425,7 @@ textarea.input { resize: vertical; min-height: 80px; }
 }
 
 .filter-favorites-btn {
-  padding: 8px 16px;
+  padding: 10px 20px;
   font-size: 0.9rem;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
@@ -3804,7 +3816,10 @@ textarea.input { resize: vertical; min-height: 80px; }
   border-radius: var(--radius);
   box-shadow: var(--shadow);
   padding: 16px;
+  transition: box-shadow 0.2s;
 }
+
+.sn-note-card:hover { box-shadow: var(--shadow-lg); }
 
 .sn-note-top {
   display: flex;

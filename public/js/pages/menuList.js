@@ -196,7 +196,7 @@ export async function renderMenuList(container) {
           ${guestAllergies.length ? (() => {
             let covers = {};
             try { covers = JSON.parse(menu.allergen_covers || '{}'); } catch {}
-            return `<div class="allergen-cover-badges" style="margin-top:4px;">
+            return `<div class="allergen-cover-badges">
               ${guestAllergies.map(a => `
                 <span class="allergen-badge">${escapeHtml(capitalize(a))}${covers[a] ? ` <span class="allergen-cover-num">&times;${escapeHtml(String(covers[a]))}</span>` : ''}</span>
               `).join('')}

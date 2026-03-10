@@ -331,7 +331,7 @@ export async function renderDishList(container) {
         return;
       }
       fileListDiv.innerHTML = `
-        <div style="font-size:0.85rem;color:var(--text-secondary);margin-bottom:4px;">${files.length} file${files.length === 1 ? '' : 's'} selected:</div>
+        <div style="font-size:0.85rem;color:var(--text-muted);margin-bottom:4px;">${files.length} file${files.length === 1 ? '' : 's'} selected:</div>
         <ul style="margin:0;padding-left:20px;font-size:0.85rem;">
           ${Array.from(files).map(f => `<li>${escapeHtml(f.name)}</li>`).join('')}
         </ul>
