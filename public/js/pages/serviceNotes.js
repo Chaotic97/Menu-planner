@@ -2,6 +2,7 @@ import { getServiceNotes, getServiceNoteDates, createServiceNote, updateServiceN
 import { showToast } from '../components/toast.js';
 import { createActionMenu } from '../components/actionMenu.js';
 import { escapeHtml } from '../utils/escapeHtml.js';
+import { loadingHTML, emptyStateHTML } from '../utils/loadingState.js';
 
 const SHIFTS = [
   { value: 'all',   label: 'All Day',   color: '#546e7a' },
@@ -81,7 +82,7 @@ export async function renderServiceNotes(container) {
         </div>
       </div>
       <div class="sn-notes-panel" id="sn-notes-panel">
-        <div class="loading">Loading...</div>
+        ${loadingHTML('Loading...')}
       </div>
     </div>
   `;
@@ -96,7 +97,7 @@ export async function renderServiceNotes(container) {
 
   async function loadNotes() {
     const panel = document.getElementById('sn-notes-panel');
-    panel.innerHTML = '<div class="loading">Loading...</div>';
+    panel.innerHTML = loadingHTML('Loading...');
     try {
       notes = await getServiceNotes({ date: selectedDate });
       renderNotes();
@@ -153,13 +154,11 @@ export async function renderServiceNotes(container) {
     `;
 
     if (!notes.length) {
-      html += `
-        <div class="sn-empty">
-          <div style="font-size:2.5rem;margin-bottom:12px;">📋</div>
-          <p style="font-weight:600;margin-bottom:4px;">No notes for this date</p>
-          <p style="font-size:0.85rem;">Click "+ Add Note" to log something for this shift.</p>
-        </div>
-      `;
+      html += emptyStateHTML({
+        icon: 'notes',
+        title: 'No notes for this date',
+        message: 'Click "+ Add Note" to log something for this shift.',
+      });
     } else {
       html += notes.map(note => {
         const color = shiftColor(note.shift);

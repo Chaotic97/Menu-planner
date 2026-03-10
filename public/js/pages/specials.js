@@ -4,6 +4,7 @@ import { showToast } from '../components/toast.js';
 import { openModal, closeModal } from '../components/modal.js';
 import { createActionMenu } from '../components/actionMenu.js';
 import { escapeHtml } from '../utils/escapeHtml.js';
+import { loadingHTML, emptyStateHTML } from '../utils/loadingState.js';
 
 // Helper: get Monday of current week
 function getMonday(d) {
@@ -63,7 +64,7 @@ export async function renderSpecials(container) {
     </div>
 
     <div id="specials-list">
-      <div class="loading">Loading specials...</div>
+      ${loadingHTML('Loading specials...')}
     </div>
   `;
 
@@ -87,13 +88,14 @@ export async function renderSpecials(container) {
       const specials = await getSpecials({ week: viewMonday });
 
       if (!specials.length) {
-        listEl.innerHTML = `
-          <div class="empty-state">
-            <p>No specials for this week.</p>
-            <button class="btn btn-primary add-special-empty">+ Add a Special</button>
-          </div>
-        `;
-        listEl.querySelector('.add-special-empty')?.addEventListener('click', showAddSpecial);
+        listEl.innerHTML = emptyStateHTML({
+          icon: 'specials',
+          title: 'No specials for this week',
+          message: 'Add a special to feature this week.',
+          actionLabel: '+ Add a Special',
+          actionId: 'add-special-empty',
+        });
+        listEl.querySelector('#add-special-empty')?.addEventListener('click', showAddSpecial);
         return;
       }
 

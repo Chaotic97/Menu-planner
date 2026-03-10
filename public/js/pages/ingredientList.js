@@ -3,6 +3,7 @@ import { escapeHtml } from '../utils/escapeHtml.js';
 import { showToast } from '../components/toast.js';
 import { openModal, closeModal } from '../components/modal.js';
 import { ALLERGEN_LIST, capitalize } from '../data/allergens.js';
+import { loadingHTML, emptyStateHTML } from '../utils/loadingState.js';
 
 const CATEGORIES = [
   'produce', 'protein', 'dairy', 'dry goods', 'spices',
@@ -20,7 +21,7 @@ export async function renderIngredientList(container) {
   let sortField = 'name';
   let sortDir = 'asc';
 
-  container.innerHTML = '<div class="loading">Loading...</div>';
+  container.innerHTML = loadingHTML('Loading...');
 
   async function load() {
     try {
@@ -69,11 +70,11 @@ export async function renderIngredientList(container) {
         </div>
       </div>
 
-      ${sortedList.length === 0 ? `
-        <div class="empty-state">
-          <p>${searchQuery ? 'No ingredients match your search.' : 'No ingredients yet. Add ingredients when creating dishes.'}</p>
-        </div>
-      ` : `
+      ${sortedList.length === 0 ? emptyStateHTML({
+        icon: 'ingredients',
+        title: searchQuery ? 'No ingredients match your search' : 'No ingredients yet',
+        message: searchQuery ? 'Try a different search term.' : 'Add ingredients when creating dishes.',
+      }) : `
         <div class="il-table-wrap">
           <table class="il-table">
             <thead>

@@ -4,6 +4,7 @@ import { openModal, closeModal } from '../components/modal.js';
 import { createActionMenu } from '../components/actionMenu.js';
 import { escapeHtml } from '../utils/escapeHtml.js';
 import { capitalize } from '../data/allergens.js';
+import { loadingHTML, emptyStateHTML } from '../utils/loadingState.js';
 
 function isEventPast(eventDate) {
   if (!eventDate) return false;
@@ -24,7 +25,7 @@ export async function renderMenuList(container) {
       <button id="new-menu-btn" class="btn btn-primary">+ New Event Menu</button>
     </div>
     <div id="menu-sections">
-      <div class="loading">Loading menus...</div>
+      ${loadingHTML('Loading menus...')}
     </div>
   `;
 
@@ -34,7 +35,11 @@ export async function renderMenuList(container) {
     try {
       const menus = await getMenus();
       if (!menus.length) {
-        sections.innerHTML = '<div class="empty-state"><p>No menus yet.</p><p>Create a menu to start organizing your dishes.</p></div>';
+        sections.innerHTML = emptyStateHTML({
+          icon: 'menus',
+          title: 'No menus yet',
+          message: 'Create a menu to start organizing your dishes.',
+        });
         return;
       }
 
@@ -91,7 +96,11 @@ export async function renderMenuList(container) {
       }
 
       if (!houseMenu && !eventMenus.length) {
-        html = '<div class="empty-state"><p>No menus yet.</p><p>Create a menu to start organizing your dishes.</p></div>';
+        html = emptyStateHTML({
+          icon: 'menus',
+          title: 'No menus yet',
+          message: 'Create a menu to start organizing your dishes.',
+        });
       }
 
       sections.innerHTML = html;

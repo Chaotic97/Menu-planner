@@ -8,6 +8,7 @@ import { makeCollapsible, collapsibleHeader } from '../components/collapsible.js
 import { escapeHtml } from '../utils/escapeHtml.js';
 import { ALLERGEN_LIST, CATEGORY_ORDER, capitalize } from '../data/allergens.js';
 import { printSheet } from '../utils/printSheet.js';
+import { loadingHTML } from '../utils/loadingState.js';
 
 const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const DAY_LETTERS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
@@ -1708,7 +1709,7 @@ async function showDishPicker(menuId, ctx, targetCourseId) {
 // ---- Main Export ----
 
 export async function renderMenuBuilder(container, menuId) {
-  container.innerHTML = '<div class="loading">Loading menu...</div>';
+  container.innerHTML = loadingHTML('Loading menu...');
 
   let menu;
   try {

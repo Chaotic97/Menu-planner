@@ -4,9 +4,10 @@ import { showToast } from '../components/toast.js';
 import { openModal, closeModal } from '../components/modal.js';
 import { createActionMenu } from '../components/actionMenu.js';
 import { printSheet } from '../utils/printSheet.js';
+import { loadingHTML, emptyStateHTML } from '../utils/loadingState.js';
 
 export async function renderShoppingList(container, menuId) {
-  container.innerHTML = '<div class="loading">Loading...</div>';
+  container.innerHTML = loadingHTML('Loading...');
 
   let menus;
   try {
@@ -49,7 +50,11 @@ export async function renderShoppingList(container, menuId) {
 
   function renderShoppingContent() {
     if (!shoppingData || !shoppingData.groups.length) {
-      return '<div class="sl-empty"><p>No ingredients in this menu. Add dishes with ingredients first.</p></div>';
+      return emptyStateHTML({
+        icon: 'shopping',
+        title: 'No ingredients in this menu',
+        message: 'Add dishes with ingredients first.',
+      });
     }
 
     const total = countItems();
@@ -239,7 +244,11 @@ export async function renderShoppingList(container, menuId) {
       </div>
 
       <div id="sl-list">
-        ${activeMenuId ? renderShoppingContent() : '<div class="sl-empty"><p>Select a menu to generate a shopping list.</p></div>'}
+        ${activeMenuId ? renderShoppingContent() : emptyStateHTML({
+          icon: 'shopping',
+          title: 'No menu selected',
+          message: 'Select a menu to generate a shopping list.',
+        })}
       </div>
     `;
 

@@ -4,6 +4,7 @@ import { showToast } from '../components/toast.js';
 import { openModal, closeModal } from '../components/modal.js';
 import { createActionMenu } from '../components/actionMenu.js';
 import { printSheet } from '../utils/printSheet.js';
+import { loadingHTML, emptyStateHTML } from '../utils/loadingState.js';
 
 const PRIORITY_LABELS = { high: 'High', medium: 'Medium', low: 'Low' };
 const TYPE_LABELS = { prep: 'Prep', custom: 'Custom' };
@@ -47,7 +48,7 @@ const DATE_BUCKET_LABELS = {
 const DATE_BUCKET_ORDER = ['overdue', 'today', 'tomorrow', 'this_week', 'later', 'no_date'];
 
 export async function renderTodoView(container, menuId) {
-  container.innerHTML = '<div class="loading">Loading...</div>';
+  container.innerHTML = loadingHTML('Loading...');
 
   let menus;
   try {
@@ -163,7 +164,11 @@ export async function renderTodoView(container, menuId) {
       buckets[bucket].push(task);
     }
     if (Object.keys(buckets).length === 0) {
-      return '<div class="td-empty-state"><p>No tasks found. Create a task or generate from a menu.</p></div>';
+      return emptyStateHTML({
+        icon: 'tasks',
+        title: 'No tasks found',
+        message: 'Create a task or generate from a menu.',
+      });
     }
     return DATE_BUCKET_ORDER
       .filter(b => buckets[b] && buckets[b].length > 0)
@@ -183,7 +188,11 @@ export async function renderTodoView(container, menuId) {
       groups[bucket].push(task);
     }
     if (Object.keys(groups).length === 0) {
-      return '<div class="td-empty-state"><p>No prep tasks. Generate tasks from a menu first.</p></div>';
+      return emptyStateHTML({
+        icon: 'tasks',
+        title: 'No prep tasks',
+        message: 'Generate tasks from a menu first.',
+      });
     }
     const order = ['day_before', 'morning_of', '1_2_hours_before', 'during_service', 'last_minute'];
     return order

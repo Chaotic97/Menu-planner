@@ -9,6 +9,7 @@ import { loadAllergenKeywords, detectAllergensClient, ALLERGEN_INFO } from '../d
 import { escapeHtml } from '../utils/escapeHtml.js';
 import { convertUnit as rawConvert, compatibleUnits } from '../utils/unitConversion.js';
 import { ALLERGEN_LIST, capitalize } from '../data/allergens.js';
+import { loadingHTML } from '../utils/loadingState.js';
 
 /** Render allergen badges grouped by source ingredient */
 function renderAllergenBadgesWithSource(allergens) {
@@ -786,7 +787,7 @@ export async function renderDishForm(container, dishId) {
   let dish = null;
   let allergenKeywords = [];
 
-  container.innerHTML = '<div class="loading">Loading...</div>';
+  container.innerHTML = loadingHTML('Loading...');
 
   try {
     allergenKeywords = await loadAllergenKeywords();

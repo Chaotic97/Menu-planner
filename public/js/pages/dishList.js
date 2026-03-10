@@ -5,6 +5,7 @@ import { openModal, closeModal } from '../components/modal.js';
 import { createActionMenu } from '../components/actionMenu.js';
 import { CATEGORIES } from '../data/categories.js';
 import { escapeHtml } from '../utils/escapeHtml.js';
+import { loadingHTML, emptyStateHTML } from '../utils/loadingState.js';
 
 /**
  * Try to match imported ingredients against existing DB ingredients via AI.
@@ -59,7 +60,7 @@ export async function renderDishList(container) {
       <button id="fav-filter-btn" class="filter-favorites-btn" title="Show favorites only">&hearts; Favorites</button>
     </div>
     <div id="dish-grid" class="card-grid">
-      <div class="loading">Loading dishes...</div>
+      ${loadingHTML('Loading dishes...')}
     </div>
   `;
 
@@ -84,7 +85,15 @@ export async function renderDishList(container) {
     try {
       const dishes = await getDishes(params);
       if (!dishes.length) {
-        grid.innerHTML = '<div class="empty-state"><p>No dishes found.</p><a href="#/dishes/new" class="btn btn-primary">Create your first dish</a></div>';
+        grid.innerHTML = emptyStateHTML({
+          icon: 'dishes',
+          title: 'No dishes found',
+          message: 'Create your first dish to get started.',
+          actionLabel: 'Create First Dish',
+          actionId: 'add-first-dish-btn'
+        });
+        const firstDishBtn = grid.querySelector('#add-first-dish-btn');
+        if (firstDishBtn) firstDishBtn.addEventListener('click', () => { window.location.hash = '#/dishes/new'; });
         return;
       }
 

@@ -6,9 +6,10 @@ import { createActionMenu } from '../components/actionMenu.js';
 import { printSheet } from '../utils/printSheet.js';
 import { escapeHtml } from '../utils/escapeHtml.js';
 import { CATEGORIES } from '../data/categories.js';
+import { loadingHTML } from '../utils/loadingState.js';
 
 export async function renderDishView(container, dishId) {
-  container.innerHTML = '<div class="loading">Loading...</div>';
+  container.innerHTML = loadingHTML('Loading...');
 
   let dish;
   try {

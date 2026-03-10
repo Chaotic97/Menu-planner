@@ -2,6 +2,7 @@ import { getMenus, createMenu, getCalendarEvents } from '../api.js';
 import { showToast } from '../components/toast.js';
 import { openModal, closeModal } from '../components/modal.js';
 import { escapeHtml } from '../utils/escapeHtml.js';
+import { loadingHTML } from '../utils/loadingState.js';
 
 function toDateStr(d) {
   return d.toISOString().slice(0, 10);
@@ -27,7 +28,7 @@ export async function renderCalendar(container) {
   let gcalEvents = [];
   let gcalConfigured = false;
 
-  container.innerHTML = '<div class="loading">Loading calendar...</div>';
+  container.innerHTML = loadingHTML('Loading calendar...');
 
   async function loadMenus() {
     try {

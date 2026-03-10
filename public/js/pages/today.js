@@ -3,6 +3,7 @@ import { escapeHtml } from '../utils/escapeHtml.js';
 import { showToast } from '../components/toast.js';
 import { openModal, closeModal } from '../components/modal.js';
 import { createActionMenu } from '../components/actionMenu.js';
+import { loadingHTML } from '../utils/loadingState.js';
 
 const PRIORITY_LABELS = { high: 'High', medium: 'Medium', low: 'Low' };
 
@@ -38,7 +39,7 @@ function getPhaseIcon(phaseId) {
 }
 
 export async function renderToday(container) {
-  container.innerHTML = '<div class="loading">Loading...</div>';
+  container.innerHTML = loadingHTML('Loading...');
 
   const today = new Date().toISOString().slice(0, 10);
   let data;

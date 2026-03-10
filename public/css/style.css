@@ -2184,11 +2184,30 @@ textarea.input { resize: vertical; min-height: 80px; }
 /* ============================
    Utilities
    ============================ */
+@keyframes ps-spin {
+  to { transform: rotate(360deg); }
+}
+
 .loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
   text-align: center;
   padding: 60px 20px;
   color: var(--text-muted);
-  font-size: 1.1rem;
+  font-size: 0.95rem;
+}
+
+.loading-spinner {
+  display: inline-block;
+  width: 28px;
+  height: 28px;
+  border: 3px solid rgba(var(--primary-rgb), 0.18);
+  border-top-color: var(--primary);
+  border-radius: 50%;
+  animation: ps-spin 0.7s linear infinite;
+  margin-bottom: 12px;
 }
 
 .error {
@@ -2198,10 +2217,35 @@ textarea.input { resize: vertical; min-height: 80px; }
 }
 
 .empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
   text-align: center;
   padding: 60px 20px;
   color: var(--text-muted);
 }
+
+.empty-state-icon {
+  color: var(--text-muted);
+  opacity: 0.4;
+  margin-bottom: 16px;
+}
+
+.empty-state-title {
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: var(--text);
+  margin: 0 0 6px;
+}
+
+.empty-state-message {
+  font-size: 0.9rem;
+  margin: 0 0 20px;
+  max-width: 320px;
+  line-height: 1.5;
+}
+
+.empty-state .btn { margin-top: 4px; }
 
 .empty-state p { margin-bottom: 16px; font-size: 1.1rem; }
 
