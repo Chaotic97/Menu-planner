@@ -310,6 +310,7 @@ export const saveCalendarSettings = (data) => request('/calendar/settings', { me
 export const getCalendarAuthUrl = () => request('/calendar/auth-url');
 export const disconnectCalendar = () => request('/calendar/disconnect', { method: 'POST' });
 export const getCalendarEvents = () => request('/calendar/events');
+export const refreshCalendarEvents = () => request('/calendar/events?refresh=true');
 export const getCalendarList = () => request('/calendar/calendars');
 
 // Auth — public endpoints (no 401 redirect)

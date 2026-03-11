@@ -7894,6 +7894,27 @@ textarea.input { resize: vertical; min-height: 80px; }
   gap: 4px;
   margin-left: var(--space-sm);
   font-weight: 500;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  padding: 4px 10px;
+  cursor: pointer;
+  font-family: inherit;
+  transition: border-color 0.15s, background 0.15s;
+  -webkit-tap-highlight-color: transparent;
+}
+.cal-gcal-status:hover {
+  border-color: var(--border);
+  background: var(--bg-hover);
+}
+.cal-gcal-status:active {
+  background: var(--border);
+}
+.cal-gcal-status--loading svg {
+  animation: cal-spin 0.8s linear infinite;
+}
+@keyframes cal-spin {
+  to { transform: rotate(360deg); }
 }
 
 .cal-legend {

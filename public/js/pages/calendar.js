@@ -1,4 +1,4 @@
-import { getMenus, createMenu, getCalendarEvents } from '../api.js';
+import { getMenus, createMenu, getCalendarEvents, refreshCalendarEvents } from '../api.js';
 import { showToast } from '../components/toast.js';
 import { openModal, closeModal } from '../components/modal.js';
 import { escapeHtml } from '../utils/escapeHtml.js';
@@ -81,7 +81,7 @@ export async function renderCalendar(container) {
     const houseMenu = menus.find(m => m.menu_type === 'standard');
 
     const gcalStatusHtml = gcalConfigured
-      ? '<span class="cal-gcal-status cal-gcal-status--on" title="Google Calendar connected"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg> Google Calendar</span>'
+      ? '<button class="cal-gcal-status cal-gcal-status--on" id="cal-refresh-gcal" title="Refresh Google Calendar"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg> Google Calendar</button>'
       : '';
 
     container.innerHTML = `
@@ -150,6 +150,25 @@ export async function renderCalendar(container) {
         renderContent(null);
       });
     });
+
+    // Google Calendar refresh
+    const refreshBtn = container.querySelector('#cal-refresh-gcal');
+    if (refreshBtn) {
+      refreshBtn.addEventListener('click', async () => {
+        refreshBtn.disabled = true;
+        refreshBtn.classList.add('cal-gcal-status--loading');
+        try {
+          const result = await refreshCalendarEvents();
+          gcalEvents = result.events || [];
+          renderContent(null);
+          showToast('Calendar refreshed');
+        } catch {
+          showToast('Could not refresh calendar', 'error');
+        }
+        refreshBtn.disabled = false;
+        refreshBtn.classList.remove('cal-gcal-status--loading');
+      });
+    }
 
     // Swipe navigation
     setupSwipe(container.querySelector('.cal-grid-wrapper'));

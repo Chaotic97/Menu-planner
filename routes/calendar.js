@@ -247,8 +247,8 @@ router.get('/events', asyncHandler(async (req, res) => {
   const timeMin = new Date(now.getFullYear(), now.getMonth() - 1, 1).toISOString();
   const timeMax = new Date(now.getFullYear(), now.getMonth() + 3, 0).toISOString();
 
-  // Check cache
-  if (eventsCache.data && (Date.now() - eventsCache.fetchedAt) < CACHE_TTL_MS) {
+  // Check cache (skip if ?refresh=true)
+  if (!req.query.refresh && eventsCache.data && (Date.now() - eventsCache.fetchedAt) < CACHE_TTL_MS) {
     return res.json({ events: eventsCache.data, configured: true, cached: true });
   }
 
