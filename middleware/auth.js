@@ -7,6 +7,7 @@ const PUBLIC_PATHS = [
   '/api/auth/passkey/login-options',
   '/api/auth/passkey/login-verify',
   '/api/calendar/callback',
+  '/api/contact',
 ];
 
 function authMiddleware(req, res, next) {

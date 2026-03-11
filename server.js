@@ -89,6 +89,32 @@ app.get('/app', (_req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
+// Contact form endpoint (public, rate-limited)
+const { createRateLimit } = require('./middleware/rateLimit');
+const { sendContactEmail } = require('./services/emailService');
+const contactLimiter = createRateLimit({ windowMs: 15 * 60 * 1000, max: 5, message: 'Too many submissions. Please try again later.' });
+
+app.post('/api/contact', contactLimiter, async (req, res) => {
+  const { name, email, message } = req.body || {};
+  if (!name || typeof name !== 'string' || !name.trim()) {
+    return res.status(400).json({ error: 'Name is required.' });
+  }
+  if (!email || typeof email !== 'string' || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
+    return res.status(400).json({ error: 'Valid email is required.' });
+  }
+  try {
+    await sendContactEmail({
+      name: name.trim(),
+      email: email.trim(),
+      message: message ? String(message).trim().slice(0, 2000) : '',
+    });
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('Contact form error:', err.message);
+    res.status(500).json({ error: 'Could not send message. Please try again later.' });
+  }
+});
+
 app.use(express.static(path.join(__dirname, 'public')));
 app.use('/uploads', express.static(uploadsDir));
 app.use('/js/lib/simplewebauthn-browser', express.static(

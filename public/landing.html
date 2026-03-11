@@ -191,9 +191,10 @@
     .lp-pill-dot {
       width: 8px;
       height: 8px;
-      background: var(--green-400);
+      background: linear-gradient(135deg, var(--green-400) 0%, var(--green-600) 50%, #a5d6a7 100%);
+      background-size: 200% auto;
       border-radius: 50%;
-      animation: float 2s ease-in-out infinite;
+      animation: float 2s ease-in-out infinite, shimmer 8s linear infinite;
     }
     .lp-hero h1 {
       font-size: clamp(2.4rem, 6vw, 4rem);
@@ -209,7 +210,7 @@
       -webkit-background-clip: text;
       -webkit-text-fill-color: transparent;
       background-clip: text;
-      animation: shimmer 4s linear infinite;
+      animation: shimmer 8s linear infinite;
     }
     .lp-hero p {
       font-size: 1.15rem;
@@ -535,9 +536,45 @@
       margin-right: auto;
       line-height: 1.6;
     }
-    .lp-cta-btn-white {
+    .lp-cta-form {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      max-width: 400px;
+      margin: 0 auto;
+      text-align: left;
+    }
+    .lp-cta-row {
+      display: flex;
+      gap: 12px;
+    }
+    .lp-cta-input, .lp-cta-textarea {
+      width: 100%;
+      padding: 12px 16px;
+      font-size: 0.95rem;
+      font-family: var(--font);
+      color: var(--text);
+      background: rgba(255,255,255,0.95);
+      border: 1.5px solid rgba(255,255,255,0.3);
+      border-radius: 10px;
+      outline: none;
+      transition: border-color 0.15s, box-shadow 0.15s;
+    }
+    .lp-cta-input:focus, .lp-cta-textarea:focus {
+      border-color: rgba(255,255,255,0.6);
+      box-shadow: 0 0 0 3px rgba(255,255,255,0.15);
+    }
+    .lp-cta-input::placeholder, .lp-cta-textarea::placeholder {
+      color: var(--text-muted);
+    }
+    .lp-cta-textarea {
+      min-height: 80px;
+      resize: vertical;
+    }
+    .lp-cta-submit {
       display: inline-flex;
       align-items: center;
+      justify-content: center;
       gap: 8px;
       padding: 14px 36px;
       font-size: 1rem;
@@ -547,15 +584,26 @@
       background: #fff;
       border: none;
       border-radius: 12px;
-      text-decoration: none;
       cursor: pointer;
       transition: transform 0.1s, box-shadow 0.15s;
       box-shadow: 0 2px 8px rgba(0,0,0,0.12);
     }
-    .lp-cta-btn-white:hover {
+    .lp-cta-submit:hover {
       box-shadow: 0 4px 16px rgba(0,0,0,0.18);
     }
-    .lp-cta-btn-white:active { transform: scale(0.97); }
+    .lp-cta-submit:active { transform: scale(0.97); }
+    .lp-cta-submit:disabled {
+      opacity: 0.7;
+      cursor: not-allowed;
+    }
+    .lp-cta-status {
+      font-size: 0.9rem;
+      text-align: center;
+      min-height: 1.4em;
+    }
+    @media (max-width: 480px) {
+      .lp-cta-row { flex-direction: column; }
+    }
 
     /* ============================
        Footer
@@ -798,14 +846,22 @@
   </section>
 
   <!-- CTA -->
-  <div class="lp-cta">
+  <div id="contact" class="lp-cta">
     <div class="lp-cta-box lp-reveal">
       <h2>Built by a chef, for chefs</h2>
-      <p>PlateStack is in active development. If you're interested in early access or want to follow along, get in touch.</p>
-      <a href="/app" class="lp-cta-btn-white">
-        Get Started
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
-      </a>
+      <p>PlateStack is in active development. Interested in early access? Drop your details and we'll be in touch.</p>
+      <form class="lp-cta-form" id="contact-form">
+        <div class="lp-cta-row">
+          <input type="text" name="name" class="lp-cta-input" placeholder="Your name" required>
+          <input type="email" name="email" class="lp-cta-input" placeholder="Email address" required>
+        </div>
+        <textarea name="message" class="lp-cta-textarea" placeholder="Tell us about your kitchen (optional)"></textarea>
+        <button type="submit" class="lp-cta-submit" id="contact-submit">
+          Get in Touch
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
+        </button>
+        <div class="lp-cta-status" id="contact-status"></div>
+      </form>
     </div>
   </div>
 
@@ -830,6 +886,44 @@
       });
     }, { threshold: 0.15, rootMargin: '0px 0px -40px 0px' });
     revealEls.forEach(el => observer.observe(el));
+
+    // Contact form
+    document.getElementById('contact-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const btn = document.getElementById('contact-submit');
+      const status = document.getElementById('contact-status');
+      const form = e.target;
+
+      btn.disabled = true;
+      btn.textContent = 'Sending...';
+      status.textContent = '';
+
+      try {
+        const res = await fetch('/api/contact', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name: form.name.value.trim(),
+            email: form.email.value.trim(),
+            message: form.message.value.trim(),
+          }),
+        });
+        const data = await res.json();
+        if (res.ok) {
+          status.textContent = 'Thanks! We\'ll be in touch.';
+          status.style.opacity = '0.9';
+          form.reset();
+        } else {
+          status.textContent = data.error || 'Something went wrong. Try again.';
+          status.style.opacity = '0.85';
+        }
+      } catch {
+        status.textContent = 'Network error. Please try again.';
+        status.style.opacity = '0.85';
+      }
+      btn.disabled = false;
+      btn.innerHTML = 'Get in Touch <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>';
+    });
   </script>
 
 </body>

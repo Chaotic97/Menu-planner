@@ -49,4 +49,32 @@ async function sendPasswordResetEmail(toEmail, resetToken) {
   });
 }
 
-module.exports = { sendPasswordResetEmail };
+async function sendContactEmail({ name, email, message }) {
+  const transport = getTransporter();
+  if (!transport) {
+    throw new Error('Email not configured. Set GMAIL_USER and GMAIL_APP_PASSWORD environment variables.');
+  }
+
+  const body = message
+    ? `<p style="margin:0 0 16px;"><strong>Message:</strong><br>${message.replace(/\n/g, '<br>')}</p>`
+    : '';
+
+  await transport.sendMail({
+    from: `"PlateStack" <${process.env.GMAIL_USER}>`,
+    to: 'dylan@platestack.app',
+    replyTo: email,
+    subject: `PlateStack Interest — ${name}`,
+    html: `
+      <div style="font-family: -apple-system, sans-serif; max-width: 480px; margin: 0 auto; padding: 24px;">
+        <h2 style="color: #2e7d32;">New Interest Form</h2>
+        <p style="margin:0 0 8px;"><strong>Name:</strong> ${name}</p>
+        <p style="margin:0 0 8px;"><strong>Email:</strong> ${email}</p>
+        ${body}
+        <hr style="border:none; border-top:1px solid #e0e0e0; margin:24px 0;">
+        <p style="color: #999; font-size: 13px;">Sent from platestack.app landing page</p>
+      </div>
+    `,
+  });
+}
+
+module.exports = { sendPasswordResetEmail, sendContactEmail };

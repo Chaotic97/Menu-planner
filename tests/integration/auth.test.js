@@ -30,7 +30,7 @@ async function login(password = 'testpass123') {
 describe('GET /api/auth/status', () => {
   test('returns isSetup=false before setup', async () => {
     const res = await request(app).get('/api/auth/status').expect(200);
-    expect(res.body).toEqual({ isSetup: false, isAuthenticated: false });
+    expect(res.body).toEqual({ isSetup: false, isAuthenticated: false, hasPasskeys: false });
   });
 });
 
