@@ -76,6 +76,19 @@ app.use((req, res, next) => {
 // Auth middleware (blocks unauthenticated API requests)
 app.use(authMiddleware);
 
+// Landing page — unauthenticated visitors see the splash page
+app.get('/', (req, res, next) => {
+  if (req.session && req.session.authenticated) {
+    return next(); // Authenticated users fall through to static serving
+  }
+  res.sendFile(path.join(__dirname, 'public', 'landing.html'));
+});
+
+// App entry point — /app always serves the SPA shell
+app.get('/app', (_req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
 app.use(express.static(path.join(__dirname, 'public')));
 app.use('/uploads', express.static(uploadsDir));
 app.use('/js/lib/simplewebauthn-browser', express.static(
