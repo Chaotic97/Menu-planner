@@ -45,7 +45,7 @@ export async function renderDishView(container, dishId) {
       if (row.row_type === 'section') {
         html += `<div class="dv-ing-section">${escapeHtml(row.label)}</div>`;
       } else {
-        const gPerMl = row.g_per_ml || 0;
+        const gPerMl = row.g_per_ml || 1; // default to water density (1 g/ml) for cross-category conversion
         const compatUnits = row.quantity ? allCompatibleUnits(row.unit, gPerMl) : [];
         const qty = row.quantity ? `<span class="dv-ing-qty" data-orig-qty="${row.quantity}" data-orig-unit="${escapeHtml(row.unit)}" data-g-per-ml="${gPerMl}">${row.quantity} ${escapeHtml(row.unit)}</span>` : '';
         const unitInput = row.quantity && compatUnits.length ? `<span class="dv-unit-convert"><input type="text" class="dv-unit-input" list="dv-units-${row.ingredient_id}" placeholder="${escapeHtml(row.unit)}" data-ingredient-id="${row.ingredient_id}" data-orig-unit="${escapeHtml(row.unit)}" data-orig-qty="${row.quantity}" data-g-per-ml="${gPerMl}" title="Type a unit to convert"><datalist id="dv-units-${row.ingredient_id}">${compatUnits.map(u => `<option value="${escapeHtml(u)}">`).join('')}</datalist></span>` : '';
