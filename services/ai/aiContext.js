@@ -134,43 +134,25 @@ async function buildContext(pageContext) {
     }
   }
 
-  // For any page, provide a summary of available dishes and menus for fuzzy matching.
-  // Cap list sizes to keep context window manageable (~4K chars max for lists).
-  const MAX_DISH_LIST = 40;
-  const MAX_MENU_LIST = 15;
-
-  if (!pageContext.entityType || pageContext.entityType !== 'dish') {
-    const dishCount = db.prepare('SELECT COUNT(*) as cnt FROM dishes WHERE deleted_at IS NULL').get();
-    parts.push(`Total dishes in system: ${dishCount.cnt}`);
-
+  // Provide dish/menu lists for name resolution — skip when already on a specific entity.
+  // Keep lists compact: name + ID only, capped to reduce token overhead.
+  if (!pageContext.entityType) {
     const dishes = db.prepare(
-      `SELECT id, name, category FROM dishes WHERE deleted_at IS NULL ORDER BY name LIMIT ${MAX_DISH_LIST}`
+      'SELECT id, name FROM dishes WHERE deleted_at IS NULL ORDER BY name LIMIT 25'
     ).all();
     if (dishes.length) {
-      const dishList = dishes.map(d => `"${d.name}" (ID:${d.id})`).join(', ');
-      parts.push('Available dishes: ' + dishList);
-      if (dishCount.cnt > MAX_DISH_LIST) {
-        parts.push(`(${dishCount.cnt - MAX_DISH_LIST} more dishes not shown — use search_dishes to find others)`);
-      }
+      parts.push('Dishes: ' + dishes.map(d => `${d.name} (${d.id})`).join(', '));
+      const total = db.prepare('SELECT COUNT(*) as cnt FROM dishes WHERE deleted_at IS NULL').get().cnt;
+      if (total > 25) parts.push(`(${total - 25} more — use search_dishes)`);
     }
   }
 
-  const menuCount = db.prepare('SELECT COUNT(*) as cnt FROM menus WHERE deleted_at IS NULL').get();
-  parts.push(`Total menus: ${menuCount.cnt}`);
-
-  const menus = db.prepare(
-    `SELECT id, name, menu_type, event_date FROM menus WHERE deleted_at IS NULL ORDER BY event_date DESC, name LIMIT ${MAX_MENU_LIST}`
-  ).all();
-  if (menus.length) {
-    parts.push('Available menus: ' + menus.map(m => {
-      let label = `"${m.name}" (ID:${m.id}`;
-      if (m.menu_type === 'standard') label += ', house menu';
-      if (m.event_date) label += `, date: ${m.event_date}`;
-      label += ')';
-      return label;
-    }).join(', '));
-    if (menuCount.cnt > MAX_MENU_LIST) {
-      parts.push(`(${menuCount.cnt - MAX_MENU_LIST} more menus not shown — use list_menus to see all)`);
+  if (pageContext.entityType !== 'menu') {
+    const menus = db.prepare(
+      'SELECT id, name FROM menus WHERE deleted_at IS NULL ORDER BY name LIMIT 10'
+    ).all();
+    if (menus.length) {
+      parts.push('Menus: ' + menus.map(m => `${m.name} (${m.id})`).join(', '));
     }
   }
 

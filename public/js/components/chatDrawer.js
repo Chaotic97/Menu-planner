@@ -28,7 +28,7 @@ const sessionApprovedTools = new Set();
 const SESSION_TIMEOUT_MS = 60 * 60 * 1000; // 1 hour
 const MAX_HISTORY_LENGTH = 100; // Cap in-memory history to prevent unbounded growth
 const SENDING_WATCHDOG_MS = 60 * 1000; // 60s max for any single AI interaction
-const STREAM_THROTTLE_MS = 50; // Batch streaming text re-renders
+const STREAM_THROTTLE_MS = 100; // Batch streaming text re-renders
 
 // Tool name → friendly label map
 const TOOL_LABELS = {
@@ -530,7 +530,7 @@ async function sendStreamingMessage(text, input, sendBtn) {
   const streamPayload = {
     message: text,
     context,
-    conversationHistory: conversationHistory.slice(-10),
+    conversationHistory: conversationHistory.slice(-4),
   };
   if (sessionApprovedTools.size > 0) {
     streamPayload.approvedTools = [...sessionApprovedTools];
@@ -1151,6 +1151,27 @@ export function toggleDrawer() {
   } else {
     openDrawer();
   }
+}
+
+/**
+ * Open the drawer and auto-send an initial prompt message.
+ * Starts a fresh conversation so context is clean.
+ */
+export function openDrawerWithPrompt(prompt) {
+  openDrawer();
+  // Start fresh conversation for the prompted flow
+  clearChat();
+  // Wait for drawer to be ready, then inject and send
+  setTimeout(() => {
+    const input = drawerEl?.querySelector('.chat-drawer-input');
+    if (input) {
+      input.value = prompt;
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      // Trigger send
+      const sendBtn = drawerEl?.querySelector('.chat-drawer-send');
+      if (sendBtn) sendBtn.click();
+    }
+  }, 350);
 }
 
 export function clearChat() {

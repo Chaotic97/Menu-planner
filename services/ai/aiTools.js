@@ -879,15 +879,95 @@ IMPORTANT: Always filter dishes/menus with "deleted_at IS NULL" unless specifica
   },
 ];
 
+// Tool categories for context-aware filtering
+const TOOL_CATEGORIES = {
+  // Always included — core search/lookup
+  core: ['search_dishes', 'lookup_dish', 'lookup_menu', 'search_ingredients', 'search_tasks',
+         'get_system_summary', 'list_menus', 'list_dishes', 'query_database'],
+  // Dish-specific tools
+  dish: ['update_dish', 'delete_dish', 'duplicate_dish', 'cleanup_recipe', 'check_allergens',
+         'scale_recipe', 'convert_units', 'add_allergen', 'remove_allergen', 'get_dish_allergens',
+         'add_ingredient_to_dish', 'remove_ingredient_from_dish', 'add_direction_to_dish',
+         'add_tag', 'remove_tag', 'toggle_favorite', 'suggest_price', 'suggest_substitution',
+         'dietary_analysis', 'lookup_ingredient'],
+  // Menu-specific tools
+  menu: ['update_menu', 'delete_menu', 'add_dish_to_menu', 'remove_dish_from_menu',
+         'update_servings', 'add_course_to_menu', 'move_dish_to_course',
+         'get_menu_cost_analysis', 'get_menu_allergens', 'get_shopping_list',
+         'suggest_dish_pairings', 'generate_prep_tasks'],
+  // Task/todo tools
+  tasks: ['create_task', 'update_task', 'delete_task', 'complete_task', 'batch_complete_tasks',
+          'generate_prep_tasks'],
+  // Create tools (available on list/general pages)
+  create: ['create_menu', 'create_dish', 'create_task', 'create_ingredient', 'create_special'],
+  // Service notes
+  notes: ['add_service_note', 'search_service_notes', 'update_service_note', 'delete_service_note'],
+  // Ingredient management
+  ingredients: ['create_ingredient', 'update_ingredient', 'lookup_ingredient',
+                'find_duplicate_ingredients', 'merge_ingredients', 'delete_ingredient'],
+  // Specials & tags
+  misc: ['list_specials', 'list_tags'],
+};
+
 /**
- * Get tool definitions formatted for the Anthropic API
+ * Get tool definitions formatted for the Anthropic API.
+ * Filters by page context to reduce token overhead (~60 tools → ~20).
  */
-function getToolDefinitions() {
-  return TOOL_REGISTRY.map(tool => ({
+function getToolDefinitions(pageContext) {
+  const toSchema = tool => ({
     name: tool.name,
     description: tool.description,
     input_schema: tool.input_schema,
-  }));
+  });
+
+  if (!pageContext || !pageContext.page) {
+    return TOOL_REGISTRY.map(toSchema);
+  }
+
+  // Determine which categories are relevant
+  const categories = new Set(['core']);
+  const page = pageContext.page || '';
+
+  if (pageContext.entityType === 'dish') {
+    categories.add('dish');
+    categories.add('notes');
+  } else if (pageContext.entityType === 'menu') {
+    categories.add('menu');
+    categories.add('tasks');
+    categories.add('notes');
+  } else if (page.includes('todos') || page.includes('tasks')) {
+    categories.add('tasks');
+    categories.add('menu');
+    categories.add('create');
+  } else if (page.includes('ingredients')) {
+    categories.add('ingredients');
+  } else if (page.includes('service-notes')) {
+    categories.add('notes');
+  } else if (page.includes('shopping')) {
+    categories.add('menu');
+  } else {
+    // General page (home, dish list, menu list, etc.) — broad set
+    categories.add('create');
+    categories.add('dish');
+    categories.add('menu');
+    categories.add('tasks');
+    categories.add('notes');
+    categories.add('ingredients');
+    categories.add('misc');
+  }
+
+  // Build allowed tool names set
+  const allowedNames = new Set();
+  for (const cat of categories) {
+    const names = TOOL_CATEGORIES[cat];
+    if (names) {
+      for (const n of names) allowedNames.add(n);
+    }
+  }
+
+  return TOOL_REGISTRY
+    .filter(tool => allowedNames.has(tool.name))
+    .map(toSchema);
 }
 
 /**

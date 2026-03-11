@@ -1,3 +1,7 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
 # PlateStack — Project Reference
 
 Chef-focused menu planning app: dishes with costed ingredients → menus → EU 14 allergen tracking → shopping lists → purchase orders → daily service notes. Single-user, password-gated.
@@ -10,6 +14,7 @@ Chef-focused menu planning app: dishes with costed ingredients → menus → EU 
 | Frontend | Vanilla JS | **ES modules only** (`import`/`export`), no bundler |
 | Database | SQLite via sql.js | In-memory, 500ms debounced disk writes |
 | Real-time | WebSocket (ws) | Broadcasts on every CRUD mutation |
+| Auth | bcrypt + @simplewebauthn (server/browser) v13 | Password + passkey (WebAuthn) login |
 | AI | Claude Haiku via @anthropic-ai/sdk | Function calling, context-aware command bar |
 | CSS | Single stylesheet | `public/css/style.css`, CSS custom properties |
 | PWA | service-worker.js | Cache-first static, network-only `/api/` |
@@ -20,6 +25,7 @@ Chef-focused menu planning app: dishes with costed ingredients → menus → EU 
 npm start              # Run server at http://localhost:3000
 npm test               # Jest: unit + integration tests
 npm run lint           # ESLint flat config (separate backend/frontend/test rules)
+npm run init-db        # Initialize database
 npm run seed-sample    # Insert 5 sample dishes
 ```
 
@@ -32,7 +38,7 @@ db/schema.sql                — Core tables
 middleware/                   — auth.js, asyncHandler.js, rateLimit.js
 services/                    — Business logic (allergens, costs, importers, exporters)
 services/ai/                 — aiService.js, aiTools.js, aiContext.js, aiHistory.js
-routes/                      — auth, dishes, ingredients, menus, todos, serviceNotes, notifications, ai
+routes/                      — auth, dishes, ingredients, menus, todos, today, serviceNotes, notifications, settings, ai, calendar
 public/index.html            — SPA shell with sidebar + mobile bottom tab bar
 public/js/app.js             — Hash router, auth, theme, sidebar state
 public/js/api.js             — SOLE HTTP layer (never call fetch() elsewhere)
@@ -40,7 +46,7 @@ public/js/sync.js            — WebSocket client, dispatches sync:TYPE events
 public/js/pages/             — One file per page, each exports renderXxx(container)
 public/js/components/        — Reusable UI: modal, toast, actionMenu, collapsible, commandBar, chatDrawer
 public/js/utils/             — escapeHtml, notifications, printSheet
-public/css/style.css         — All styles (~3700 lines)
+public/css/style.css         — All styles (~8000 lines)
 tests/                       — Unit tests (pure functions)
 tests/integration/           — Supertest + in-memory SQLite
 tests/helpers/               — setupTestApp.js, auth.js
@@ -107,6 +113,7 @@ tests/helpers/               — setupTestApp.js, auth.js
 | `ai_history` | Undo snapshots, 24h auto-purge |
 | `ai_usage` | Token tracking per API call |
 | `ai_conversations` / `ai_messages` | Chat drawer, 7-day auto-purge |
+| `passkey_credentials` | WebAuthn credentials (id, public_key, counter, transports) |
 
 ## EU 14 Allergens
 celery, gluten, crustaceans, eggs, fish, lupin, milk, molluscs, mustard, nuts, peanuts, sesame, soy, sulphites
@@ -116,14 +123,16 @@ celery, gluten, crustaceans, eggs, fish, lupin, milk, molluscs, mustard, nuts, p
 
 ## Deployment
 - **Domain**: platestack.app (DigitalOcean, PM2, nginx + HTTPS)
-- **Deploy**: `git push` → SSH → `git pull && npm install && pm2 restart menu-planner`
-- **Env vars**: SESSION_SECRET, GMAIL_USER, GMAIL_APP_PASSWORD, APP_URL, DB_PATH, UPLOADS_PATH, SESSIONS_PATH, NODE_ENV
+- **Deploy**: `git push` → SSH → `cd /opt/menu-planner && git pull && npm install && pm2 restart menu-planner`
+- **PM2**: Must start with `NODE_ENV=production` for WebAuthn RP_ID to resolve to `platestack.app`
+- **Env vars**: SESSION_SECRET, GMAIL_USER, GMAIL_APP_PASSWORD, APP_URL, DB_PATH, UPLOADS_PATH, SESSIONS_PATH, NODE_ENV, RP_ID
+- **WebAuthn config**: `IS_PROD` detected from `NODE_ENV=production` OR `APP_URL=https://platestack.app`. RP_ID defaults to `platestack.app` (prod) or `localhost` (dev)
 
 ## Linting
 ESLint 9 flat config (`eslint.config.js`). Three blocks: backend (`commonjs`, Node globals), frontend (`module`, browser globals), tests (`commonjs`, Node + Jest globals). Key rules: `no-var` (error), `prefer-const` (warn), `eqeqeq` (warn), `no-throw-literal` (error), `no-unused-vars` with `argsIgnorePattern: '^_'`.
 
 ## CI
-GitHub Actions on push/PR to main: Node 18/20/22 matrix → `npm ci` → `npm run lint` → `npm test`
+GitHub Actions on push/PR to main: Node 20/22 matrix → `npm ci` → `npm run lint` → `npm test`
 
 @.claude/rules/backend.md
 @.claude/rules/frontend.md

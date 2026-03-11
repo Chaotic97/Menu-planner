@@ -36,7 +36,10 @@ const routes = [
   { pattern: /^#\/flavor-pairings$/, handler: () => renderFlavorPairings(appContent) },
   { pattern: /^#\/ingredients$/, handler: () => renderIngredientList(appContent) },
   { pattern: /^#\/settings$/, handler: () => renderSettings(appContent) },
-  { pattern: /^#\/todos$/, handler: () => renderTodoView(appContent, null) },
+  { pattern: /^#\/todos(\?.*)?$/, handler: (m) => {
+    const params = new URLSearchParams((m[1] || '').replace(/^\?/, ''));
+    renderTodoView(appContent, params.get('menu') || null);
+  }},
   { pattern: /^#\/shopping$/, handler: () => renderShoppingList(appContent, null) },
   { pattern: /^#\/menus\/(\d+)\/shopping$/, handler: (m) => renderShoppingList(appContent, m[1]) },
   { pattern: /^#\/menus\/(\d+)\/todos$/, handler: (m) => renderTodoView(appContent, m[1]) },

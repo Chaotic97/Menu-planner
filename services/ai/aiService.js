@@ -13,6 +13,27 @@ const MODEL = 'claude-haiku-4-5-20251001';
 const MAX_RETRIES = 3;
 const MAX_TOOL_ROUNDS = 15;
 
+// Context cache — avoids redundant DB queries for consecutive messages on same page
+let _cachedContext = { key: null, value: null, time: 0 };
+const CONTEXT_CACHE_TTL = 30000; // 30 seconds
+
+function getCachedContext(pageContext) {
+  const key = pageContext ? `${pageContext.page}:${pageContext.entityType}:${pageContext.entityId}` : '';
+  if (_cachedContext.key === key && Date.now() - _cachedContext.time < CONTEXT_CACHE_TTL) {
+    return _cachedContext.value;
+  }
+  return null;
+}
+
+function setCachedContext(pageContext, value) {
+  const key = pageContext ? `${pageContext.page}:${pageContext.entityType}:${pageContext.entityId}` : '';
+  _cachedContext = { key, value, time: Date.now() };
+}
+
+function invalidateContextCache() {
+  _cachedContext = { key: null, value: null, time: 0 };
+}
+
 /**
  * Get the API key from settings table
  */
@@ -104,37 +125,22 @@ function getUsageStats() {
 /**
  * Build the system prompt for Haiku
  */
+// Static portion of system prompt — cached by Anthropic's prompt caching
+const SYSTEM_PROMPT_BASE = `You are a kitchen assistant in PlateStack, a chef-focused menu planning app.
+
+RULES:
+- ALWAYS use tools when they match the request. Never guess data — look it up.
+- Chain tools as needed (e.g. lookup_menu → lookup_dish for allergen checks).
+- Be concise. Chefs are busy.
+- Use professional culinary language.
+- When the user skips or rejects an action, move on immediately.
+- If a document is uploaded, analyze it and suggest next actions.`;
+
 function buildSystemPrompt(context) {
-  let prompt = `You are a helpful kitchen assistant built into PlateStack, a chef-focused menu planning app. You help with recipe cleanup, menu management, task creation, and general kitchen workflow.
-
-IMPORTANT RULES:
-- You are embedded in a cooking/menu planning application
-- When a tool matches the user's request, ALWAYS use it. Never respond with just text when a tool could answer the question better.
-- You can call multiple tools in sequence. For example, to answer "what allergens are on the Friday menu?", first use lookup_menu to get the dishes, then use lookup_dish for each one to check allergens.
-- For questions about specific dishes, menus, ingredients, or tasks — ALWAYS use the lookup/search tools to get real data. Never guess or make up information.
-- Be concise and practical — chefs are busy. Keep responses short and actionable.
-- Use professional culinary terminology
-- When presenting data from tools, format it clearly with key information highlighted
-- When cleaning up recipes, standardize to professional kitchen language
-- For unit conversions, use metric where practical but respect the user's preferences
-- If the user uploads a document (menu, invoice, recipe), analyze it thoroughly and suggest next actions (e.g. "I found 5 dishes — want me to create them?")
-- When the user skips or rejects a proposed action, do NOT retry it. Move on to the next item immediately.
-
-AVAILABLE ACTIONS:
-- Search, list, and look up: dishes, menus, ingredients, tasks, service notes, shopping lists, specials, tags
-- Create: dishes, menus, tasks, service notes, ingredients, weekly specials (tasks/notes/ingredients auto-execute; dishes/menus/specials need confirmation)
-- Update: dishes (name, category, price, batch yield), menus (name, price, covers, allergies, date), tasks, ingredients (cost, unit), service notes, servings on menus
-- Delete: dishes (soft), menus (soft), tasks, service notes, remove dishes from menus
-- Quick actions: toggle favorites, toggle ingredient stock, complete/uncomplete tasks, batch-complete tasks, duplicate dishes
-- Allergens: add/remove allergen flags, check allergens with AI analysis, view menu-wide allergen breakdown
-- Analysis: food cost analysis per menu, pricing suggestions, dietary suitability analysis
-- Advisory: dish pairing suggestions, ingredient substitutions, recipe scaling advice, unit conversions
-- Recipe building: add/remove ingredients on dishes, add direction steps/sections, add/remove tags
-- Ingredient management: find duplicate ingredients, merge duplicates (reassigns all recipes), delete unused ingredients
-- Workflow: generate prep tasks for a menu, clean up recipe directions with AI`;
+  let prompt = SYSTEM_PROMPT_BASE;
 
   if (context) {
-    prompt += '\n\nCURRENT CONTEXT:\n' + context;
+    prompt += '\n\nCONTEXT:\n' + context;
   }
 
   return prompt;
@@ -145,13 +151,17 @@ AVAILABLE ACTIONS:
  */
 async function callApi(client, systemPrompt, tools, messages) {
   let response;
+  // Mark tools for prompt caching — last tool gets cache_control breakpoint
+  const cachedTools = tools.length ? tools.map((t, i) =>
+    i === tools.length - 1 ? { ...t, cache_control: { type: 'ephemeral' } } : t
+  ) : tools;
   for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
     try {
       response = await client.messages.create({
         model: MODEL,
-        max_tokens: 1024,
-        system: systemPrompt,
-        tools,
+        max_tokens: 2048,
+        system: [{ type: 'text', text: systemPrompt, cache_control: { type: 'ephemeral' } }],
+        tools: cachedTools,
         messages,
       });
       break;
@@ -186,13 +196,16 @@ async function processCommand(message, pageContext, conversationHistory, broadca
   }
 
   const client = new Anthropic({ apiKey, timeout: 45 * 1000 });
-  const context = await buildContext(pageContext);
+  let context = getCachedContext(pageContext);
+  if (context === null) {
+    context = await buildContext(pageContext);
+    setCachedContext(pageContext, context);
+  }
   const systemPrompt = buildSystemPrompt(context);
-  const tools = getToolDefinitions();
+  const tools = getToolDefinitions(pageContext);
 
   const messages = [];
   if (conversationHistory && conversationHistory.length) {
-    // Validate and sanitize history entries to prevent malformed API calls
     for (const entry of conversationHistory) {
       if (entry && typeof entry.role === 'string' && entry.content &&
           (entry.role === 'user' || entry.role === 'assistant')) {
@@ -270,6 +283,7 @@ async function processCommand(message, pageContext, conversationHistory, broadca
         continue;
       }
       executedTools.push({ name: toolCall.name, input: toolCall.input, result });
+      if (result.undoId) invalidateContextCache();
 
       // Append assistant message (with tool_use) + tool_result for next round
       messages.push({ role: 'assistant', content: response.content });
@@ -296,6 +310,7 @@ async function processCommand(message, pageContext, conversationHistory, broadca
         return { response: `Action failed: ${toolErr.message || 'unknown error'}` };
       }
       executedTools.push({ name: toolCall.name, input: toolCall.input, result });
+      if (result.undoId) invalidateContextCache();
       const toolNames = executedTools.map(t => t.name).join(',');
       trackUsage(totalTokensIn, totalTokensOut, toolNames);
 
@@ -372,13 +387,16 @@ async function processCommandStream(message, pageContext, conversationHistory, b
   }
 
   const client = new Anthropic({ apiKey, timeout: 60 * 1000 });
-  const context = await buildContext(pageContext);
+  let context = getCachedContext(pageContext);
+  if (context === null) {
+    context = await buildContext(pageContext);
+    setCachedContext(pageContext, context);
+  }
   const systemPrompt = buildSystemPrompt(context);
-  const tools = getToolDefinitions();
+  const tools = getToolDefinitions(pageContext);
 
   const messages = [];
   if (conversationHistory && conversationHistory.length) {
-    // Validate and sanitize history entries to prevent malformed API calls
     for (const entry of conversationHistory) {
       if (entry && typeof entry.role === 'string' && entry.content &&
           (entry.role === 'user' || entry.role === 'assistant')) {
@@ -408,12 +426,16 @@ async function processCommandStream(message, pageContext, conversationHistory, b
     let tokensIn = 0;
     let tokensOut = 0;
 
+    // Mark tools for prompt caching
+    const cachedTools = tools.length ? tools.map((t, i) =>
+      i === tools.length - 1 ? { ...t, cache_control: { type: 'ephemeral' } } : t
+    ) : tools;
     try {
       const stream = client.messages.stream({
         model: MODEL,
-        max_tokens: 1024,
-        system: systemPrompt,
-        tools,
+        max_tokens: 2048,
+        system: [{ type: 'text', text: systemPrompt, cache_control: { type: 'ephemeral' } }],
+        tools: cachedTools,
         messages,
       });
 
@@ -515,6 +537,7 @@ async function processCommandStream(message, pageContext, conversationHistory, b
         continue;
       }
       executedTools.push({ name: toolCall.name, input: toolCall.input, result });
+      if (result.undoId) invalidateContextCache();
       emit('tool_result', { name: toolCall.name, message: result.message });
 
       // Build messages for next round
@@ -547,6 +570,7 @@ async function processCommandStream(message, pageContext, conversationHistory, b
         return;
       }
       executedTools.push({ name: toolCall.name, input: toolCall.input, result });
+      if (result.undoId) invalidateContextCache();
       emit('tool_result', { name: toolCall.name, message: result.message });
 
       const toolNamesStr = executedTools.map(t => t.name).join(',');

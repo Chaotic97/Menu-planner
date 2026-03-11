@@ -9,6 +9,7 @@ import { escapeHtml } from '../utils/escapeHtml.js';
 import { ALLERGEN_LIST, CATEGORY_ORDER, capitalize } from '../data/allergens.js';
 import { printSheet } from '../utils/printSheet.js';
 import { loadingHTML } from '../utils/loadingState.js';
+import { openDrawerWithPrompt } from '../components/chatDrawer.js';
 
 const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const DAY_LETTERS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
@@ -455,7 +456,13 @@ function setupHeaderActions(container, menuId, isHouse, ctx) {
     const overflowItems = [
       { label: 'Print Kitchen Sheet', icon: '🖨', onClick: () => showKitchenPrint(menuId) },
       { label: 'Scale for Event', icon: '⚖', onClick: () => showScaleModal(menuId, ctx) },
-      { label: 'View Tasks', icon: '✓', onClick: () => { window.location.hash = '#/todos'; } },
+      { label: 'Plan Tasks', icon: '✓', onClick: () => {
+        const menuName = ctx.menu?.name || 'this';
+        openDrawerWithPrompt(
+          `Help me plan tasks for the "${menuName}" menu. Look up the menu, then go through each dish and ask me what prep needs to be done. Also ask about non-cooking tasks like plating, equipment setup, ordering, or anything else I might need to get done. After we talk it through, create the tasks for me.`
+        );
+      }},
+      { label: 'View Tasks', icon: '📋', onClick: () => { window.location.hash = `#/todos?menu=${menuId}`; } },
     ];
     if (isHouse) {
       overflowItems.push({ label: 'Convert to Event Menu', icon: '📅', onClick: async () => {
