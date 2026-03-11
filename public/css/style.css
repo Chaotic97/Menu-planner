@@ -4691,6 +4691,36 @@ textarea.input { resize: vertical; min-height: 80px; }
   text-align: center;
 }
 
+/* --- Dish View: inline unit conversion input --- */
+.dv-unit-convert {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 4px;
+}
+.dv-unit-input {
+  width: 56px;
+  padding: 2px 4px;
+  font-size: 0.78rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text);
+  text-align: center;
+  outline: none;
+  transition: border-color 0.15s;
+}
+.dv-unit-input:focus {
+  border-color: var(--primary);
+}
+.dv-unit-input--invalid {
+  border-color: var(--danger);
+}
+.dv-unit-input::placeholder {
+  color: var(--text-muted);
+  opacity: 0.6;
+  font-size: 0.72rem;
+}
+
 /* --- Dish Form: scaling badge overlay --- */
 .dv-scale-badge {
   display: inline-block;

@@ -7,6 +7,7 @@ import { printSheet } from '../utils/printSheet.js';
 import { escapeHtml } from '../utils/escapeHtml.js';
 import { CATEGORIES } from '../data/categories.js';
 import { loadingHTML } from '../utils/loadingState.js';
+import { convertWithDensity, allCompatibleUnits } from '../utils/unitConversion.js';
 
 /** Auto-normalize units (g→kg at ≥1000, kg→g at <0.1, same for ml↔L) */
 function autoNormalize(qty, unit) {
@@ -44,13 +45,16 @@ export async function renderDishView(container, dishId) {
       if (row.row_type === 'section') {
         html += `<div class="dv-ing-section">${escapeHtml(row.label)}</div>`;
       } else {
-        const qty = row.quantity ? `<span class="dv-ing-qty" data-orig-qty="${row.quantity}" data-orig-unit="${escapeHtml(row.unit)}">${row.quantity} ${escapeHtml(row.unit)}</span>` : '';
+        const gPerMl = row.g_per_ml || 0;
+        const compatUnits = row.quantity ? allCompatibleUnits(row.unit, gPerMl) : [];
+        const qty = row.quantity ? `<span class="dv-ing-qty" data-orig-qty="${row.quantity}" data-orig-unit="${escapeHtml(row.unit)}" data-g-per-ml="${gPerMl}">${row.quantity} ${escapeHtml(row.unit)}</span>` : '';
+        const unitInput = row.quantity && compatUnits.length ? `<span class="dv-unit-convert"><input type="text" class="dv-unit-input" list="dv-units-${row.ingredient_id}" placeholder="${escapeHtml(row.unit)}" data-ingredient-id="${row.ingredient_id}" data-orig-unit="${escapeHtml(row.unit)}" data-orig-qty="${row.quantity}" data-g-per-ml="${gPerMl}" title="Type a unit to convert"><datalist id="dv-units-${row.ingredient_id}">${compatUnits.map(u => `<option value="${escapeHtml(u)}">`).join('')}</datalist></span>` : '';
         const prep = row.prep_note ? `<span class="dv-ing-prep">${escapeHtml(row.prep_note)}</span>` : '';
         const ingAllergens = row.allergens && row.allergens.length ? renderAllergenBadges(row.allergens, true) : '';
         html += `
           <div class="dv-ing-row">
             <span class="dv-ing-name">${escapeHtml(row.ingredient_name)}${ingAllergens ? ' ' + ingAllergens : ''}</span>
-            <span class="dv-ing-right">${qty}${prep}</span>
+            <span class="dv-ing-right">${qty}${unitInput}${prep}</span>
           </div>`;
       }
     }
@@ -245,13 +249,23 @@ export async function renderDishView(container, dishId) {
     const target = parseFloat(scaleInput.value) || batchYield;
     activeMultiplier = target / batchYield;
 
-    // Update ingredient quantities
+    // Update ingredient quantities (respecting per-row unit overrides)
     const qtyEls = container.querySelectorAll('.dv-ing-qty[data-orig-qty]');
     qtyEls.forEach(el => {
       const origQty = parseFloat(el.dataset.origQty) || 0;
       const origUnit = el.dataset.origUnit || '';
       if (!origQty) return;
       const scaled = origQty * activeMultiplier;
+      const displayUnit = el.dataset.displayUnit || '';
+      if (displayUnit && displayUnit !== origUnit) {
+        const gPerMl = parseFloat(el.dataset.gPerMl) || 0;
+        const converted = convertWithDensity(scaled, origUnit, displayUnit, gPerMl);
+        if (converted !== null) {
+          const norm = autoNormalize(converted, displayUnit);
+          el.textContent = `${norm.qty} ${norm.unit}`;
+          return;
+        }
+      }
       const norm = autoNormalize(scaled, origUnit);
       el.textContent = `${norm.qty} ${norm.unit}`;
     });
@@ -294,6 +308,39 @@ export async function renderDishView(container, dishId) {
   if (scaleInput) {
     scaleInput.addEventListener('input', updateScaledDisplay);
   }
+
+  // Inline unit conversion inputs
+  container.querySelectorAll('.dv-unit-input').forEach(input => {
+    input.addEventListener('input', () => {
+      const targetUnit = input.value.trim();
+      const origUnit = input.dataset.origUnit;
+      const origQty = parseFloat(input.dataset.origQty) || 0;
+      const gPerMl = parseFloat(input.dataset.gPerMl) || 0;
+      const qtyEl = input.closest('.dv-ing-row')?.querySelector('.dv-ing-qty');
+      if (!qtyEl || !origQty) return;
+
+      if (!targetUnit || targetUnit === origUnit) {
+        // Reset to original (with current scale applied)
+        delete qtyEl.dataset.displayUnit;
+        const scaled = origQty * activeMultiplier;
+        const norm = autoNormalize(scaled, origUnit);
+        qtyEl.textContent = `${norm.qty} ${norm.unit}`;
+        input.classList.remove('dv-unit-input--invalid');
+        return;
+      }
+
+      const scaled = origQty * activeMultiplier;
+      const converted = convertWithDensity(scaled, origUnit, targetUnit, gPerMl);
+      if (converted !== null) {
+        qtyEl.dataset.displayUnit = targetUnit;
+        const norm = autoNormalize(converted, targetUnit);
+        qtyEl.textContent = `${norm.qty} ${norm.unit}`;
+        input.classList.remove('dv-unit-input--invalid');
+      } else {
+        input.classList.add('dv-unit-input--invalid');
+      }
+    });
+  });
 
   // Overflow action menu
   const overflowSlot = container.querySelector('#dv-overflow-slot');
