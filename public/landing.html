@@ -4,238 +4,833 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="theme-color" content="#2e7d32">
-  <meta name="description" content="PlateStack — Professional menu planning for chefs. Costed recipes, allergen tracking, prep lists, and kitchen workflow tools.">
+  <meta name="description" content="PlateStack — Professional menu planning for chefs. Costed recipes, allergen tracking, prep lists, and AI-powered kitchen workflow tools.">
+  <meta property="og:title" content="PlateStack — Professional Menu Planning">
+  <meta property="og:description" content="Costed recipes, allergen tracking, prep lists, and AI-powered kitchen workflow — built by a chef, for chefs.">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://platestack.app">
   <title>PlateStack — Professional Menu Planning</title>
   <link rel="icon" type="image/svg+xml" href="/favicon.svg">
   <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png">
   <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
     :root {
       --green: #2e7d32;
-      --green-light: #4caf50;
-      --green-dark: #1b5e20;
+      --green-50: #e8f5e9;
+      --green-100: #c8e6c9;
+      --green-400: #66bb6a;
+      --green-600: #43a047;
+      --green-800: #2e7d32;
+      --green-900: #1b5e20;
       --bg: #fafaf7;
       --text: #1a1a1a;
-      --text-muted: #666;
-      --surface: #fff;
-      --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      --text-secondary: #4a4a4a;
+      --text-muted: #777;
+      --surface: #ffffff;
+      --border: #e8e8e4;
+      --font: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     }
+
+    html { scroll-behavior: smooth; }
 
     body {
       font-family: var(--font);
       background: var(--bg);
       color: var(--text);
-      min-height: 100vh;
-      display: flex;
-      flex-direction: column;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+      overflow-x: hidden;
     }
 
-    /* Nav */
+    /* ============================
+       Animations
+       ============================ */
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(24px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    @keyframes fadeIn {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+    @keyframes scaleIn {
+      from { opacity: 0; transform: scale(0.95); }
+      to { opacity: 1; transform: scale(1); }
+    }
+    @keyframes float {
+      0%, 100% { transform: translateY(0); }
+      50% { transform: translateY(-8px); }
+    }
+    @keyframes shimmer {
+      0% { background-position: -200% center; }
+      100% { background-position: 200% center; }
+    }
+    .animate-fade-up {
+      opacity: 0;
+      animation: fadeUp 0.7s ease-out forwards;
+    }
+    .animate-fade-in {
+      opacity: 0;
+      animation: fadeIn 0.6s ease-out forwards;
+    }
+    .animate-scale-in {
+      opacity: 0;
+      animation: scaleIn 0.6s ease-out forwards;
+    }
+    .delay-1 { animation-delay: 0.1s; }
+    .delay-2 { animation-delay: 0.2s; }
+    .delay-3 { animation-delay: 0.3s; }
+    .delay-4 { animation-delay: 0.4s; }
+    .delay-5 { animation-delay: 0.5s; }
+    .delay-6 { animation-delay: 0.6s; }
+    .delay-7 { animation-delay: 0.7s; }
+
+    /* ============================
+       Nav
+       ============================ */
     .lp-nav {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      z-index: 100;
       display: flex;
       align-items: center;
       justify-content: space-between;
-      padding: 16px 32px;
-      background: var(--surface);
-      border-bottom: 1px solid #e8e8e4;
+      padding: 0 40px;
+      height: 64px;
+      background: rgba(250, 250, 247, 0.85);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border-bottom: 1px solid rgba(0,0,0,0.06);
+      animation: fadeIn 0.5s ease-out;
     }
     .lp-logo {
       display: flex;
       align-items: center;
       gap: 10px;
-      font-size: 1.35rem;
-      font-weight: 700;
-      color: var(--green);
-      text-decoration: none;
-      letter-spacing: -0.02em;
-    }
-    .lp-logo svg {
-      width: 28px;
-      height: 28px;
-    }
-    .lp-login {
-      display: inline-block;
-      padding: 8px 20px;
-      font-size: 0.9rem;
-      font-weight: 600;
-      color: var(--green);
-      border: 1.5px solid var(--green);
-      border-radius: 8px;
-      text-decoration: none;
-      transition: background 0.15s, color 0.15s;
-    }
-    .lp-login:hover {
-      background: var(--green);
-      color: #fff;
-    }
-
-    /* Hero */
-    .lp-hero {
-      flex: 1;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      text-align: center;
-      padding: 80px 24px 40px;
-    }
-    .lp-badge {
-      display: inline-block;
-      padding: 6px 16px;
-      font-size: 0.78rem;
-      font-weight: 600;
-      letter-spacing: 0.08em;
-      text-transform: uppercase;
-      color: var(--green);
-      background: rgba(46, 125, 50, 0.08);
-      border-radius: 20px;
-      margin-bottom: 24px;
-    }
-    .lp-hero h1 {
-      font-size: clamp(2rem, 5vw, 3.2rem);
+      font-size: 1.25rem;
       font-weight: 800;
-      line-height: 1.15;
+      color: var(--green-800);
+      text-decoration: none;
       letter-spacing: -0.03em;
-      max-width: 640px;
-      margin-bottom: 16px;
     }
-    .lp-hero h1 span {
-      color: var(--green);
+    .lp-logo-icon {
+      width: 32px;
+      height: 32px;
+      border-radius: 8px;
     }
-    .lp-hero p {
-      font-size: 1.15rem;
-      color: var(--text-muted);
-      max-width: 480px;
-      line-height: 1.6;
-      margin-bottom: 40px;
+    .lp-nav-links {
+      display: flex;
+      align-items: center;
+      gap: 32px;
     }
-
-    /* Features */
-    .lp-features {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-      gap: 20px;
-      max-width: 720px;
-      width: 100%;
-      margin: 0 auto 60px;
-      padding: 0 24px;
+    .lp-nav-link {
+      font-size: 0.88rem;
+      font-weight: 500;
+      color: var(--text-secondary);
+      text-decoration: none;
+      transition: color 0.15s;
     }
-    .lp-feature {
-      padding: 20px;
-      background: var(--surface);
-      border: 1px solid #e8e8e4;
-      border-radius: 12px;
-      text-align: left;
-    }
-    .lp-feature-icon {
-      font-size: 1.5rem;
-      margin-bottom: 8px;
-    }
-    .lp-feature h3 {
-      font-size: 0.95rem;
-      font-weight: 700;
-      margin-bottom: 4px;
-    }
-    .lp-feature p {
-      font-size: 0.82rem;
-      color: var(--text-muted);
-      line-height: 1.5;
-    }
-
-    /* CTA */
-    .lp-cta {
-      text-align: center;
-      padding: 0 24px 80px;
-    }
-    .lp-cta-heading {
-      font-size: 1.3rem;
-      font-weight: 700;
-      margin-bottom: 8px;
-    }
-    .lp-cta-sub {
-      font-size: 0.95rem;
-      color: var(--text-muted);
-      margin-bottom: 24px;
-    }
-    .lp-cta-btn {
-      display: inline-block;
-      padding: 14px 36px;
-      font-size: 1rem;
-      font-weight: 700;
+    .lp-nav-link:hover { color: var(--text); }
+    .lp-signin {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 8px 20px;
+      font-size: 0.88rem;
+      font-weight: 600;
       color: #fff;
-      background: var(--green);
-      border-radius: 10px;
+      background: var(--green-800);
+      border-radius: 8px;
       text-decoration: none;
       transition: background 0.15s, transform 0.1s;
     }
-    .lp-cta-btn:hover {
-      background: var(--green-dark);
+    .lp-signin:hover { background: var(--green-900); }
+    .lp-signin:active { transform: scale(0.97); }
+
+    /* ============================
+       Hero
+       ============================ */
+    .lp-hero {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+      padding: 140px 24px 80px;
+      position: relative;
     }
-    .lp-cta-btn:active {
-      transform: scale(0.98);
+    .lp-hero::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 600px;
+      background: radial-gradient(ellipse 80% 50% at 50% -20%, rgba(46,125,50,0.08) 0%, transparent 100%);
+      pointer-events: none;
+    }
+    .lp-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 16px 6px 8px;
+      font-size: 0.8rem;
+      font-weight: 600;
+      color: var(--green-800);
+      background: var(--green-50);
+      border: 1px solid var(--green-100);
+      border-radius: 100px;
+      margin-bottom: 28px;
+    }
+    .lp-pill-dot {
+      width: 8px;
+      height: 8px;
+      background: var(--green-400);
+      border-radius: 50%;
+      animation: float 2s ease-in-out infinite;
+    }
+    .lp-hero h1 {
+      font-size: clamp(2.4rem, 6vw, 4rem);
+      font-weight: 900;
+      line-height: 1.08;
+      letter-spacing: -0.04em;
+      max-width: 720px;
+      margin-bottom: 20px;
+    }
+    .lp-hero-gradient {
+      background: linear-gradient(135deg, var(--green-800) 0%, var(--green-600) 50%, var(--green-400) 100%);
+      background-size: 200% auto;
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      animation: shimmer 4s linear infinite;
+    }
+    .lp-hero p {
+      font-size: 1.15rem;
+      line-height: 1.7;
+      color: var(--text-secondary);
+      max-width: 520px;
+      margin-bottom: 36px;
+    }
+    .lp-hero-actions {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+    .lp-btn-primary {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 14px 32px;
+      font-size: 1rem;
+      font-weight: 700;
+      font-family: var(--font);
+      color: #fff;
+      background: var(--green-800);
+      border: none;
+      border-radius: 12px;
+      text-decoration: none;
+      cursor: pointer;
+      transition: background 0.15s, transform 0.1s, box-shadow 0.15s;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1), 0 4px 12px rgba(46,125,50,0.15);
+    }
+    .lp-btn-primary:hover {
+      background: var(--green-900);
+      box-shadow: 0 2px 6px rgba(0,0,0,0.12), 0 8px 24px rgba(46,125,50,0.2);
+    }
+    .lp-btn-primary:active { transform: scale(0.97); }
+    .lp-btn-secondary {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 14px 32px;
+      font-size: 1rem;
+      font-weight: 600;
+      font-family: var(--font);
+      color: var(--text-secondary);
+      background: var(--surface);
+      border: 1.5px solid var(--border);
+      border-radius: 12px;
+      text-decoration: none;
+      cursor: pointer;
+      transition: border-color 0.15s, color 0.15s;
+    }
+    .lp-btn-secondary:hover {
+      border-color: var(--green-800);
+      color: var(--green-800);
     }
 
-    /* Footer */
-    .lp-footer {
+    /* ============================
+       App Preview
+       ============================ */
+    .lp-preview {
+      max-width: 960px;
+      margin: 0 auto 100px;
+      padding: 0 24px;
+    }
+    .lp-preview-window {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      box-shadow: 0 4px 24px rgba(0,0,0,0.06), 0 1px 4px rgba(0,0,0,0.04);
+      overflow: hidden;
+    }
+    .lp-preview-toolbar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 14px 20px;
+      background: #f5f5f2;
+      border-bottom: 1px solid var(--border);
+    }
+    .lp-preview-dot {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      background: #ddd;
+    }
+    .lp-preview-dot:nth-child(1) { background: #ff5f57; }
+    .lp-preview-dot:nth-child(2) { background: #ffbd2e; }
+    .lp-preview-dot:nth-child(3) { background: #28c840; }
+    .lp-preview-body {
+      padding: 32px;
+      display: grid;
+      grid-template-columns: 180px 1fr;
+      gap: 24px;
+      min-height: 320px;
+    }
+    .lp-mock-sidebar {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .lp-mock-nav-item {
+      padding: 10px 14px;
+      border-radius: 8px;
+      font-size: 0.82rem;
+      font-weight: 500;
+      color: var(--text-muted);
+    }
+    .lp-mock-nav-item.active {
+      background: var(--green-50);
+      color: var(--green-800);
+      font-weight: 600;
+    }
+    .lp-mock-content {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+    .lp-mock-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .lp-mock-title {
+      font-size: 1.2rem;
+      font-weight: 700;
+    }
+    .lp-mock-btn {
+      padding: 6px 16px;
+      font-size: 0.78rem;
+      font-weight: 600;
+      color: #fff;
+      background: var(--green-800);
+      border-radius: 6px;
+    }
+    .lp-mock-cards {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+    }
+    .lp-mock-card {
+      padding: 16px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+    }
+    .lp-mock-card-title {
+      font-size: 0.85rem;
+      font-weight: 700;
+      margin-bottom: 6px;
+    }
+    .lp-mock-card-meta {
+      font-size: 0.72rem;
+      color: var(--text-muted);
+      margin-bottom: 10px;
+    }
+    .lp-mock-bar {
+      height: 6px;
+      border-radius: 3px;
+      background: #e0e0dc;
+    }
+    .lp-mock-bar-fill {
+      height: 100%;
+      border-radius: 3px;
+    }
+    .lp-cost-good { background: var(--green-400); }
+    .lp-cost-warn { background: #f9a825; }
+    .lp-cost-over { background: #ef5350; }
+
+    /* ============================
+       Features
+       ============================ */
+    .lp-section {
+      max-width: 1080px;
+      margin: 0 auto;
+      padding: 0 24px 100px;
+    }
+    .lp-section-label {
+      display: inline-block;
+      font-size: 0.75rem;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--green-800);
+      margin-bottom: 12px;
+    }
+    .lp-section-title {
+      font-size: clamp(1.6rem, 3.5vw, 2.2rem);
+      font-weight: 800;
+      letter-spacing: -0.03em;
+      line-height: 1.2;
+      margin-bottom: 12px;
+    }
+    .lp-section-desc {
+      font-size: 1.05rem;
+      color: var(--text-secondary);
+      line-height: 1.6;
+      max-width: 520px;
+      margin-bottom: 48px;
+    }
+
+    .lp-features-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 20px;
+    }
+    .lp-feature {
+      padding: 28px 24px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+    .lp-feature:hover {
+      border-color: var(--green-100);
+      box-shadow: 0 4px 16px rgba(46,125,50,0.06);
+    }
+    .lp-feature-icon {
+      width: 44px;
+      height: 44px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: var(--green-50);
+      border-radius: 10px;
+      margin-bottom: 16px;
+      color: var(--green-800);
+    }
+    .lp-feature-icon svg {
+      width: 22px;
+      height: 22px;
+    }
+    .lp-feature h3 {
+      font-size: 1rem;
+      font-weight: 700;
+      margin-bottom: 6px;
+      letter-spacing: -0.01em;
+    }
+    .lp-feature p {
+      font-size: 0.88rem;
+      color: var(--text-muted);
+      line-height: 1.6;
+    }
+
+    /* ============================
+       How It Works
+       ============================ */
+    .lp-steps {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 32px;
+      counter-reset: step;
+    }
+    .lp-step {
+      position: relative;
+      padding: 0;
+    }
+    .lp-step-num {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 36px;
+      height: 36px;
+      font-size: 0.88rem;
+      font-weight: 800;
+      color: var(--green-800);
+      background: var(--green-50);
+      border: 2px solid var(--green-100);
+      border-radius: 50%;
+      margin-bottom: 16px;
+    }
+    .lp-step h3 {
+      font-size: 1.05rem;
+      font-weight: 700;
+      margin-bottom: 8px;
+    }
+    .lp-step p {
+      font-size: 0.88rem;
+      color: var(--text-muted);
+      line-height: 1.6;
+    }
+
+    /* ============================
+       CTA
+       ============================ */
+    .lp-cta {
+      max-width: 1080px;
+      margin: 0 auto 80px;
+      padding: 0 24px;
+    }
+    .lp-cta-box {
       text-align: center;
-      padding: 24px;
+      padding: 64px 40px;
+      background: linear-gradient(135deg, var(--green-900) 0%, var(--green-800) 50%, var(--green-600) 100%);
+      border-radius: 20px;
+      color: #fff;
+      position: relative;
+      overflow: hidden;
+    }
+    .lp-cta-box::before {
+      content: '';
+      position: absolute;
+      top: -50%;
+      right: -20%;
+      width: 400px;
+      height: 400px;
+      background: radial-gradient(circle, rgba(255,255,255,0.06) 0%, transparent 70%);
+      pointer-events: none;
+    }
+    .lp-cta-box h2 {
+      font-size: clamp(1.5rem, 3vw, 2rem);
+      font-weight: 800;
+      letter-spacing: -0.03em;
+      margin-bottom: 12px;
+    }
+    .lp-cta-box p {
+      font-size: 1.05rem;
+      opacity: 0.85;
+      margin-bottom: 32px;
+      max-width: 440px;
+      margin-left: auto;
+      margin-right: auto;
+      line-height: 1.6;
+    }
+    .lp-cta-btn-white {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 14px 36px;
+      font-size: 1rem;
+      font-weight: 700;
+      font-family: var(--font);
+      color: var(--green-900);
+      background: #fff;
+      border: none;
+      border-radius: 12px;
+      text-decoration: none;
+      cursor: pointer;
+      transition: transform 0.1s, box-shadow 0.15s;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.12);
+    }
+    .lp-cta-btn-white:hover {
+      box-shadow: 0 4px 16px rgba(0,0,0,0.18);
+    }
+    .lp-cta-btn-white:active { transform: scale(0.97); }
+
+    /* ============================
+       Footer
+       ============================ */
+    .lp-footer {
+      border-top: 1px solid var(--border);
+      padding: 40px 40px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .lp-footer-brand {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 0.9rem;
+      font-weight: 700;
+      color: var(--text-muted);
+    }
+    .lp-footer-brand img {
+      width: 24px;
+      height: 24px;
+      border-radius: 5px;
+    }
+    .lp-footer-copy {
       font-size: 0.78rem;
       color: var(--text-muted);
-      border-top: 1px solid #e8e8e4;
     }
 
+    /* ============================
+       Responsive
+       ============================ */
+    @media (max-width: 768px) {
+      .lp-nav { padding: 0 20px; }
+      .lp-nav-link { display: none; }
+      .lp-hero { padding: 120px 20px 60px; }
+      .lp-features-grid { grid-template-columns: 1fr; }
+      .lp-steps { grid-template-columns: 1fr; gap: 24px; }
+      .lp-preview-body {
+        grid-template-columns: 1fr;
+        padding: 20px;
+        min-height: auto;
+      }
+      .lp-mock-sidebar { display: none; }
+      .lp-mock-cards { grid-template-columns: 1fr 1fr; }
+      .lp-cta-box { padding: 48px 24px; }
+      .lp-footer {
+        flex-direction: column;
+        gap: 12px;
+        text-align: center;
+        padding: 32px 20px;
+      }
+    }
     @media (max-width: 480px) {
-      .lp-nav { padding: 12px 16px; }
-      .lp-hero { padding: 48px 16px 32px; }
-      .lp-features { grid-template-columns: 1fr; }
+      .lp-hero h1 { font-size: 2rem; }
+      .lp-hero-actions { flex-direction: column; width: 100%; }
+      .lp-btn-primary, .lp-btn-secondary { width: 100%; justify-content: center; }
+      .lp-mock-cards { grid-template-columns: 1fr; }
+      .lp-section-title { font-size: 1.5rem; }
+    }
+
+    /* Scroll-triggered reveals */
+    .lp-reveal {
+      opacity: 0;
+      transform: translateY(32px);
+      transition: opacity 0.6s ease-out, transform 0.6s ease-out;
+    }
+    .lp-reveal.visible {
+      opacity: 1;
+      transform: translateY(0);
     }
   </style>
 </head>
 <body>
+
+  <!-- Nav -->
   <nav class="lp-nav">
     <a href="/" class="lp-logo">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M3 2h18v20H3z"/><path d="M7 8h10"/><path d="M7 12h6"/><path d="M7 16h8"/>
-      </svg>
+      <img src="/favicon.svg" alt="" class="lp-logo-icon">
       PlateStack
     </a>
-    <a href="/app" class="lp-login">Sign In</a>
+    <div class="lp-nav-links">
+      <a href="#features" class="lp-nav-link">Features</a>
+      <a href="#how" class="lp-nav-link">How It Works</a>
+      <a href="/app" class="lp-signin">Sign In
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
+      </a>
+    </div>
   </nav>
 
-  <main class="lp-hero">
-    <div class="lp-badge">Coming Soon</div>
-    <h1>Menu planning built for <span>real kitchens</span></h1>
-    <p>Costed recipes, EU allergen tracking, prep task lists, and AI-powered kitchen workflow — all in one tool built by a chef, for chefs.</p>
-  </main>
-
-  <section class="lp-features">
-    <div class="lp-feature">
-      <div class="lp-feature-icon">$</div>
-      <h3>Costed Recipes</h3>
-      <p>Track ingredient costs and food cost percentages per dish and menu.</p>
+  <!-- Hero -->
+  <section class="lp-hero">
+    <div class="lp-pill animate-fade-up delay-1">
+      <span class="lp-pill-dot"></span>
+      Coming Soon
     </div>
-    <div class="lp-feature">
-      <div class="lp-feature-icon">!</div>
-      <h3>Allergen Tracking</h3>
-      <p>EU 14 allergen detection with per-guest allergy management.</p>
-    </div>
-    <div class="lp-feature">
-      <div class="lp-feature-icon">%</div>
-      <h3>Prep Lists</h3>
-      <p>AI-assisted task planning that actually understands kitchen workflow.</p>
+    <h1 class="animate-fade-up delay-2">
+      The kitchen tool<br>chefs actually <span class="lp-hero-gradient">want to use</span>
+    </h1>
+    <p class="animate-fade-up delay-3">
+      Menu costing, allergen tracking, prep lists, and an AI assistant that speaks kitchen — built by a chef who got tired of spreadsheets.
+    </p>
+    <div class="lp-hero-actions animate-fade-up delay-4">
+      <a href="#features" class="lp-btn-primary">
+        See Features
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14"/><path d="m19 12-7 7-7-7"/></svg>
+      </a>
+      <a href="/app" class="lp-btn-secondary">Sign In</a>
     </div>
   </section>
 
-  <div class="lp-cta">
-    <div class="lp-cta-heading">Interested?</div>
-    <div class="lp-cta-sub">PlateStack is in active development. Sign in if you have access.</div>
-    <a href="/app" class="lp-cta-btn">Sign In</a>
+  <!-- App Preview -->
+  <div class="lp-preview animate-scale-in delay-5">
+    <div class="lp-preview-window">
+      <div class="lp-preview-toolbar">
+        <span class="lp-preview-dot"></span>
+        <span class="lp-preview-dot"></span>
+        <span class="lp-preview-dot"></span>
+      </div>
+      <div class="lp-preview-body">
+        <div class="lp-mock-sidebar">
+          <div class="lp-mock-nav-item">Today</div>
+          <div class="lp-mock-nav-item active">Dishes</div>
+          <div class="lp-mock-nav-item">Menus</div>
+          <div class="lp-mock-nav-item">Shopping</div>
+          <div class="lp-mock-nav-item">Tasks</div>
+          <div class="lp-mock-nav-item">Ingredients</div>
+        </div>
+        <div class="lp-mock-content">
+          <div class="lp-mock-header">
+            <div class="lp-mock-title">Dishes</div>
+            <div class="lp-mock-btn">+ New Dish</div>
+          </div>
+          <div class="lp-mock-cards">
+            <div class="lp-mock-card">
+              <div class="lp-mock-card-title">Braised Short Rib</div>
+              <div class="lp-mock-card-meta">Main &middot; 4 portions</div>
+              <div class="lp-mock-bar"><div class="lp-mock-bar-fill lp-cost-good" style="width:28%"></div></div>
+            </div>
+            <div class="lp-mock-card">
+              <div class="lp-mock-card-title">Burrata Salad</div>
+              <div class="lp-mock-card-meta">Starter &middot; 2 portions</div>
+              <div class="lp-mock-bar"><div class="lp-mock-bar-fill lp-cost-warn" style="width:34%"></div></div>
+            </div>
+            <div class="lp-mock-card">
+              <div class="lp-mock-card-title">Cr&egrave;me Br&ucirc;l&eacute;e</div>
+              <div class="lp-mock-card-meta">Dessert &middot; 8 portions</div>
+              <div class="lp-mock-bar"><div class="lp-mock-bar-fill lp-cost-good" style="width:22%"></div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 
+  <!-- Features -->
+  <section id="features" class="lp-section">
+    <div class="lp-reveal">
+      <div class="lp-section-label">Features</div>
+      <h2 class="lp-section-title">Everything you need to<br>run your kitchen smarter</h2>
+      <p class="lp-section-desc">No more juggling spreadsheets, paper lists, and mental math. One tool that handles the whole workflow.</p>
+    </div>
+
+    <div class="lp-features-grid">
+      <div class="lp-feature lp-reveal">
+        <div class="lp-feature-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+        </div>
+        <h3>Recipe Costing</h3>
+        <p>Automatic food cost percentages. Track ingredient prices, see per-portion costs, and know your margins at a glance.</p>
+      </div>
+
+      <div class="lp-feature lp-reveal">
+        <div class="lp-feature-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+        </div>
+        <h3>Allergen Tracking</h3>
+        <p>Full EU 14 allergen detection. Auto-flags from ingredients, tracks per-guest allergies, and generates safe menus.</p>
+      </div>
+
+      <div class="lp-feature lp-reveal">
+        <div class="lp-feature-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+        </div>
+        <h3>Menu Builder</h3>
+        <p>Drag dishes into menus, organize by course, set covers, and see total food cost and allergen breakdown instantly.</p>
+      </div>
+
+      <div class="lp-feature lp-reveal">
+        <div class="lp-feature-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+        </div>
+        <h3>Prep Lists</h3>
+        <p>AI-generated task lists from your recipes. Knows what to prep first, what batches together, and what's last-minute.</p>
+      </div>
+
+      <div class="lp-feature lp-reveal">
+        <div class="lp-feature-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>
+        </div>
+        <h3>Shopping Lists</h3>
+        <p>Aggregated across all menus. Auto-converts units, flags what's in stock, and exports to purchase orders.</p>
+      </div>
+
+      <div class="lp-feature lp-reveal">
+        <div class="lp-feature-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+        </div>
+        <h3>AI Assistant</h3>
+        <p>Ask it anything — clean up a recipe, check allergens, plan your prep, scale for an event. It knows your data.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- How It Works -->
+  <section id="how" class="lp-section">
+    <div class="lp-reveal">
+      <div class="lp-section-label">How It Works</div>
+      <h2 class="lp-section-title">From recipe to service<br>in three steps</h2>
+      <p class="lp-section-desc">PlateStack connects every part of your kitchen workflow so nothing falls through the cracks.</p>
+    </div>
+
+    <div class="lp-steps">
+      <div class="lp-step lp-reveal">
+        <div class="lp-step-num">1</div>
+        <h3>Build your dishes</h3>
+        <p>Add recipes with ingredients, directions, and costs. Import from URLs, documents, or type them in. PlateStack handles unit conversion and allergen detection.</p>
+      </div>
+      <div class="lp-step lp-reveal">
+        <div class="lp-step-num">2</div>
+        <h3>Plan your menus</h3>
+        <p>Drag dishes onto menus, set portion counts, and see your food cost and allergen breakdown update in real time. Scale for events with one click.</p>
+      </div>
+      <div class="lp-step lp-reveal">
+        <div class="lp-step-num">3</div>
+        <h3>Prep and execute</h3>
+        <p>Generate shopping lists and prep task lists. The AI assistant helps plan what to prep, in what order, and asks about the details you'd otherwise forget.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- CTA -->
+  <div class="lp-cta">
+    <div class="lp-cta-box lp-reveal">
+      <h2>Built by a chef, for chefs</h2>
+      <p>PlateStack is in active development. If you're interested in early access or want to follow along, get in touch.</p>
+      <a href="/app" class="lp-cta-btn-white">
+        Get Started
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
+      </a>
+    </div>
+  </div>
+
+  <!-- Footer -->
   <footer class="lp-footer">
-    &copy; 2026 PlateStack
+    <div class="lp-footer-brand">
+      <img src="/favicon.svg" alt="">
+      PlateStack
+    </div>
+    <div class="lp-footer-copy">&copy; 2026 PlateStack. All rights reserved.</div>
   </footer>
+
+  <!-- Scroll reveal -->
+  <script>
+    const revealEls = document.querySelectorAll('.lp-reveal');
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting) {
+          entry.target.classList.add('visible');
+          observer.unobserve(entry.target);
+        }
+      });
+    }, { threshold: 0.15, rootMargin: '0px 0px -40px 0px' });
+    revealEls.forEach(el => observer.observe(el));
+  </script>
+
 </body>
 </html>
