@@ -290,6 +290,8 @@ async function createTestApp() {
     `ALTER TABLE dishes ADD COLUMN is_temporary INTEGER DEFAULT 0`,
     // Ingredient density for cross-category (weight↔volume) conversion
     `ALTER TABLE ingredients ADD COLUMN g_per_ml REAL DEFAULT NULL`,
+    // Custom label for "batches" on menus (e.g. "trays", "pans", "sheets")
+    `ALTER TABLE menus ADD COLUMN batch_label TEXT DEFAULT ''`,
     // WebAuthn passkey credentials
     `CREATE TABLE IF NOT EXISTS passkey_credentials (
       id         TEXT PRIMARY KEY,

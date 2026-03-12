@@ -1022,6 +1022,25 @@ textarea.input { resize: vertical; min-height: 80px; }
   font-size: 0.9rem;
 }
 
+.mb-batch-label-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.mb-batch-label-label {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+.mb-batch-label-input {
+  width: 90px;
+  padding: 2px 6px;
+  font-size: 0.8rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+}
+
 .mb-category-section {
   margin-bottom: 24px;
 }

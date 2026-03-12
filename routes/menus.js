@@ -340,7 +340,7 @@ router.get('/:id/kitchen-print', (req, res) => {
 // POST /api/menus - Create menu
 router.post('/', (req, res) => {
   const db = getDb();
-  const { name, description, sell_price, expected_covers, guest_allergies, allergen_covers, schedule_days, menu_type, event_date, gcal_event_id, service_style } = req.body;
+  const { name, description, sell_price, expected_covers, guest_allergies, allergen_covers, schedule_days, menu_type, event_date, gcal_event_id, service_style, batch_label } = req.body;
   if (!name) return res.status(400).json({ error: 'Name is required' });
   if (sell_price !== undefined && (typeof sell_price !== 'number' || sell_price < 0)) {
     return res.status(400).json({ error: 'sell_price must be a non-negative number' });
@@ -388,8 +388,8 @@ router.post('/', (req, res) => {
   const scheduleDaysJson = (schedule_days && type === 'standard') ? JSON.stringify(schedule_days) : '[]';
 
   const result = db.prepare(
-    'INSERT INTO menus (name, description, sell_price, expected_covers, guest_allergies, allergen_covers, schedule_days, menu_type, event_date, gcal_event_id, service_style) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
-  ).run(name, description || '', sell_price || 0, expected_covers || 0, guest_allergies || '', coversJson, scheduleDaysJson, type, event_date || null, gcal_event_id || null, service_style || 'alacarte');
+    'INSERT INTO menus (name, description, sell_price, expected_covers, guest_allergies, allergen_covers, schedule_days, menu_type, event_date, gcal_event_id, service_style, batch_label) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+  ).run(name, description || '', sell_price || 0, expected_covers || 0, guest_allergies || '', coversJson, scheduleDaysJson, type, event_date || null, gcal_event_id || null, service_style || 'alacarte', batch_label || '');
 
   req.broadcast('menu_created', { id: result.lastInsertRowid }, req.headers['x-client-id']);
   res.status(201).json({ id: result.lastInsertRowid });
@@ -398,7 +398,7 @@ router.post('/', (req, res) => {
 // PUT /api/menus/:id - Update menu
 router.put('/:id', (req, res) => {
   const db = getDb();
-  const { name, description, is_active, sell_price, expected_covers, guest_allergies, allergen_covers, schedule_days, menu_type, event_date, gcal_event_id, service_style } = req.body;
+  const { name, description, is_active, sell_price, expected_covers, guest_allergies, allergen_covers, schedule_days, menu_type, event_date, gcal_event_id, service_style, batch_label } = req.body;
 
   // Look up current menu to know its type
   const current = db.prepare('SELECT menu_type FROM menus WHERE id = ? AND deleted_at IS NULL').get(req.params.id);
@@ -478,6 +478,9 @@ router.put('/:id', (req, res) => {
       return res.status(400).json({ error: 'service_style must be "coursed" or "alacarte"' });
     }
     updates.push('service_style = ?'); params.push(service_style);
+  }
+  if (batch_label !== undefined) {
+    updates.push('batch_label = ?'); params.push(batch_label);
   }
   updates.push("updated_at = datetime('now')");
 

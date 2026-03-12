@@ -198,11 +198,18 @@ function buildMenuBuilderHTML(menu, state) {
         const totalBatches = menu.dishes.reduce((s, d) => s + d.servings, 0);
         const totalPortions = menu.dishes.reduce((s, d) => s + (d.total_portions || d.servings), 0);
         const hasMultiPortion = menu.dishes.some(d => (d.batch_yield || 1) > 1);
+        const bl = menu.batch_label || 'batch';
+        const blPlural = bl + (bl.endsWith('s') ? '' : 'es');
         return `<div class="mb-summary-bar">
           <span>${menu.dishes.length} dish${menu.dishes.length !== 1 ? 'es' : ''}</span>
           ${courses.length ? `<span>|</span><span>${courses.length} ${styleLabel.toLowerCase()}${courses.length !== 1 ? 's' : ''}</span>` : ''}
           <span>|</span>
-          <span>Total batches: ${totalBatches}${hasMultiPortion ? ` (${totalPortions} portions)` : ''}</span>
+          <span>Total ${escapeHtml(blPlural)}: ${totalBatches}${hasMultiPortion ? ` (${totalPortions} portions)` : ''}</span>
+          <span>|</span>
+          <span class="mb-batch-label-group">
+            <label for="mb-batch-label-input" class="mb-batch-label-label">Call it:</label>
+            <input type="text" id="mb-batch-label-input" class="input mb-batch-label-input" value="${escapeHtml(menu.batch_label || '')}" placeholder="batch" maxlength="30">
+          </span>
           ${menu.all_allergens.length ? `
             <span>|</span>
             <span>Allergens: ${renderAllergenBadges(menu.all_allergens, true)}</span>
@@ -213,7 +220,7 @@ function buildMenuBuilderHTML(menu, state) {
 
     <!-- Courses / Sections -->
     <div class="mc-courses-container" id="mc-courses-container">
-      ${courses.length ? courses.map(course => renderCourseSection(course, courseDishMap[course.id] || [], isHouse, scheduleDays, isCoursed)).join('') : ''}
+      ${courses.length ? courses.map(course => renderCourseSection(course, courseDishMap[course.id] || [], isHouse, scheduleDays, isCoursed, menu.batch_label)).join('') : ''}
 
       ${/* Unassigned dishes */ ''}
       ${unassignedDishes.length ? `
@@ -223,7 +230,7 @@ function buildMenuBuilderHTML(menu, state) {
             ${CATEGORY_ORDER.filter(cat => grouped[cat]).map(cat => `
               <div class="mb-category-section">
                 ${!courses.length ? `<h2 class="mb-category-heading">${capitalize(cat)}s</h2>` : ''}
-                ${grouped[cat].map(dish => renderDishRow(dish, isHouse, scheduleDays)).join('')}
+                ${grouped[cat].map(dish => renderDishRow(dish, isHouse, scheduleDays, menu.batch_label)).join('')}
               </div>
             `).join('')}
           </div>
@@ -271,6 +278,26 @@ function setupServiceStyleToggle(container, menuId, ctx) {
         showToast('Could not change service style. Please try again.', 'error');
       }
     });
+  });
+}
+
+function setupBatchLabelInput(container, menuId, ctx) {
+  const input = container.querySelector('#mb-batch-label-input');
+  if (!input) return;
+  let debounce;
+  input.addEventListener('input', () => {
+    clearTimeout(debounce);
+    debounce = setTimeout(async () => {
+      const val = input.value.trim();
+      try {
+        await updateMenu(menuId, { batch_label: val });
+        ctx.menu = await getMenu(menuId);
+        ctx.render();
+      } catch (err) {
+        console.warn('Batch label update failed:', err);
+        showToast('Could not update label', 'error');
+      }
+    }, 600);
   });
 }
 
@@ -991,7 +1018,7 @@ function setupDragDrop(container, menuId, ctx) {
 
 // ---- Rendering Helpers ----
 
-function renderDishRow(dish, isHouse, scheduleDays) {
+function renderDishRow(dish, isHouse, scheduleDays, batchLabel) {
   const hasConflict = dish.allergy_conflicts && dish.allergy_conflicts.length > 0;
   const isTemp = !!dish.is_temporary;
   let dishActiveDays = null;
@@ -1037,7 +1064,7 @@ function renderDishRow(dish, isHouse, scheduleDays) {
         <button class="btn btn-icon servings-dec" data-dish="${dish.id}">-</button>
         <input type="number" class="mb-servings-input" data-dish="${dish.id}" value="${dish.servings}" min="1" step="1" title="Number of batches">
         <button class="btn btn-icon servings-inc" data-dish="${dish.id}">+</button>
-        <span class="mb-servings-label">${(dish.batch_yield || 1) > 1 ? 'batches' : 'servings'}</span>
+        <span class="mb-servings-label">${(dish.batch_yield || 1) > 1 ? escapeHtml((batchLabel || 'batch') + ((batchLabel || 'batch').endsWith('s') ? '' : 'es')) : 'servings'}</span>
         ${(dish.batch_yield || 1) > 1 ? `
           <span class="mb-portions-label">(${dish.total_portions} portions)</span>
           <input type="number" class="input mb-portion-target" data-dish="${dish.id}" data-yield="${dish.batch_yield}"
@@ -1057,7 +1084,7 @@ function renderDishRow(dish, isHouse, scheduleDays) {
   `;
 }
 
-function renderCourseSection(course, dishes, isHouse, scheduleDays, isCoursed) {
+function renderCourseSection(course, dishes, isHouse, scheduleDays, isCoursed, batchLabel) {
   const hasNote = course.notes && course.notes.trim();
   const label = isCoursed ? 'Course' : 'Section';
   return `
@@ -1076,7 +1103,7 @@ function renderCourseSection(course, dishes, isHouse, scheduleDays, isCoursed) {
         <textarea class="mc-course-note-textarea" data-course-id="${course.id}" placeholder="Add ${label.toLowerCase()} notes (e.g., timing, service instructions)..." rows="2">${escapeHtml(course.notes || '')}</textarea>
       </div>
       <div class="menu-dishes mc-course-dishes" data-course-id="${course.id}">
-        ${dishes.length ? dishes.map(dish => renderDishRow(dish, isHouse, scheduleDays)).join('') : `
+        ${dishes.length ? dishes.map(dish => renderDishRow(dish, isHouse, scheduleDays, batchLabel)).join('') : `
           <div class="mc-course-empty">No dishes in this ${label.toLowerCase()} yet</div>
         `}
       </div>
@@ -1298,27 +1325,30 @@ async function showKitchenPrint(menuId) {
     const isCoursed = (data.menu.service_style || 'alacarte') === 'coursed';
     const hasCourses = courses.length > 0;
 
+    const batchLabel = data.menu.batch_label || 'batch';
+    const batchLabelPlural = batchLabel + (batchLabel.endsWith('s') ? '' : 'es');
+
     let html = `
       <html><head><title>Service Sheet - ${escapeHtml(data.menu.name)}</title>
       <style>
-        body { font-family: -apple-system, sans-serif; padding: 20px; color: #1a1a1a; }
-        h1 { font-size: 1.6rem; margin-bottom: 4px; border-bottom: 3px solid #1a1a1a; padding-bottom: 8px; }
-        .meta { font-size: 0.9rem; color: #555; margin: 8px 0 20px; }
+        body { font-family: -apple-system, sans-serif; padding: 12px 16px; color: #1a1a1a; font-size: 13px; line-height: 1.35; }
+        h1 { font-size: 1.3rem; margin: 0 0 4px; border-bottom: 2px solid #1a1a1a; padding-bottom: 4px; }
+        .meta { font-size: 0.8rem; color: #555; margin: 4px 0 10px; }
         .meta .alert { color: #d32f2f; font-weight: 700; }
-        .course-header { font-size: 1.3rem; font-weight: 700; margin: 24px 0 6px; padding: 8px 0 4px; border-bottom: 2px solid #333; }
-        .course-notes { font-size: 0.85rem; color: #555; font-style: italic; margin: 4px 0 12px; padding: 4px 10px; background: #f0f8ff; border-left: 3px solid #4a90d9; }
-        .dish-block { margin: 0 0 20px; padding-bottom: 20px; border-bottom: 1px solid #ddd; page-break-inside: avoid; display: grid; grid-template-columns: 120px 1fr; gap: 0 16px; }
-        .course-num { font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: #888; padding-top: 3px; }
-        .course-cat { font-size: 0.7rem; color: #aaa; margin-top: 2px; text-transform: capitalize; }
-        .dish-name { font-size: 1.15rem; font-weight: 700; margin-bottom: 6px; }
-        .dish-note { font-size: 0.82rem; color: #444; margin: 4px 0 8px; padding: 4px 8px; background: #fffde7; border-left: 3px solid #f9a825; font-style: italic; }
-        .allergens { margin-bottom: 6px; }
-        .allergen-tag { display: inline-block; padding: 2px 8px; font-size: 0.72rem; font-weight: 700; background: #ffcdd2; color: #b71c1c; border-radius: 10px; margin-right: 3px; margin-bottom: 3px; }
-        .ingredients { margin: 4px 0 8px; padding-left: 0; list-style: none; }
-        .ingredients li { font-size: 0.9rem; font-weight: 600; color: #1a1a1a; padding: 2px 0; border-bottom: 1px solid #f0f0f0; }
-        .notes { font-size: 0.85rem; color: #333; margin-top: 6px; padding: 6px 10px; background: #f5f5f0; border-left: 3px solid #999; }
-        .notes-label { font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: #888; margin-bottom: 2px; }
-        .subs { font-size: 0.82rem; margin-top: 6px; padding: 5px 10px; background: #fff3e0; border-left: 3px solid #e65100; }
+        .course-header { font-size: 1.1rem; font-weight: 700; margin: 14px 0 4px; padding: 4px 0 2px; border-bottom: 2px solid #333; }
+        .course-notes { font-size: 0.78rem; color: #555; font-style: italic; margin: 2px 0 8px; padding: 3px 8px; background: #f0f8ff; border-left: 3px solid #4a90d9; }
+        .dish-block { margin: 0 0 10px; padding-bottom: 10px; border-bottom: 1px solid #ddd; page-break-inside: avoid; display: grid; grid-template-columns: 100px 1fr; gap: 0 12px; }
+        .course-num { font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: #888; padding-top: 2px; }
+        .course-cat { font-size: 0.65rem; color: #aaa; margin-top: 1px; text-transform: capitalize; }
+        .dish-name { font-size: 1rem; font-weight: 700; margin-bottom: 3px; }
+        .dish-note { font-size: 0.78rem; color: #444; margin: 2px 0 4px; padding: 3px 6px; background: #fffde7; border-left: 3px solid #f9a825; font-style: italic; }
+        .allergens { margin-bottom: 4px; }
+        .allergen-tag { display: inline-block; padding: 1px 6px; font-size: 0.68rem; font-weight: 700; background: #ffcdd2; color: #b71c1c; border-radius: 10px; margin-right: 2px; margin-bottom: 2px; }
+        .components { margin: 2px 0 6px; padding-left: 0; list-style: none; }
+        .components li { font-size: 0.82rem; font-weight: 600; color: #1a1a1a; padding: 1px 0; border-bottom: 1px solid #f0f0f0; }
+        .notes { font-size: 0.78rem; color: #333; margin-top: 4px; padding: 4px 8px; background: #f5f5f0; border-left: 3px solid #999; }
+        .notes-label { font-size: 0.65rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: #888; margin-bottom: 1px; }
+        .subs { font-size: 0.78rem; margin-top: 4px; padding: 3px 8px; background: #fff3e0; border-left: 3px solid #e65100; }
         .subs strong { color: #e65100; }
         @media print { body { padding: 0; } }
       </style></head><body>
@@ -1335,7 +1365,7 @@ async function showKitchenPrint(menuId) {
       const batchYield = dish.batch_yield || 1;
       const servings = dish.servings || 1;
       const batchInfo = servings > 1 || batchYield > 1
-        ? ` &mdash; ${servings} batch${servings !== 1 ? 'es' : ''}${batchYield > 1 ? ` (${dish.total_portions || servings * batchYield} portions)` : ''}`
+        ? ` &mdash; ${servings} ${servings !== 1 ? escapeHtml(batchLabelPlural) : escapeHtml(batchLabel)}${batchYield > 1 ? ` (${dish.total_portions || servings * batchYield} portions)` : ''}`
         : '';
 
       let block = `<div class="dish-block">`;
@@ -1352,47 +1382,18 @@ async function showKitchenPrint(menuId) {
       }
 
       if (dish.components && dish.components.length) {
-        block += `<ul class="ingredients">${dish.components.map(c => `<li>${escapeHtml(c.name)}</li>`).join('')}</ul>`;
-      } else {
-        block += `<p style="font-size:0.85rem;color:#888;margin:4px 0 8px;font-style:italic;">No service components added.</p>`;
-      }
-
-      if (dish.ingredients && dish.ingredients.length) {
-        block += `<div style="margin:8px 0;"><div class="notes-label">Ingredients${servings > 1 ? ' (scaled &times;' + servings + ')' : ''}</div>`;
-        block += '<table style="width:100%;border-collapse:collapse;font-size:0.85rem;margin-top:4px;">';
-        for (const ing of dish.ingredients) {
-          block += '<tr><td style="padding:2px 6px;border-bottom:1px solid #f0f0f0;">' + escapeHtml(ing.ingredient_name) + '</td>';
-          block += '<td style="padding:2px 6px;border-bottom:1px solid #f0f0f0;text-align:right;white-space:nowrap;"><strong>' + ing.quantity + '</strong> ' + escapeHtml(ing.unit || '') + '</td>';
-          block += '<td style="padding:2px 6px;border-bottom:1px solid #f0f0f0;color:#888;font-size:0.8rem;">' + escapeHtml(ing.prep_note || '') + '</td></tr>';
-        }
-        block += '</table></div>';
-      }
-
-      if (dish.directions && dish.directions.length) {
-        block += '<div style="margin:8px 0;"><div class="notes-label">Prep Method</div>';
-        let stepNum = 0;
-        for (const d of dish.directions) {
-          if (d.type === 'section') {
-            block += '<div style="font-weight:700;margin:8px 0 4px;border-bottom:1px solid #ddd;padding-bottom:2px;">' + escapeHtml(d.text) + '</div>';
-          } else {
-            stepNum++;
-            block += '<div style="display:flex;gap:6px;margin-bottom:4px;font-size:0.85rem;"><span style="font-weight:700;color:#888;min-width:18px;">' + stepNum + '.</span><span>' + escapeHtml(d.text) + '</span></div>';
-          }
-        }
-        block += '</div>';
-      } else if (dish.chefs_notes) {
-        block += '<div class="notes"><div class="notes-label">Chef\'s Notes</div>' + escapeHtml(dish.chefs_notes) + '</div>';
+        block += `<ul class="components">${dish.components.map(c => `<li>${escapeHtml(c.name)}</li>`).join('')}</ul>`;
       }
 
       if (dish.service_directions && dish.service_directions.length) {
-        block += '<div style="margin:8px 0;"><div class="notes-label">Service Process</div>';
+        block += '<div style="margin:4px 0;"><div class="notes-label">Service Process</div>';
         let stepNum = 0;
         for (const d of dish.service_directions) {
           if (d.type === 'section') {
-            block += '<div style="font-weight:700;margin:8px 0 4px;border-bottom:1px solid #ddd;padding-bottom:2px;">' + escapeHtml(d.text) + '</div>';
+            block += '<div style="font-weight:700;margin:4px 0 2px;border-bottom:1px solid #ddd;padding-bottom:1px;font-size:0.82rem;">' + escapeHtml(d.text) + '</div>';
           } else {
             stepNum++;
-            block += '<div style="display:flex;gap:6px;margin-bottom:4px;font-size:0.85rem;"><span style="font-weight:700;color:#888;min-width:18px;">' + stepNum + '.</span><span>' + escapeHtml(d.text) + '</span></div>';
+            block += '<div style="display:flex;gap:4px;margin-bottom:2px;font-size:0.82rem;"><span style="font-weight:700;color:#888;min-width:16px;">' + stepNum + '.</span><span>' + escapeHtml(d.text) + '</span></div>';
           }
         }
         block += '</div>';
@@ -1736,6 +1737,7 @@ export async function renderMenuBuilder(container, menuId) {
 
     // ---- Wire up events ----
     setupServiceStyleToggle(container, menuId, ctx);
+    setupBatchLabelInput(container, menuId, ctx);
     setupEditMenuModal(container, menuId, state.isHouse, ctx);
     setupScheduleDayToggles(container, menuId, state.isHouse, state.scheduleDays, ctx);
     setupAllergyToggles(container, menuId, ctx);

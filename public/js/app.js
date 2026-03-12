@@ -12,7 +12,6 @@ import { renderSettings } from './pages/settings.js';
 import { renderCalendar } from './pages/calendar.js';
 import { renderToday } from './pages/today.js';
 import { renderIngredientList } from './pages/ingredientList.js';
-import { openUnitConverter } from './components/unitConverter.js';
 import { initCommandBar } from './components/commandBar.js';
 import { initChatDrawer } from './components/chatDrawer.js';
 import { renderLogin } from './pages/login.js';
@@ -260,7 +259,6 @@ window.addEventListener('DOMContentLoaded', async () => {
   document.querySelectorAll('.bottom-more-item[data-route]').forEach(item => {
     item.addEventListener('click', () => closeMoreMenu());
   });
-  document.getElementById('unit-converter-nav-btn')?.addEventListener('click', () => openUnitConverter());
   document.getElementById('sidebar-toggle-btn')?.addEventListener('click', () => {
     const state = document.documentElement.getAttribute('data-sidebar');
     setSidebarState(state === 'expanded' ? 'collapsed' : 'expanded');
