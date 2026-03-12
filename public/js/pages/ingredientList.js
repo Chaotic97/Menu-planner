@@ -136,7 +136,16 @@ export async function renderIngredientList(container) {
       });
     });
 
-    // Edit
+    // Edit — row click or edit button
+    container.querySelectorAll('.il-row').forEach(row => {
+      row.style.cursor = 'pointer';
+      row.addEventListener('click', (e) => {
+        if (e.target.closest('.il-edit-btn')) return; // let button handler fire
+        const id = row.dataset.id;
+        const ing = ingredients.find(i => String(i.id) === String(id));
+        if (ing) openEditModal(ing);
+      });
+    });
     container.querySelectorAll('.il-edit-btn').forEach(btn => {
       btn.addEventListener('click', () => {
         const id = btn.dataset.id;

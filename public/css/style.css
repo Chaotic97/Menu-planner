@@ -7544,6 +7544,9 @@ textarea.input { resize: vertical; min-height: 80px; }
   border-bottom: 1px solid var(--border);
   vertical-align: middle;
 }
+.il-row:hover {
+  background: rgba(var(--primary-rgb), 0.04);
+}
 
 .il-td-name {
   font-weight: 500;
