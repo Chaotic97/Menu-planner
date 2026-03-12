@@ -210,7 +210,7 @@ function buildMenuBuilderHTML(menu, state) {
             <label for="mb-batch-label-input" class="mb-batch-label-label">Call it:</label>
             <input type="text" id="mb-batch-label-input" class="input mb-batch-label-input" value="${escapeHtml(menu.batch_label || '')}" placeholder="batch" maxlength="30">
           </span>
-          ${menu.all_allergens.length ? `
+          ${(menu.all_allergens || []).length ? `
             <span>|</span>
             <span>Allergens: ${renderAllergenBadges(menu.all_allergens, true)}</span>
           ` : ''}
@@ -1039,7 +1039,7 @@ function renderDishRow(dish, isHouse, scheduleDays, batchLabel) {
           : `<a href="#/dishes/${dish.id}" class="dish-name-link"><strong>${escapeHtml(dish.name)}</strong></a>`
         }
         ${isTemp ? '<span class="mb-temp-badge">Temp</span>' : ''}
-        ${renderAllergenBadges(dish.allergens, true)}
+        ${renderAllergenBadges(dish.allergens || [], true)}
         ${hasConflict ? `<div class="mb-allergy-warning">&#9888; Guest allergy: ${escapeHtml(dish.allergy_conflicts.join(', '))}</div>` : ''}
         ${!isTemp && dish.substitution_count > 0 ? `<span class="subs-badge" data-dish-id="${dish.id}" title="Has allergen substitutions">&#8644; ${dish.substitution_count} sub${dish.substitution_count > 1 ? 's' : ''}</span>` : ''}
         ${isHouse && scheduleDays.length ? `
@@ -1377,7 +1377,7 @@ async function showKitchenPrint(menuId) {
         block += `<div class="dish-note">${escapeHtml(dish.menu_dish_notes)}</div>`;
       }
 
-      if (dish.allergens.length) {
+      if (dish.allergens && dish.allergens.length) {
         block += `<div class="allergens">${dish.allergens.map(a => `<span class="allergen-tag">${escapeHtml(a)}</span>`).join('')}</div>`;
       }
 
@@ -1642,7 +1642,7 @@ async function showDishPicker(menuId, ctx, targetCourseId) {
           <div class="mb-picker-info">
             <strong>${escapeHtml(d.name)}</strong>
             <span class="category-badge">${escapeHtml(d.category)}</span>
-            ${renderAllergenBadges(d.allergens, true)}
+            ${renderAllergenBadges(d.allergens || [], true)}
           </div>
           <button class="btn btn-sm btn-primary add-to-menu-btn" data-id="${d.id}">Add</button>
         </div>
