@@ -134,6 +134,28 @@ async function buildContext(pageContext) {
     }
   }
 
+  // --- Kitchen pulse: compact stats so Haiku knows current workload ---
+  const taskPending = db.prepare('SELECT COUNT(*) as cnt FROM tasks WHERE completed = 0').get().cnt;
+  const taskOverdue = db.prepare("SELECT COUNT(*) as cnt FROM tasks WHERE completed = 0 AND due_date < date('now')").get().cnt;
+  if (taskPending > 0 || taskOverdue > 0) {
+    const overdueNote = taskOverdue > 0 ? ` (${taskOverdue} overdue)` : '';
+    parts.push(`Tasks: ${taskPending} pending${overdueNote}`);
+  }
+
+  const todayNotes = db.prepare(
+    "SELECT title, shift FROM service_notes WHERE date = date('now') ORDER BY created_at DESC LIMIT 3"
+  ).all();
+  if (todayNotes.length) {
+    parts.push("Today's service notes: " + todayNotes.map(n => `${n.title} (${n.shift})`).join(', '));
+  }
+
+  const upcomingEvents = db.prepare(
+    "SELECT id, name, event_date FROM menus WHERE deleted_at IS NULL AND menu_type = 'event' AND event_date >= date('now') ORDER BY event_date LIMIT 5"
+  ).all();
+  if (upcomingEvents.length) {
+    parts.push('Upcoming events: ' + upcomingEvents.map(m => `${m.name} on ${m.event_date} (${m.id})`).join(', '));
+  }
+
   // Provide dish/menu lists for name resolution — skip when already on a specific entity.
   // Keep lists compact: name + ID only, capped to reduce token overhead.
   if (!pageContext.entityType) {
@@ -158,5 +180,76 @@ async function buildContext(pageContext) {
 
   return parts.join('\n');
 }
+
+/**
+ * Build dynamic suggestion hints — lightweight stats for the command bar.
+ * No AI call, pure DB. Returns { suggestions: [...] } keyed by page pattern.
+ */
+function buildSuggestionHints(page) {
+  const db = getDb();
+  const hints = [];
+
+  // Task stats — useful on any page
+  const taskOverdue = db.prepare("SELECT COUNT(*) as cnt FROM tasks WHERE completed = 0 AND due_date < date('now')").get().cnt;
+
+  // Menu stats
+  const menusWithoutTasks = db.prepare(
+    `SELECT m.id, m.name FROM menus m
+     WHERE m.deleted_at IS NULL
+     AND NOT EXISTS (SELECT 1 FROM tasks t WHERE t.menu_id = m.id AND t.source = 'auto')
+     LIMIT 3`
+  ).all();
+
+  // Upcoming events
+  const nextEvent = db.prepare(
+    "SELECT name, event_date FROM menus WHERE deleted_at IS NULL AND menu_type = 'event' AND event_date >= date('now') ORDER BY event_date LIMIT 1"
+  ).get();
+
+  // Dishes without directions (could use cleanup)
+  const dishesNeedingCleanup = db.prepare(
+    `SELECT d.id, d.name FROM dishes d
+     WHERE d.deleted_at IS NULL
+     AND d.chefs_notes IS NOT NULL AND d.chefs_notes != ''
+     AND NOT EXISTS (SELECT 1 FROM dish_directions dd WHERE dd.dish_id = d.id)
+     LIMIT 3`
+  ).all();
+
+  // Today's notes count
+  const todayNotesCount = db.prepare("SELECT COUNT(*) as cnt FROM service_notes WHERE date = date('now')").get().cnt;
+
+  // Build page-specific dynamic suggestions
+  if (page === '#/todos' || page === '#/today') {
+    if (taskOverdue > 0) {
+      hints.push({ icon: '\u26a0\ufe0f', text: `${taskOverdue} overdue task${taskOverdue !== 1 ? 's' : ''}`, prompt: 'Show me overdue tasks' });
+    }
+    for (const m of menusWithoutTasks) {
+      hints.push({ icon: '\ud83d\udccb', text: `Generate prep for ${m.name}`, prompt: `Generate prep tasks for menu "${m.name}"` });
+    }
+  } else if (page === '#/dishes' || page === '#/' || page === '') {
+    for (const d of dishesNeedingCleanup.slice(0, 2)) {
+      hints.push({ icon: '\u2728', text: `Clean up ${d.name}`, prompt: `Clean up the recipe for "${d.name}"` });
+    }
+  } else if (page === '#/menus') {
+    for (const m of menusWithoutTasks.slice(0, 2)) {
+      hints.push({ icon: '\ud83d\udccb', text: `Generate prep for ${m.name}`, prompt: `Generate prep tasks for menu "${m.name}"` });
+    }
+  } else if (page === '#/service-notes') {
+    if (todayNotesCount === 0) {
+      hints.push({ icon: '\ud83d\udcdd', text: "No notes for today yet", prompt: 'Add a service note for today: ' });
+    }
+  }
+
+  // Universal hints (shown on any page when relevant)
+  if (nextEvent && !page.startsWith('#/menus/')) {
+    hints.push({ icon: '\ud83d\udcc5', text: `${nextEvent.name} — ${nextEvent.event_date}`, prompt: `Tell me about the upcoming event "${nextEvent.name}"` });
+  }
+  if (taskOverdue > 0 && page !== '#/todos' && page !== '#/today') {
+    hints.push({ icon: '\u26a0\ufe0f', text: `${taskOverdue} overdue task${taskOverdue !== 1 ? 's' : ''}`, prompt: 'Show me overdue tasks' });
+  }
+
+  return hints;
+}
+
+module.exports = { buildContext, buildSuggestionHints };
 
 module.exports = { buildContext };

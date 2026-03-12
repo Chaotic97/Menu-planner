@@ -1,4 +1,4 @@
-import { createTask, aiCommand, aiConfirm, aiUndo, createConversation, addConversationMessage } from '../api.js';
+import { createTask, aiCommand, aiConfirm, aiUndo, createConversation, addConversationMessage, getAiSuggestions } from '../api.js';
 import { showToast } from './toast.js';
 import { escapeHtml } from '../utils/escapeHtml.js';
 import { toggleDrawer } from './chatDrawer.js';
@@ -26,9 +26,9 @@ let _commandBarConversationId = null;
 const _sessionApprovedTools = new Set();
 
 /**
- * Context-aware suggested prompts based on current page
+ * Static suggested prompts — always-available fallbacks per page
  */
-const SUGGESTED_PROMPTS = {
+const STATIC_PROMPTS = {
   '#/dishes': [
     { icon: '🔍', text: 'Search for a dish', prompt: 'Search dishes: ' },
     { icon: '➕', text: 'Create a new dish', prompt: 'Create a dish called ' },
@@ -69,21 +69,56 @@ const SUGGESTED_PROMPTS = {
   ],
 };
 
+// Dynamic suggestions cache — fetched lazily, refreshed on navigation
+let _dynamicCache = { page: null, hints: [], time: 0 };
+const DYNAMIC_CACHE_TTL = 60000; // 60 seconds
+
+function getStaticForPage() {
+  const hash = window.location.hash || '';
+  if (hash.match(/^#\/dishes\/\d+(\/edit)?$/)) return STATIC_PROMPTS['#/dishes/:id'];
+  if (hash.match(/^#\/menus\/\d+$/)) return STATIC_PROMPTS['#/menus/:id'];
+  if (hash === '#/dishes' || hash === '#/' || hash === '') return STATIC_PROMPTS['#/dishes'];
+  if (hash === '#/menus') return STATIC_PROMPTS['#/menus'];
+  if (hash === '#/todos') return STATIC_PROMPTS['#/todos'];
+  if (hash === '#/shopping' || hash.match(/^#\/menus\/\d+\/shopping$/)) return STATIC_PROMPTS['#/shopping'];
+  if (hash === '#/service-notes') return STATIC_PROMPTS['#/service-notes'];
+  return STATIC_PROMPTS['_default'];
+}
+
 function getSuggestionsForPage() {
   const hash = window.location.hash || '';
+  const staticList = getStaticForPage();
 
-  // Specific entity pages
-  if (hash.match(/^#\/dishes\/\d+(\/edit)?$/)) return SUGGESTED_PROMPTS['#/dishes/:id'];
-  if (hash.match(/^#\/menus\/\d+$/)) return SUGGESTED_PROMPTS['#/menus/:id'];
+  // If we have fresh dynamic hints, put them first then fill with static
+  if (_dynamicCache.page === hash && Date.now() - _dynamicCache.time < DYNAMIC_CACHE_TTL && _dynamicCache.hints.length) {
+    const maxDynamic = 2;
+    const dynamic = _dynamicCache.hints.slice(0, maxDynamic);
+    const remaining = staticList.filter(s => !dynamic.some(d => d.prompt === s.prompt));
+    return [...dynamic, ...remaining.slice(0, 3 - dynamic.length)];
+  }
 
-  // List/index pages
-  if (hash === '#/dishes' || hash === '#/' || hash === '') return SUGGESTED_PROMPTS['#/dishes'];
-  if (hash === '#/menus') return SUGGESTED_PROMPTS['#/menus'];
-  if (hash === '#/todos') return SUGGESTED_PROMPTS['#/todos'];
-  if (hash === '#/shopping' || hash.match(/^#\/menus\/\d+\/shopping$/)) return SUGGESTED_PROMPTS['#/shopping'];
-  if (hash === '#/service-notes') return SUGGESTED_PROMPTS['#/service-notes'];
+  return staticList;
+}
 
-  return SUGGESTED_PROMPTS['_default'];
+/**
+ * Fetch dynamic suggestions in background — non-blocking, fire-and-forget
+ */
+function refreshDynamicSuggestions() {
+  const hash = window.location.hash || '';
+  if (_dynamicCache.page === hash && Date.now() - _dynamicCache.time < DYNAMIC_CACHE_TTL) return;
+
+  getAiSuggestions(hash).then(data => {
+    _dynamicCache = { page: hash, hints: data.suggestions || [], time: Date.now() };
+    // If suggestions are currently visible and input is empty, refresh them
+    if (suggestionsEl && suggestionsEl.classList.contains('cb-suggestions-visible')) {
+      const input = barEl ? barEl.querySelector('.cb-input') : null;
+      if (input && !input.value.trim()) {
+        showSuggestions();
+      }
+    }
+  }).catch(() => {
+    // Silent fail — static suggestions remain
+  });
 }
 
 function shouldShow(hash) {
@@ -185,6 +220,7 @@ function createBar() {
   // Show suggestions on focus (when input is empty and in AI mode)
   input.addEventListener('focus', () => {
     if (isAiMode && !input.value.trim() && !currentConfirmationId && !isProcessing) {
+      refreshDynamicSuggestions();
       showSuggestions();
     }
   });
@@ -607,6 +643,7 @@ export function initCommandBar() {
     updateVisibility(window.location.hash);
     dismissPreview();
     hideSuggestions();
+    refreshDynamicSuggestions();
   });
 
   // Keyboard shortcut: Ctrl/Cmd+K to focus

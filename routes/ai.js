@@ -492,6 +492,16 @@ router.get('/usage', (req, res) => {
 });
 
 /**
+ * GET /api/ai/suggestions — Dynamic command bar hints based on current data
+ */
+router.get('/suggestions', (req, res) => {
+  const { buildSuggestionHints } = require('../services/ai/aiContext');
+  const page = req.query.page || '';
+  const hints = buildSuggestionHints(page);
+  res.json({ suggestions: hints });
+});
+
+/**
  * GET /api/ai/settings — Get AI config (key masked)
  */
 router.get('/settings', (req, res) => {

@@ -156,6 +156,7 @@ export const aiUndo = (id) => request(`/ai/undo/${id}`, { method: 'POST' });
 export const getAiUsage = () => request('/ai/usage');
 export const aiCleanupRecipe = (dishId) => request(`/ai/cleanup-recipe/${dishId}`, { method: 'POST', timeout: AI_TIMEOUT });
 export const aiMatchIngredients = (ingredients) => request('/ai/match-ingredients', { method: 'POST', body: { ingredients }, timeout: AI_TIMEOUT });
+export const getAiSuggestions = (page) => request(`/ai/suggestions?page=${encodeURIComponent(page)}`);
 export const getAiSettings = () => request('/ai/settings');
 export const saveAiSettings = (data) => request('/ai/settings', { method: 'POST', body: data });
 
