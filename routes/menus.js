@@ -58,6 +58,13 @@ router.get('/', (req, res) => {
         WHERE di.dish_id IN (${dishPlaceholders})
       `).all(...allDishIds);
 
+      // Fetch manual_costs and batch_yield per dish
+      const dishMetaRows = db.prepare(
+        `SELECT id, manual_costs, batch_yield FROM dishes WHERE id IN (${dishPlaceholders})`
+      ).all(...allDishIds);
+      const dishMetaMap = {};
+      for (const r of dishMetaRows) dishMetaMap[r.id] = r;
+
       // Group ingredients by dish_id and compute cost
       const dishIngrMap = {};
       for (const row of ingredientRows) {
@@ -65,7 +72,15 @@ router.get('/', (req, res) => {
         dishIngrMap[row.dish_id].push(row);
       }
       for (const dishId of allDishIds) {
-        dishCostMap[dishId] = calculateDishCost(dishIngrMap[dishId] || []);
+        const costResult = calculateDishCost(dishIngrMap[dishId] || []);
+        const meta = dishMetaMap[dishId] || {};
+        let manualTotal = 0;
+        try {
+          const mc = JSON.parse(meta.manual_costs || '[]');
+          manualTotal = mc.reduce((sum, item) => sum + (parseFloat(item.amount) || 0), 0);
+        } catch { /* ignore */ }
+        const combinedTotal = round2(costResult.totalCost + manualTotal);
+        dishCostMap[dishId] = { totalCost: combinedTotal, batchYield: meta.batch_yield || 1 };
       }
     }
 
@@ -169,15 +184,21 @@ router.get('/:id', (req, res) => {
       // Substitution count
       dish.substitution_count = subsMap[dish.id] || 0;
 
-      // Cost per serving / portion
+      // Cost per serving / portion (include manual costs)
       const costResult = calculateDishCost(ingredientMap[dish.id] || []);
+      let manualTotal = 0;
+      try {
+        const mc = JSON.parse(dish.manual_costs || '[]');
+        manualTotal = mc.reduce((sum, item) => sum + (parseFloat(item.amount) || 0), 0);
+      } catch { /* ignore */ }
+      const combinedTotal = round2(costResult.totalCost + manualTotal);
       const batchYield = dish.batch_yield || 1;
-      dish.cost_per_batch = costResult.totalCost;
-      dish.cost_per_portion = round2(costResult.totalCost / batchYield);
+      dish.cost_per_batch = combinedTotal;
+      dish.cost_per_portion = round2(combinedTotal / batchYield);
       dish.cost_per_serving = dish.cost_per_portion; // backward compat alias
       dish.batch_yield = batchYield;
       dish.total_portions = dish.servings * batchYield;
-      dish.cost_total = round2(costResult.totalCost * dish.servings);
+      dish.cost_total = round2(combinedTotal * dish.servings);
       totalFoodCost += dish.cost_total;
     }
   }

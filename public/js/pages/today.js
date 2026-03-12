@@ -1,4 +1,4 @@
-import { getTodayData, getTodaySummary, getDayPhases, createTask, updateTask, deleteTask, setTaskNext, clearTaskNext } from '../api.js';
+import { getTodayData, getTodaySummary, getDayPhases, getMenus, createTask, updateTask, deleteTask, setTaskNext, clearTaskNext } from '../api.js';
 import { escapeHtml } from '../utils/escapeHtml.js';
 import { showToast } from '../components/toast.js';
 import { openModal, closeModal } from '../components/modal.js';
@@ -44,9 +44,10 @@ export async function renderToday(container) {
   const today = new Date().toISOString().slice(0, 10);
   let data;
   let phases;
+  let menus = [];
 
   try {
-    [data, phases] = await Promise.all([getTodayData(), getDayPhases()]);
+    [data, phases, menus] = await Promise.all([getTodayData(), getDayPhases(), getMenus()]);
   } catch (err) {
     container.innerHTML = `<div class="error">Failed to load today: ${escapeHtml(err.message)}</div>`;
     return;
@@ -255,6 +256,55 @@ export async function renderToday(container) {
     return all;
   }
 
+  function renderUpcomingMenus() {
+    // Standard menus (always active) + event menus with upcoming dates
+    const standard = menus.filter(m => m.menu_type === 'standard');
+    const upcoming = menus
+      .filter(m => m.menu_type === 'event' && m.event_date && m.event_date >= today)
+      .sort((a, b) => a.event_date.localeCompare(b.event_date))
+      .slice(0, 5);
+
+    if (!standard.length && !upcoming.length) return '';
+
+    const menuCard = (m) => {
+      const dishCount = m.dish_count || 0;
+      const cost = m.total_food_cost !== null && m.total_food_cost !== undefined ? `€${m.total_food_cost.toFixed(2)}` : '';
+      const dateStr = m.event_date ? formatShortDate(m.event_date) : '';
+      const isToday = m.event_date === today;
+      return `
+        <a href="#/menus/${m.id}" class="ty-menu-card ${isToday ? 'ty-menu-today' : ''}">
+          <div class="ty-menu-card-top">
+            <span class="ty-menu-card-name">${escapeHtml(m.name)}</span>
+            ${isToday ? '<span class="ty-menu-card-badge">Today</span>' : ''}
+          </div>
+          <div class="ty-menu-card-meta">
+            ${dateStr ? `<span>${escapeHtml(dateStr)}</span>` : '<span>Standard</span>'}
+            <span>${dishCount} dish${dishCount !== 1 ? 'es' : ''}</span>
+            ${cost ? `<span>${cost}</span>` : ''}
+          </div>
+        </a>
+      `;
+    };
+
+    // Show today's events first, then upcoming, then standard
+    const todayMenus = upcoming.filter(m => m.event_date === today);
+    const futureMenus = upcoming.filter(m => m.event_date !== today);
+
+    return `
+      <div class="ty-menus-section">
+        <div class="ty-section-header ty-menus-header">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+          <span>Menus</span>
+        </div>
+        <div class="ty-menus-grid">
+          ${todayMenus.map(menuCard).join('')}
+          ${futureMenus.map(menuCard).join('')}
+          ${standard.map(menuCard).join('')}
+        </div>
+      </div>
+    `;
+  }
+
   function render() {
     const currentPhaseId = getCurrentPhaseId(data.phases || phases);
 
@@ -271,6 +321,7 @@ export async function renderToday(container) {
         </div>
 
         ${renderProgressBar(data.progress)}
+        ${renderUpcomingMenus()}
         ${renderSpotlight(data.next_task)}
         ${renderOverdue(data.overdue || [])}
 
