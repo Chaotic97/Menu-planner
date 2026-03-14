@@ -33,8 +33,8 @@ function buildPrintTemplate() {
   .cs-print-meta-field { flex: 1; }
   .cs-print-meta-field label { font-size: 10px; text-transform: uppercase; letter-spacing: 1px; color: #666; display: block; margin-bottom: 1px; }
   .cs-print-meta-field .cs-print-line { border-bottom: 1px solid #999; min-height: 20px; font-size: 13px; }
-  .cs-print-ruled { flex: 1; display: flex; flex-direction: column; }
-  .cs-print-ruled-line { flex: 1; border-bottom: 1px solid #ddd; min-height: 0; }
+  .cs-print-ruled { flex: 1; display: flex; flex-direction: column; justify-content: space-between; }
+  .cs-print-ruled-line { border-bottom: 1px solid #ddd; height: 28px; }
   .cs-print-footer { text-align: center; font-size: 10px; color: #999; border-top: 1px solid #ccc; padding: 4px 0 0; }
 </style></head><body>
   <div class="cs-print-header">
