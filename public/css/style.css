@@ -167,13 +167,15 @@ body {
   background: none;
   border: none;
   cursor: pointer;
-  padding: 5px;
+  padding: 10px;
   border-radius: var(--radius-sm);
   display: flex;
   align-items: center;
   justify-content: center;
   transition: background 0.15s, color 0.15s;
   flex-shrink: 0;
+  min-width: 44px;
+  min-height: 44px;
 }
 
 .sidebar-toggle-btn svg,
@@ -1984,6 +1986,7 @@ textarea.input { resize: vertical; min-height: 80px; }
 }
 
 .td-task-card:hover .td-task-actions { opacity: 1; }
+@media (hover: none) { .td-task-actions { opacity: 1; } }
 
 .td-edit-btn,
 .td-delete-btn {
@@ -2185,9 +2188,9 @@ textarea.input { resize: vertical; min-height: 80px; }
   border: none;
   color: var(--text-muted);
   cursor: pointer;
-  padding: 4px;
-  min-width: 28px;
-  min-height: 28px;
+  padding: 8px;
+  min-width: 44px;
+  min-height: 44px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -2518,8 +2521,8 @@ textarea.input { resize: vertical; min-height: 80px; }
 }
 
 .allergen-toggle {
-  padding: 4px 10px;
-  font-size: 0.72rem;
+  padding: 8px 12px;
+  font-size: 0.75rem;
   font-weight: 600;
   border-radius: 20px;
   border: 1px solid var(--border);
@@ -2527,7 +2530,7 @@ textarea.input { resize: vertical; min-height: 80px; }
   color: var(--text-muted);
   cursor: pointer;
   transition: all 0.15s;
-  min-height: 28px;
+  min-height: 44px;
 }
 
 .allergen-toggle.active {
@@ -5062,11 +5065,13 @@ textarea.input { resize: vertical; min-height: 80px; }
   background: none;
   border: none;
   border-radius: 50%;
-  padding: 3px;
+  padding: 8px;
   cursor: pointer;
   color: var(--text-muted);
   transition: background 0.15s, color 0.15s;
   flex-shrink: 0;
+  min-width: 36px;
+  min-height: 36px;
 }
 
 .ak-chip-delete:hover {
@@ -8182,7 +8187,18 @@ textarea.input { resize: vertical; min-height: 80px; }
   input[type="date"],
   input[type="time"],
   textarea,
-  select {
+  select,
+  .mb-batch-label-input,
+  .mb-servings-input,
+  .mc-course-note-textarea,
+  .mc-dish-note-textarea,
+  .dv-scale-input,
+  .dv-unit-input,
+  .chat-drawer-input,
+  .nt-time-input,
+  .nt-num-input,
+  .dp-phase-name .input,
+  .dp-phase-time .input {
     font-size: 16px !important;
   }
 }

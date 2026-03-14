@@ -187,7 +187,7 @@ function createBar() {
       <button class="cb-mode-toggle" title="Toggle AI mode" aria-label="Toggle AI mode">
         <span class="cb-mode-icon">${isAiMode ? sparkleIcon : plusIcon}</span>
       </button>
-      <input type="text" class="cb-input" placeholder="${isAiMode ? 'Ask AI or add a task...' : 'Quick add a task...'}" aria-label="Command bar input">
+      <input type="text" class="cb-input" autocorrect="off" placeholder="${isAiMode ? 'Ask AI or add a task...' : 'Quick add a task...'}" aria-label="Command bar input">
       <button class="cb-send" title="${isAiMode ? 'Send to AI' : 'Add task'}" aria-label="${isAiMode ? 'Send to AI' : 'Add task'}">
         <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <line x1="22" y1="2" x2="11" y2="13"/>

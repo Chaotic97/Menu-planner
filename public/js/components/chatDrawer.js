@@ -1031,7 +1031,7 @@ function restoreMessages() {
 
 function formatDate(dateStr) {
   if (!dateStr) return '';
-  const d = new Date(dateStr + 'Z');
+  const d = new Date(dateStr.replace(' ', 'T') + 'Z');
   const now = new Date();
   const diffMs = now - d;
   const diffMins = Math.floor(diffMs / 60000);

@@ -1062,7 +1062,7 @@ function renderDishRow(dish, isHouse, scheduleDays, batchLabel) {
       </div>
       <div class="mb-servings">
         <button class="btn btn-icon servings-dec" data-dish="${dish.id}">-</button>
-        <input type="number" class="mb-servings-input" data-dish="${dish.id}" value="${dish.servings}" min="1" step="1" title="Number of batches">
+        <input type="number" class="mb-servings-input" inputmode="numeric" data-dish="${dish.id}" value="${dish.servings}" min="1" step="1" title="Number of batches">
         <button class="btn btn-icon servings-inc" data-dish="${dish.id}">+</button>
         <span class="mb-servings-label">${(dish.batch_yield || 1) > 1 ? escapeHtml((batchLabel || 'batch') + ((batchLabel || 'batch').endsWith('s') ? '' : 'es')) : 'servings'}</span>
         ${(dish.batch_yield || 1) > 1 ? `

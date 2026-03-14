@@ -46,7 +46,7 @@ export async function renderDishList(container) {
       </div>
     </div>
     <div class="filter-bar">
-      <input type="text" id="dish-search" placeholder="Search dishes..." class="input">
+      <input type="text" id="dish-search" inputmode="search" placeholder="Search dishes..." class="input">
       <select id="dish-category-filter" class="input">
         <option value="">All Categories</option>
         ${CATEGORIES.map(c => `<option value="${c.value}">${c.label}</option>`).join('')}

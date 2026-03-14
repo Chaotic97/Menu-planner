@@ -229,11 +229,11 @@ export async function renderMenuList(container) {
         <div class="form-row">
           <div class="form-group">
             <label for="menu-sell-price">Sell Price ($)</label>
-            <input type="number" id="menu-sell-price" class="input" step="0.01" min="0" placeholder="e.g., 120.00">
+            <input type="number" id="menu-sell-price" class="input" inputmode="decimal" step="0.01" min="0" placeholder="e.g., 120.00">
           </div>
           <div class="form-group">
             <label for="menu-covers">Expected Covers</label>
-            <input type="number" id="menu-covers" class="input" min="0" placeholder="e.g., 50">
+            <input type="number" id="menu-covers" class="input" inputmode="numeric" min="0" placeholder="e.g., 50">
           </div>
         </div>
         <p class="text-muted" style="font-size:0.83rem;">Guest allergies can be configured in the menu builder after creation.</p>

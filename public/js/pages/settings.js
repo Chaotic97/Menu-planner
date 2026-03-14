@@ -741,7 +741,7 @@ async function setupPasskeySection(container) {
         return;
       }
       listEl.innerHTML = passkeys.map(pk => {
-        const date = new Date(pk.created_at + 'Z').toLocaleDateString(undefined, {
+        const date = new Date((pk.created_at || '').replace(' ', 'T') + 'Z').toLocaleDateString(undefined, {
           year: 'numeric', month: 'short', day: 'numeric',
         });
         const shortId = pk.id.slice(0, 8) + '...';

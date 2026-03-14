@@ -63,7 +63,7 @@ export async function renderIngredientList(container) {
 
       <div class="il-controls">
         <div class="il-search-wrap">
-          <input type="search" class="input il-search" id="il-search" placeholder="Search ingredients..." value="${escapeHtml(searchQuery)}">
+          <input type="search" class="input il-search" id="il-search" inputmode="search" placeholder="Search ingredients..." value="${escapeHtml(searchQuery)}">
         </div>
         <div class="il-summary">
           ${totalCount} ingredient${totalCount !== 1 ? 's' : ''}
@@ -169,7 +169,7 @@ export async function renderIngredientList(container) {
         <div class="il-edit-row">
           <div class="st-form-group" style="flex:1">
             <label class="st-label" for="il-edit-cost">Unit Cost ($)</label>
-            <input type="number" id="il-edit-cost" class="input" value="${ing.unit_cost || 0}" min="0" step="0.01">
+            <input type="number" id="il-edit-cost" class="input" inputmode="decimal" value="${ing.unit_cost || 0}" min="0" step="0.01">
           </div>
           <div class="st-form-group" style="flex:1">
             <label class="st-label" for="il-edit-unit">Base Unit</label>

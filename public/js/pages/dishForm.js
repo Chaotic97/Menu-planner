@@ -937,7 +937,7 @@ export async function renderDishForm(container, dishId) {
         <div class="form-main">
           <div class="form-group">
             <label for="dish-name">Dish Name *</label>
-            <input type="text" id="dish-name" class="input" required value="${dish ? escapeHtml(dish.name) : (importedData ? escapeHtml(importedData.name) : '')}" placeholder="e.g., Pan-Seared Salmon">
+            <input type="text" id="dish-name" class="input" required autocorrect="off" autocapitalize="off" value="${dish ? escapeHtml(dish.name) : (importedData ? escapeHtml(importedData.name) : '')}" placeholder="e.g., Pan-Seared Salmon">
           </div>
           <div class="form-row">
             <div class="form-group">
@@ -951,11 +951,11 @@ export async function renderDishForm(container, dishId) {
             </div>
             <div class="form-group">
               <label for="dish-price">Selling Price ($)</label>
-              <input type="number" id="dish-price" class="input" step="0.01" min="0" value="${dish ? dish.suggested_price : ''}" placeholder="0.00">
+              <input type="number" id="dish-price" class="input" inputmode="decimal" step="0.01" min="0" value="${dish ? dish.suggested_price : ''}" placeholder="0.00">
             </div>
             <div class="form-group">
               <label for="dish-batch-yield">Batch Yield</label>
-              <input type="number" id="dish-batch-yield" class="input" step="0.5" min="0.5" value="${dish ? (dish.batch_yield || 1) : 1}" placeholder="1">
+              <input type="number" id="dish-batch-yield" class="input" inputmode="decimal" step="0.5" min="0.5" value="${dish ? (dish.batch_yield || 1) : 1}" placeholder="1">
               <span class="text-muted" style="font-size:0.78rem;">Portions per batch</span>
             </div>
           </div>
@@ -1284,7 +1284,7 @@ function ingredientRow(ing, index) {
           <input type="text" class="input ing-name" placeholder="Ingredient name" value="${escapeHtml(ing ? ing.ingredient_name : '')}">
         </div>
         <div class="ing-field ing-qty-field">
-          <input type="number" class="input ing-qty" placeholder="Qty" step="0.01" min="0" value="${ing ? ing.quantity : ''}">
+          <input type="number" class="input ing-qty" inputmode="decimal" placeholder="Qty" step="0.01" min="0" value="${ing ? ing.quantity : ''}">
         </div>
         <div class="ing-field ing-unit-field">
           <select class="input ing-unit">
@@ -1300,7 +1300,7 @@ function ingredientRow(ing, index) {
       </div>
       <div class="ing-cost-row">
         <span class="ing-cost-label">Unit cost: $</span>
-        <input type="number" class="input ing-unit-cost" placeholder="0.00" step="0.001" min="0"
+        <input type="number" class="input ing-unit-cost" inputmode="decimal" placeholder="0.00" step="0.001" min="0"
                value="${ing && ing.unit_cost ? ing.unit_cost : ''}">
         <span class="ing-cost-label">per</span>
         <select class="input ing-base-unit">
