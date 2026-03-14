@@ -381,6 +381,21 @@ async function initialize() {
       transports TEXT DEFAULT '[]',
       created_at TEXT DEFAULT (datetime('now'))
     )`,
+    // ChefSheet: handwritten sheet photo → AI-parsed actions
+    `CREATE TABLE IF NOT EXISTS chefsheets (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      photo_path TEXT NOT NULL,
+      sheet_date TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending',
+      raw_parse TEXT DEFAULT NULL,
+      confirmed_actions TEXT DEFAULT NULL,
+      execution_log TEXT DEFAULT NULL,
+      model TEXT DEFAULT '',
+      tokens_in INTEGER DEFAULT 0,
+      tokens_out INTEGER DEFAULT 0,
+      created_at TEXT DEFAULT (datetime('now'))
+    )`,
+    `CREATE INDEX IF NOT EXISTS idx_chefsheets_sheet_date ON chefsheets(sheet_date)`,
   ];
 
   let migrationErrors = 0;

@@ -305,6 +305,15 @@ export const deleteConversation = (id) => request(`/ai/conversations/${id}`, { m
 // AI Task Generation
 export const aiGenerateTasks = (menuId) => request(`/ai/generate-tasks/${menuId}`, { method: 'POST', timeout: AI_TIMEOUT });
 
+// ChefSheet
+const CS_TIMEOUT = 120000;
+export const uploadChefSheet = (formData) => request('/chefsheet/upload', { method: 'POST', body: formData, timeout: CS_TIMEOUT });
+export const getChefSheet = (id) => request(`/chefsheet/${id}`);
+export const updateChefSheetActions = (id, actions) => request(`/chefsheet/${id}/actions`, { method: 'PUT', body: { actions } });
+export const confirmChefSheet = (id) => request(`/chefsheet/${id}/confirm`, { method: 'POST', timeout: 60000 });
+export const getChefSheetHistory = () => request('/chefsheet');
+export const deleteChefSheet = (id) => request(`/chefsheet/${id}`, { method: 'DELETE' });
+
 // Google Calendar
 export const getCalendarSettings = () => request('/calendar/settings');
 export const saveCalendarSettings = (data) => request('/calendar/settings', { method: 'POST', body: data });

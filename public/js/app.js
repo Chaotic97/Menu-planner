@@ -8,6 +8,8 @@ import { renderShoppingList } from './pages/shoppingList.js';
 import { renderSpecials } from './pages/specials.js';
 import { renderServiceNotes } from './pages/serviceNotes.js';
 import { renderFlavorPairings } from './pages/flavorPairings.js';
+import { renderChefSheet } from './pages/chefsheet.js';
+import { renderChefSheetPreview } from './pages/chefsheetPreview.js';
 import { renderSettings } from './pages/settings.js';
 import { renderCalendar } from './pages/calendar.js';
 import { renderToday } from './pages/today.js';
@@ -32,6 +34,8 @@ const routes = [
   { pattern: /^#\/dishes$/, handler: () => renderDishList(appContent) },
   { pattern: /^#\/specials$/, handler: () => renderSpecials(appContent) },
   { pattern: /^#\/service-notes$/, handler: () => renderServiceNotes(appContent) },
+  { pattern: /^#\/chefsheet$/, handler: () => renderChefSheet(appContent) },
+  { pattern: /^#\/chefsheet\/(\d+)$/, handler: (m) => renderChefSheetPreview(appContent, m[1]) },
   { pattern: /^#\/flavor-pairings$/, handler: () => renderFlavorPairings(appContent) },
   { pattern: /^#\/ingredients$/, handler: () => renderIngredientList(appContent) },
   { pattern: /^#\/settings$/, handler: () => renderSettings(appContent) },
