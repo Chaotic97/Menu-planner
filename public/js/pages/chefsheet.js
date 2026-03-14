@@ -17,23 +17,20 @@ function buildPrintTemplate() {
 <html><head><style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; padding: 20px; color: #1a1a1a; }
-  .cs-print-header { text-align: center; margin-bottom: 16px; border-bottom: 3px solid #1a1a1a; padding-bottom: 12px; }
+  .cs-print-header { text-align: center; margin-bottom: 12px; border-bottom: 3px solid #1a1a1a; padding-bottom: 10px; }
   .cs-print-header h1 { font-size: 28px; letter-spacing: 2px; margin-bottom: 4px; }
-  .cs-print-header .cs-print-sub { font-size: 13px; color: #666; }
-  .cs-print-meta { display: flex; gap: 24px; margin-bottom: 20px; padding: 8px 0; border-bottom: 1px solid #ccc; }
+  .cs-print-header .cs-print-sub { font-size: 12px; color: #666; }
+  .cs-print-meta { display: flex; gap: 24px; margin-bottom: 14px; padding: 8px 0; border-bottom: 1px solid #ccc; }
   .cs-print-meta-field { flex: 1; }
   .cs-print-meta-field label { font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: #666; display: block; margin-bottom: 2px; }
   .cs-print-meta-field .cs-print-line { border-bottom: 1px solid #999; min-height: 24px; font-size: 14px; }
-  .cs-print-section { margin-bottom: 20px; }
-  .cs-print-section h2 { font-size: 14px; text-transform: uppercase; letter-spacing: 2px; background: #1a1a1a; color: white; padding: 4px 10px; margin-bottom: 2px; }
-  .cs-print-ruled { min-height: 120px; }
-  .cs-print-ruled-line { border-bottom: 1px solid #ddd; min-height: 28px; padding: 2px 4px; }
-  .cs-print-footer { text-align: center; font-size: 11px; color: #999; margin-top: 16px; border-top: 1px solid #ccc; padding-top: 8px; }
+  .cs-print-ruled-line { border-bottom: 1px solid #ddd; min-height: 28px; }
+  .cs-print-footer { text-align: center; font-size: 11px; color: #999; margin-top: 12px; border-top: 1px solid #ccc; padding-top: 8px; }
   @media print { body { padding: 12px; } }
 </style></head><body>
   <div class="cs-print-header">
     <h1>CHEFSHEET</h1>
-    <div class="cs-print-sub">PRINT CLEARLY &bull; ONE ITEM PER LINE</div>
+    <div class="cs-print-sub">WRITE CLEARLY &bull; ONE ITEM PER LINE &bull; WE'LL SORT IT OUT</div>
   </div>
   <div class="cs-print-meta">
     <div class="cs-print-meta-field">
@@ -50,30 +47,7 @@ function buildPrintTemplate() {
     </div>
   </div>
 
-  <div class="cs-print-section">
-    <h2>Tasks</h2>
-    <div class="cs-print-ruled">${'<div class="cs-print-ruled-line"></div>'.repeat(6)}</div>
-  </div>
-
-  <div class="cs-print-section">
-    <h2>Service Notes</h2>
-    <div class="cs-print-ruled">${'<div class="cs-print-ruled-line"></div>'.repeat(5)}</div>
-  </div>
-
-  <div class="cs-print-section">
-    <h2>Menu Changes</h2>
-    <div class="cs-print-ruled">${'<div class="cs-print-ruled-line"></div>'.repeat(4)}</div>
-  </div>
-
-  <div class="cs-print-section">
-    <h2>Orders</h2>
-    <div class="cs-print-ruled">${'<div class="cs-print-ruled-line"></div>'.repeat(4)}</div>
-  </div>
-
-  <div class="cs-print-section">
-    <h2>Recipe Notes</h2>
-    <div class="cs-print-ruled">${'<div class="cs-print-ruled-line"></div>'.repeat(4)}</div>
-  </div>
+  ${'<div class="cs-print-ruled-line"></div>'.repeat(30)}
 
   <div class="cs-print-footer">PlateStack ChefSheet &bull; Scan with app to digitize</div>
 </body></html>`;

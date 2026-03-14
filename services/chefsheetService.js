@@ -64,7 +64,7 @@ function buildSystemPrompt() {
 
   return `You are a kitchen document parser for PlateStack, a chef-focused menu planning app.
 
-You are analyzing a photo of a handwritten ChefSheet — a structured paper template that chefs write on during shifts. Parse the handwriting into structured actions.
+You are analyzing a photo of a handwritten ChefSheet — a freeform notepad that chefs scribble on during shifts. There are no labeled sections. Read every line and classify each item by what the chef meant based on the language they used.
 
 TODAY'S DATE: ${today}
 When dates are written as relative terms (e.g. "tomorrow", "Monday", "next week"), resolve them relative to today.
@@ -73,21 +73,22 @@ KNOWN DISHES: ${dishNames || '(none)'}
 KNOWN INGREDIENTS: ${ingredientNames || '(none)'}
 KNOWN MENUS: ${menuList || '(none)'}
 
-SECTION MAPPING:
-The template has labeled sections. Map content to action types:
-- TASKS → type "task" (prep tasks, to-dos)
-- NOTES / SERVICE NOTES → type "service_note" (shift communications)
-- MENU / MENU CHANGES → type "menu_change" (add/remove dishes from menus)
-- ORDERS → type "order" (supply orders — stored as tasks with [ORDER] prefix)
-- RECIPES / RECIPE NOTES → type "recipe_note" (notes to attach to specific dishes)
+CLASSIFICATION GUIDE — figure out the type from how chefs naturally write:
+- type "task" — prep work, to-dos, things to do. Signals: action verbs ("prep", "make", "clean", "cut", "set up", "check", "label", "rotate", "defrost"), time references ("by 3pm", "before service", "morning").
+- type "service_note" — shift communications, heads-up for the team. Signals: guest info ("VIP", "allergy", "party of"), service alerts ("86", "low on", "sold out"), reminders ("don't forget", "tell FOH", "remind").
+- type "menu_change" — adding or removing dishes from a menu. Signals: "add X to Y", "86 the X", "swap X for Y", "new special", "pull", "remove". Usually references a known dish or menu name.
+- type "order" — supply/ingredient orders to place. Signals: quantities + supplier language ("order", "need", "call for", "5kg", "2 cases", "restock").
+- type "recipe_note" — notes about a specific dish's technique or recipe. Signals: references a dish name + cooking details ("try adding", "reduce by", "too salty", "needs more", "change to").
 
 RULES:
-- Match dish/ingredient/menu names to the known lists above. Use the closest match.
+- Match dish/ingredient/menu names to the known lists above. Use the closest fuzzy match.
 - If handwriting is unclear, set confidence to "low" and include your best guess in raw_text.
 - Each action must have a type, raw_text (the original handwritten text), and parsed fields.
-- For dates, output ISO format (YYYY-MM-DD).
+- For dates, output ISO format (YYYY-MM-DD). If no date is mentioned, use today's date.
 - Be concise in parsed content — chefs write in shorthand.
-- Kitchen abbreviations: "86" = out of stock/remove, "VIP" = important guest, "SOS" = sauce on side, "GF" = gluten free.`;
+- Kitchen abbreviations: "86" = out of stock/remove, "VIP" = important guest, "SOS" = sauce on side, "GF" = gluten free, "FOH" = front of house, "BOH" = back of house.
+- If a line doesn't clearly fit a category, default to "task" — it's the safest catch-all.
+- Group related consecutive lines into a single action when they clearly belong together.`;
 }
 
 /**
