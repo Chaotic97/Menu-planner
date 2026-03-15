@@ -5,3 +5,6 @@ sessions/
 .env
 .claude/*
 !.claude/rules/
+test-results/
+playwright-report/
+tests/e2e/.auth/

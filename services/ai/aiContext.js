@@ -251,5 +251,3 @@ function buildSuggestionHints(page) {
 }
 
 module.exports = { buildContext, buildSuggestionHints };
-
-module.exports = { buildContext };

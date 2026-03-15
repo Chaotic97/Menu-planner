@@ -7,8 +7,9 @@
     "start": "node server.js",
     "init-db": "node db/init.js",
     "seed-sample": "node db/seed-sample.js",
-    "test": "jest --testPathPatterns=tests/",
-    "lint": "eslint ."
+    "test": "jest --testPathPatterns=tests/ --testPathIgnorePatterns=tests/e2e/",
+    "lint": "eslint .",
+    "test:e2e": "npx playwright test"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.78.0",
@@ -32,6 +33,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.39.3",
+    "@playwright/test": "^1.58.2",
     "eslint": "^9.39.3",
     "globals": "^17.3.0",
     "jest": "^30.2.0",
