@@ -27,6 +27,7 @@ npm test               # Jest: unit + integration tests
 npm run lint           # ESLint flat config (separate backend/frontend/test rules)
 npm run init-db        # Initialize database
 npm run seed-sample    # Insert 5 sample dishes
+npm run test:e2e       # Playwright: browser smoke tests (Chromium)
 ```
 
 ## Project Structure
@@ -49,6 +50,7 @@ public/js/utils/             — escapeHtml, notifications, printSheet
 public/css/style.css         — All styles (~8000 lines)
 tests/                       — Unit tests (pure functions)
 tests/integration/           — Supertest + in-memory SQLite
+tests/e2e/                   — Playwright smoke tests (Chromium)
 tests/helpers/               — setupTestApp.js, auth.js
 ```
 

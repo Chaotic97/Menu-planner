@@ -20,6 +20,13 @@ globs: ["tests/**"]
   }));
   ```
 
+## E2E tests (`tests/e2e/*.spec.js`)
+- Playwright with Chromium. Run with `npm run test:e2e`.
+- Spins up a real server on port 3001 with a disposable `test-e2e.db`.
+- Auth handled via `global-setup.js` project — saves session to `tests/e2e/.auth/state.json`, reused by smoke tests.
+- Smoke tests cover page navigation, dish/menu/service-note CRUD.
+- Config in `playwright.config.js`. Jest excludes `tests/e2e/` via `--testPathIgnorePatterns`.
+
 ## Rules
 - `extractTiming` and `extractPrepTasks` are exported from `prepTaskGenerator.js` for testing — keep them exported.
 - Do not test IEEE 754 half-way rounding in `round2` (e.g. `1.005`) — use `toBeCloseTo`.
