@@ -87,7 +87,10 @@ export async function renderCalendar(container) {
     container.innerHTML = `
       <div class="page-header">
         <h1>Calendar</h1>
-        ${gcalStatusHtml}
+        <div style="display:flex;gap:8px;align-items:center;">
+          ${gcalStatusHtml}
+          <button class="btn btn-ghost" id="cal-refresh" title="Refresh calendar"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg></button>
+        </div>
       </div>
       ${houseMenu ? `<div class="cal-house-banner">House Menu: <a href="#/menus/${houseMenu.id}">${escapeHtml(houseMenu.name)}</a> <span class="text-muted">(${houseMenu.dish_count} dishes)</span></div>` : ''}
       <div class="cal-nav">
@@ -150,6 +153,18 @@ export async function renderCalendar(container) {
         renderContent(null);
       });
     });
+
+    // General refresh
+    const calRefreshBtn = container.querySelector('#cal-refresh');
+    if (calRefreshBtn) {
+      calRefreshBtn.addEventListener('click', async () => {
+        calRefreshBtn.disabled = true;
+        await Promise.all([loadMenus(), gcalConfigured ? loadGcalEvents() : Promise.resolve()]);
+        renderContent(null);
+        calRefreshBtn.disabled = false;
+        showToast('Calendar refreshed');
+      });
+    }
 
     // Google Calendar refresh
     const refreshBtn = container.querySelector('#cal-refresh-gcal');

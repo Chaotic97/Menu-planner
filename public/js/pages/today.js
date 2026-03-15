@@ -268,7 +268,7 @@ export async function renderToday(container) {
 
     const menuCard = (m) => {
       const dishCount = m.dish_count || 0;
-      const cost = m.total_food_cost !== null && m.total_food_cost !== undefined ? `€${m.total_food_cost.toFixed(2)}` : '';
+      const cost = m.total_food_cost !== null && m.total_food_cost !== undefined ? `$${m.total_food_cost.toFixed(2)}` : '';
       const dateStr = m.event_date ? formatShortDate(m.event_date) : '';
       const isToday = m.event_date === today;
       return `

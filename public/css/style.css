@@ -748,7 +748,7 @@ textarea.input { resize: vertical; min-height: 80px; }
   display: flex;
   flex-wrap: wrap;
   gap: 4px;
-  margin: 4px 0;
+  margin: 6px 0;
 }
 
 .allergen-badge {
@@ -2433,7 +2433,7 @@ textarea.input { resize: vertical; min-height: 80px; }
   display: flex;
   flex-wrap: wrap;
   gap: 4px;
-  margin-top: 4px;
+  margin-top: 6px;
 }
 
 .tag-badge {
