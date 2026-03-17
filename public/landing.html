@@ -70,18 +70,7 @@
       0% { background-position: -200% center; }
       100% { background-position: 200% center; }
     }
-    .animate-fade-up {
-      opacity: 0;
-      animation: fadeUp 0.7s ease-out forwards;
-    }
-    .animate-fade-in {
-      opacity: 0;
-      animation: fadeIn 0.6s ease-out forwards;
-    }
-    .animate-scale-in {
-      opacity: 0;
-      animation: scaleIn 0.6s ease-out forwards;
-    }
+    /* Base classes — visible by default for bots/no-JS; .js-ready scoped versions below hide & animate */
     .delay-1 { animation-delay: 0.1s; }
     .delay-2 { animation-delay: 0.2s; }
     .delay-3 { animation-delay: 0.3s; }
@@ -665,15 +654,29 @@
       .lp-section-title { font-size: 1.5rem; }
     }
 
-    /* Scroll-triggered reveals */
-    .lp-reveal {
+    /* Scroll-triggered reveals — only hide when JS is active */
+    .js-ready .lp-reveal {
       opacity: 0;
       transform: translateY(32px);
       transition: opacity 0.6s ease-out, transform 0.6s ease-out;
     }
-    .lp-reveal.visible {
+    .js-ready .lp-reveal.visible {
       opacity: 1;
       transform: translateY(0);
+    }
+
+    /* Animations — only run when JS is active */
+    .js-ready .animate-fade-up {
+      opacity: 0;
+      animation: fadeUp 0.7s ease-out forwards;
+    }
+    .js-ready .animate-fade-in {
+      opacity: 0;
+      animation: fadeIn 0.6s ease-out forwards;
+    }
+    .js-ready .animate-scale-in {
+      opacity: 0;
+      animation: scaleIn 0.6s ease-out forwards;
     }
   </style>
 </head>
@@ -876,6 +879,9 @@
 
   <!-- Scroll reveal -->
   <script>
+    // Enable animations only for real browsers — bots/no-JS see all content immediately
+    document.documentElement.classList.add('js-ready');
+
     const revealEls = document.querySelectorAll('.lp-reveal');
     const observer = new IntersectionObserver((entries) => {
       entries.forEach(entry => {
@@ -886,6 +892,11 @@
       });
     }, { threshold: 0.15, rootMargin: '0px 0px -40px 0px' });
     revealEls.forEach(el => observer.observe(el));
+
+    // Fallback: reveal all hidden content after 1.5s for bots that run JS but don't scroll
+    setTimeout(() => {
+      document.querySelectorAll('.lp-reveal:not(.visible)').forEach(el => el.classList.add('visible'));
+    }, 1500);
 
     // Contact form
     document.getElementById('contact-form').addEventListener('submit', async (e) => {
