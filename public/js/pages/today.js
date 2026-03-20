@@ -482,14 +482,24 @@ export async function renderToday(container) {
     });
   }
 
-  async function reload() {
-    try {
-      data = await getTodayData();
-      render();
-    } catch (err) {
-      console.warn('Reload error:', err);
-      showToast('Could not refresh data', 'error');
-    }
+  let reloadTimer = null;
+  let reloadInFlight = false;
+
+  function reload() {
+    clearTimeout(reloadTimer);
+    reloadTimer = setTimeout(async () => {
+      if (reloadInFlight) return;
+      reloadInFlight = true;
+      try {
+        data = await getTodayData();
+        render();
+      } catch (err) {
+        console.warn('Reload error:', err);
+        showToast('Could not refresh data', 'error');
+      } finally {
+        reloadInFlight = false;
+      }
+    }, 300);
   }
 
   function openAddTaskModal() {
@@ -749,6 +759,7 @@ export async function renderToday(container) {
   window.addEventListener('quickcapture:created', quickCaptureHandler);
 
   const cleanupOnNav = () => {
+    clearTimeout(reloadTimer);
     for (const evt of syncEvents) {
       window.removeEventListener(evt, syncHandler);
     }
