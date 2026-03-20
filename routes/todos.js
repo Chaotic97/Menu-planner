@@ -44,7 +44,7 @@ router.get('/menu/:id/scaled-shopping-list', (req, res) => {
     const portionsRow = db.prepare(`
       SELECT COALESCE(SUM(md.servings * COALESCE(d.batch_yield, 1)), 0) AS total_portions
       FROM menu_dishes md
-      JOIN dishes d ON d.id = md.dish_id
+      JOIN dishes d ON d.id = md.dish_id AND d.deleted_at IS NULL
       WHERE md.menu_id = ?
     `).get(req.params.id);
     baseCovers = portionsRow.total_portions || 1;

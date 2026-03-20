@@ -506,7 +506,8 @@ router.put('/:id', (req, res) => {
   updates.push("updated_at = datetime('now')");
 
   params.push(req.params.id);
-  db.prepare(`UPDATE menus SET ${updates.join(', ')} WHERE id = ?`).run(...params);
+  const result = db.prepare(`UPDATE menus SET ${updates.join(', ')} WHERE id = ? AND deleted_at IS NULL`).run(...params);
+  if (result.changes === 0) return res.status(404).json({ error: 'Menu not found' });
 
   req.broadcast('menu_updated', { id: parseInt(req.params.id) }, req.headers['x-client-id']);
   res.json({ success: true });
@@ -867,9 +868,9 @@ router.put('/specials/:id', (req, res) => {
 
   const updates = [];
   const params = [];
-  if (dish_id) { updates.push('dish_id = ?'); params.push(dish_id); }
-  if (week_start) { updates.push('week_start = ?'); params.push(week_start); }
-  if (week_end) { updates.push('week_end = ?'); params.push(week_end); }
+  if (dish_id !== undefined) { updates.push('dish_id = ?'); params.push(dish_id); }
+  if (week_start !== undefined) { updates.push('week_start = ?'); params.push(week_start); }
+  if (week_end !== undefined) { updates.push('week_end = ?'); params.push(week_end); }
   if (notes !== undefined) { updates.push('notes = ?'); params.push(notes); }
   if (is_active !== undefined) { updates.push('is_active = ?'); params.push(is_active ? 1 : 0); }
 
