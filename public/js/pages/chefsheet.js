@@ -15,27 +15,21 @@ function buildPrintTemplate() {
   const today = new Date().toISOString().slice(0, 10);
   return `<!DOCTYPE html>
 <html><head><style>
-  @page { margin: 12mm; }
+  @page { margin: 12mm; size: A4; }
   * { margin: 0; padding: 0; box-sizing: border-box; }
-  html, body { height: 100%; }
   body {
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
     color: #1a1a1a;
-    display: flex;
-    flex-direction: column;
-    height: 100vh;
-    overflow: hidden;
   }
-  .cs-print-header { text-align: center; margin-bottom: 8px; border-bottom: 3px solid #1a1a1a; padding-bottom: 8px; }
-  .cs-print-header h1 { font-size: 26px; letter-spacing: 2px; margin-bottom: 2px; }
-  .cs-print-header .cs-print-sub { font-size: 11px; color: #666; }
-  .cs-print-meta { display: flex; gap: 20px; margin-bottom: 8px; padding: 6px 0; border-bottom: 1px solid #ccc; }
+  .cs-print-header { text-align: center; margin-bottom: 6px; border-bottom: 3px solid #1a1a1a; padding-bottom: 6px; }
+  .cs-print-header h1 { font-size: 24px; letter-spacing: 2px; margin-bottom: 2px; }
+  .cs-print-header .cs-print-sub { font-size: 10px; color: #666; }
+  .cs-print-meta { display: flex; gap: 20px; margin-bottom: 6px; padding: 4px 0; border-bottom: 1px solid #ccc; }
   .cs-print-meta-field { flex: 1; }
   .cs-print-meta-field label { font-size: 10px; text-transform: uppercase; letter-spacing: 1px; color: #666; display: block; margin-bottom: 1px; }
-  .cs-print-meta-field .cs-print-line { border-bottom: 1px solid #999; min-height: 20px; font-size: 13px; }
-  .cs-print-ruled { flex: 1; display: flex; flex-direction: column; justify-content: space-between; }
-  .cs-print-ruled-line { border-bottom: 1px solid #ddd; height: 28px; }
-  .cs-print-footer { text-align: center; font-size: 10px; color: #999; border-top: 1px solid #ccc; padding: 4px 0 0; }
+  .cs-print-meta-field .cs-print-line { border-bottom: 1px solid #999; min-height: 18px; font-size: 13px; }
+  .cs-print-ruled-line { border-bottom: 1px solid #ddd; height: 26px; }
+  .cs-print-footer { text-align: center; font-size: 10px; color: #999; border-top: 1px solid #ccc; padding: 4px 0 0; margin-top: 4px; }
 </style></head><body>
   <div class="cs-print-header">
     <h1>CHEFSHEET</h1>
@@ -57,7 +51,7 @@ function buildPrintTemplate() {
   </div>
 
   <div class="cs-print-ruled">
-    ${'<div class="cs-print-ruled-line"></div>'.repeat(24)}
+    ${'<div class="cs-print-ruled-line"></div>'.repeat(22)}
   </div>
 
   <div class="cs-print-footer">PlateStack ChefSheet &bull; Scan with app to digitize</div>
