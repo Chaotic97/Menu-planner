@@ -556,11 +556,6 @@ async function setupAiSection(container) {
 
 /** Wire up Google Calendar OAuth settings */
 async function setupGoogleCalendarSection(container) {
-  const gcalClientId = container.querySelector('#gcal-client-id');
-  const gcalClientSecret = container.querySelector('#gcal-client-secret');
-  const gcalSecretToggle = container.querySelector('#gcal-secret-toggle');
-  const gcalRedirectUri = container.querySelector('#gcal-redirect-uri');
-  const gcalSaveCredsBtn = container.querySelector('#gcal-save-creds-btn');
   const gcalConnectBtn = container.querySelector('#gcal-connect-btn');
   const gcalDisconnectBtn = container.querySelector('#gcal-disconnect-btn');
   const gcalStatusBanner = container.querySelector('#gcal-status-banner');
@@ -568,12 +563,7 @@ async function setupGoogleCalendarSection(container) {
   const gcalCalendarSelect = container.querySelector('#gcal-calendar-select');
   const gcalSaveCalBtn = container.querySelector('#gcal-save-calendar-btn');
   const gcalTestResult = container.querySelector('#gcal-test-result');
-
-  gcalSecretToggle.addEventListener('click', () => {
-    const isPassword = gcalClientSecret.type === 'password';
-    gcalClientSecret.type = isPassword ? 'text' : 'password';
-    gcalSecretToggle.textContent = isPassword ? 'Hide' : 'Show';
-  });
+  const gcalNotConfigured = container.querySelector('#gcal-not-configured');
 
   async function loadCalendarList(currentCalendarId) {
     try {
@@ -589,8 +579,17 @@ async function setupGoogleCalendarSection(container) {
   async function loadGcalSettings() {
     try {
       const settings = await getCalendarSettings();
-      gcalClientId.value = settings.clientId || '';
-      gcalRedirectUri.value = settings.redirectUri || '';
+
+      if (!settings.configured) {
+        gcalNotConfigured.style.display = 'block';
+        gcalConnectBtn.style.display = 'none';
+        gcalDisconnectBtn.style.display = 'none';
+        gcalCalendarPicker.style.display = 'none';
+        gcalStatusBanner.innerHTML = '';
+        return;
+      }
+
+      gcalNotConfigured.style.display = 'none';
 
       if (settings.connected) {
         gcalStatusBanner.innerHTML = '<p class="ai-key-status ai-key-status--ok" style="margin-bottom: var(--space-md);">Connected to Google Calendar</p>';
@@ -599,11 +598,9 @@ async function setupGoogleCalendarSection(container) {
         gcalCalendarPicker.style.display = 'block';
         await loadCalendarList(settings.calendarId);
       } else {
-        gcalStatusBanner.innerHTML = settings.hasClientId
-          ? '<p class="ai-key-status ai-key-status--warning" style="margin-bottom: var(--space-md);">Not connected \u2014 click "Connect Google Calendar" below</p>'
-          : '<p class="ai-key-status ai-key-status--warning" style="margin-bottom: var(--space-md);">Enter your OAuth credentials to get started</p>';
+        gcalStatusBanner.innerHTML = '<p class="ai-key-status ai-key-status--warning" style="margin-bottom: var(--space-md);">Not connected \u2014 click "Connect Google Calendar" below</p>';
         gcalConnectBtn.style.display = 'inline-block';
-        gcalConnectBtn.disabled = !settings.hasClientId;
+        gcalConnectBtn.disabled = false;
         gcalDisconnectBtn.style.display = 'none';
         gcalCalendarPicker.style.display = 'none';
       }
@@ -612,45 +609,7 @@ async function setupGoogleCalendarSection(container) {
     }
   }
 
-  gcalSaveCredsBtn.addEventListener('click', async () => {
-    const id = gcalClientId.value.trim();
-    const secret = gcalClientSecret.value.trim();
-    if (!id) {
-      showToast('Client ID is required', 'error');
-      return;
-    }
-    gcalSaveCredsBtn.disabled = true;
-    gcalSaveCredsBtn.textContent = 'Saving...';
-    try {
-      const body = { clientId: id };
-      if (secret) body.clientSecret = secret;
-      await saveCalendarSettings(body);
-      showToast('Credentials saved');
-      gcalClientSecret.value = '';
-      await loadGcalSettings();
-    } catch (err) {
-      console.warn('Save calendar credentials failed:', err);
-      showToast('Could not save credentials. Please try again.', 'error');
-    } finally {
-      gcalSaveCredsBtn.disabled = false;
-      gcalSaveCredsBtn.textContent = 'Save Credentials';
-    }
-  });
-
   gcalConnectBtn.addEventListener('click', async () => {
-    const id = gcalClientId.value.trim();
-    const secret = gcalClientSecret.value.trim();
-    if (id && secret) {
-      try {
-        await saveCalendarSettings({ clientId: id, clientSecret: secret });
-        gcalClientSecret.value = '';
-      } catch (err) {
-        console.warn('Save credentials failed:', err);
-        showToast('Could not save credentials. Please try again.', 'error');
-        return;
-      }
-    }
-
     gcalConnectBtn.disabled = true;
     gcalConnectBtn.textContent = 'Redirecting...';
     try {
@@ -914,40 +873,21 @@ export async function renderSettings(container) {
           <p class="ak-intro">
             Connect your Google Calendar to see events on the calendar page.
             Events are read-only &mdash; you can create menus from them with one click.
-            Requires a Google Cloud project with the Calendar API enabled.
           </p>
           <div class="card" style="padding: var(--space-md);">
             <div id="gcal-status-banner"></div>
 
-            <h3 class="st-card-heading">1. OAuth Credentials</h3>
-            <div class="st-form-group">
-              <label class="st-label" for="gcal-client-id">Client ID</label>
-              <input type="text" id="gcal-client-id" class="input" placeholder="123456789.apps.googleusercontent.com" autocomplete="off">
-            </div>
-            <div class="st-form-group">
-              <label class="st-label" for="gcal-client-secret">Client Secret</label>
-              <div class="ai-key-row">
-                <input type="password" id="gcal-client-secret" class="input" placeholder="GOCSPX-..." autocomplete="off">
-                <button id="gcal-secret-toggle" class="btn btn-secondary btn-sm" type="button">Show</button>
-              </div>
-            </div>
-            <div class="st-form-group">
-              <label class="st-label">Redirect URI</label>
-              <input type="text" id="gcal-redirect-uri" class="input" readonly style="background: var(--surface); cursor: default;">
-              <p class="st-help-text" style="margin-top:4px; font-size: var(--text-xs); color: var(--text-muted);">
-                Add this as an "Authorized redirect URI" in your Google Cloud Console OAuth credentials.
-              </p>
-            </div>
-            <button id="gcal-save-creds-btn" class="btn btn-secondary" style="margin-bottom: var(--space-lg);">Save Credentials</button>
+            <p id="gcal-not-configured" class="ai-key-status ai-key-status--warning" style="display:none;">
+              Google Calendar integration is not available &mdash; the server is missing the required configuration.
+            </p>
 
-            <h3 class="st-card-heading">2. Connect Account</h3>
             <div id="gcal-connect-area">
-              <button id="gcal-connect-btn" class="btn btn-primary" disabled>Connect Google Calendar</button>
+              <button id="gcal-connect-btn" class="btn btn-primary" style="display:none;">Connect Google Calendar</button>
               <button id="gcal-disconnect-btn" class="btn btn-ghost" style="margin-left:8px; color: var(--danger); display:none;">Disconnect</button>
             </div>
 
             <div id="gcal-calendar-picker" style="margin-top: var(--space-lg); display:none;">
-              <h3 class="st-card-heading">3. Choose Calendar</h3>
+              <h3 class="st-card-heading">Choose Calendar</h3>
               <div class="st-form-group">
                 <label class="st-label" for="gcal-calendar-select">Calendar</label>
                 <select id="gcal-calendar-select" class="input"></select>

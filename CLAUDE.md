@@ -127,7 +127,7 @@ celery, gluten, crustaceans, eggs, fish, lupin, milk, molluscs, mustard, nuts, p
 - **Domain**: platestack.app (DigitalOcean, PM2, nginx + HTTPS)
 - **Deploy**: `git push` → SSH → `cd /opt/menu-planner && git pull && npm install && pm2 restart menu-planner`
 - **PM2**: Must start with `NODE_ENV=production` for WebAuthn RP_ID to resolve to `platestack.app`
-- **Env vars**: SESSION_SECRET, GMAIL_USER, GMAIL_APP_PASSWORD, APP_URL, DB_PATH, UPLOADS_PATH, SESSIONS_PATH, NODE_ENV, RP_ID
+- **Env vars**: SESSION_SECRET, GMAIL_USER, GMAIL_APP_PASSWORD, APP_URL, DB_PATH, UPLOADS_PATH, SESSIONS_PATH, NODE_ENV, RP_ID, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET
 - **WebAuthn config**: `IS_PROD` detected from `NODE_ENV=production` OR `APP_URL=https://platestack.app`. RP_ID defaults to `platestack.app` (prod) or `localhost` (dev)
 
 ## Linting

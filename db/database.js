@@ -396,6 +396,8 @@ async function initialize() {
       created_at TEXT DEFAULT (datetime('now'))
     )`,
     `CREATE INDEX IF NOT EXISTS idx_chefsheets_sheet_date ON chefsheets(sheet_date)`,
+    // Remove stale OAuth credentials from settings — now read from env vars
+    `DELETE FROM settings WHERE key IN ('gcal_client_id', 'gcal_client_secret')`,
   ];
 
   let migrationErrors = 0;

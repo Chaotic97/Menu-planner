@@ -33,8 +33,8 @@ function setSetting(key, value) {
 
 function getOAuthConfig() {
   return {
-    clientId: getSetting('gcal_client_id'),
-    clientSecret: getSetting('gcal_client_secret'),
+    clientId: process.env.GOOGLE_CLIENT_ID || '',
+    clientSecret: process.env.GOOGLE_CLIENT_SECRET || '',
     refreshToken: getSetting('gcal_refresh_token'),
     accessToken: getSetting('gcal_access_token'),
     tokenExpiry: getSetting('gcal_token_expiry'),
@@ -142,24 +142,16 @@ function getRedirectUri(req) {
 router.get('/settings', (req, res) => {
   const config = getOAuthConfig();
   res.json({
-    hasClientId: !!config.clientId,
-    clientId: config.clientId || '',
+    configured: !!(config.clientId && config.clientSecret),
     calendarId: config.calendarId || '',
     connected: !!config.refreshToken,
-    redirectUri: getRedirectUri(req),
   });
 });
 
-// POST /api/calendar/settings - Save OAuth client credentials + calendar ID
+// POST /api/calendar/settings - Save calendar ID
 router.post('/settings', (req, res) => {
-  const { clientId, clientSecret, calendarId } = req.body;
+  const { calendarId } = req.body;
 
-  if (clientId !== undefined) {
-    setSetting('gcal_client_id', clientId.trim());
-  }
-  if (clientSecret !== undefined) {
-    setSetting('gcal_client_secret', clientSecret.trim());
-  }
   if (calendarId !== undefined) {
     setSetting('gcal_calendar_id', calendarId.trim());
   }
@@ -174,7 +166,7 @@ router.post('/settings', (req, res) => {
 router.get('/auth-url', (req, res) => {
   const config = getOAuthConfig();
   if (!config.clientId) {
-    return res.status(400).json({ error: 'Client ID not configured. Save it in Settings first.' });
+    return res.status(400).json({ error: 'Google Calendar not configured on this server.' });
   }
 
   const redirectUri = getRedirectUri(req);
