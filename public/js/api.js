@@ -305,6 +305,14 @@ export const deleteConversation = (id) => request(`/ai/conversations/${id}`, { m
 // AI Task Generation
 export const aiGenerateTasks = (menuId) => request(`/ai/generate-tasks/${menuId}`, { method: 'POST', timeout: AI_TIMEOUT });
 
+// AI Voice Transcription (Gemini)
+export const aiVoice = (audioBlob, context) => {
+  const formData = new FormData();
+  formData.append('audio', audioBlob, 'recording.webm');
+  if (context) formData.append('context', JSON.stringify(context));
+  return request('/ai/voice', { method: 'POST', body: formData, timeout: AI_TIMEOUT });
+};
+
 // ChefSheet
 const CS_TIMEOUT = 120000;
 export const uploadChefSheet = (formData) => request('/chefsheet/upload', { method: 'POST', body: formData, timeout: CS_TIMEOUT });

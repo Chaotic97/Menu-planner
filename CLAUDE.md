@@ -12,10 +12,11 @@ Chef-focused menu planning app: dishes with costed ingredients → menus → EU 
 |-------|-----------|----------------|
 | Backend | Node.js + Express 4 | **CommonJS only** (`require`/`module.exports`) |
 | Frontend | Vanilla JS | **ES modules only** (`import`/`export`), no bundler |
-| Database | SQLite via sql.js | In-memory, 500ms debounced disk writes |
+| Database | PostgreSQL via pg (node-postgres) | Cloud SQL, async queries via Pool |
 | Real-time | WebSocket (ws) | Broadcasts on every CRUD mutation |
 | Auth | bcrypt + @simplewebauthn (server/browser) v13 | Password + passkey (WebAuthn) login |
-| AI | Claude Haiku via @anthropic-ai/sdk | Function calling, context-aware command bar |
+| AI (text) | Claude Haiku via @anthropic-ai/vertex-sdk | Function calling, context-aware command bar, GCP ADC auth |
+| AI (vision/voice) | Gemini 2.5 Flash via @google-cloud/vertexai | Chef sheet OCR, image extraction, voice transcription |
 | CSS | Single stylesheet | `public/css/style.css`, CSS custom properties |
 | PWA | service-worker.js | Cache-first static, network-only `/api/` |
 
@@ -34,8 +35,9 @@ npm run test:e2e       # Playwright: browser smoke tests (Chromium)
 
 ```
 server.js                    — Express entry point, WebSocket, route mounting
-db/database.js               — sql.js wrapper, schema, migrations, auto-purge
-db/schema.sql                — Core tables
+db/database.js               — pg Pool wrapper, async DbWrapper/StmtWrapper/TxWrapper
+db/schema-pg.sql             — PostgreSQL schema (all tables + indexes, citext)
+db/seed-pg.sql               — Allergen keyword seed data
 middleware/                   — auth.js, asyncHandler.js, rateLimit.js
 services/                    — Business logic (allergens, costs, importers, exporters)
 services/ai/                 — aiService.js, aiTools.js, aiContext.js, aiHistory.js
@@ -49,7 +51,7 @@ public/js/components/        — Reusable UI: modal, toast, actionMenu, collapsi
 public/js/utils/             — escapeHtml, notifications, printSheet
 public/css/style.css         — All styles (~8000 lines)
 tests/                       — Unit tests (pure functions)
-tests/integration/           — Supertest + in-memory SQLite
+tests/integration/           — Supertest + PostgreSQL (isolated schema per suite)
 tests/e2e/                   — Playwright smoke tests (Chromium)
 tests/helpers/               — setupTestApp.js, auth.js
 ```
@@ -61,10 +63,13 @@ tests/helpers/               — setupTestApp.js, auth.js
 - Validate all inputs server-side before DB operations.
 
 ### Database
-- `getDb()` returns sync `DbWrapper` inside routes — never `await` it in a route handler.
+- `getDb()` is async — `const db = await getDb()` in every route/service.
+- All DB calls (`db.prepare().get/all/run()`) return promises — always `await`.
+- Use `db.transaction(async (tx) => { ... })` for multi-statement transactions.
+- SQL uses `$1, $2, ...` placeholders (auto-converted from `?` by `convertPlaceholders()`).
 - All `dishes` and `menus` queries must include `WHERE deleted_at IS NULL`.
 - `UNIQUE(dish_id, ingredient_id)` on `dish_ingredients` — duplicates throw.
-- Migrations: append to `MIGRATIONS` array in `db/database.js`.
+- Schema in `db/schema-pg.sql`. Migrations: keyed off `schema_version.version` in `db/database.js`.
 
 ### WebSocket
 - Server: `req.broadcast('event_type', payload, req.headers['x-client-id'])` on every mutation.
@@ -124,17 +129,20 @@ celery, gluten, crustaceans, eggs, fish, lupin, milk, molluscs, mustard, nuts, p
 `all` · `am` · `lunch` · `pm` · `prep`
 
 ## Deployment
-- **Domain**: platestack.app (DigitalOcean, PM2, nginx + HTTPS)
+- **Domain**: platestack.app (GCE VM `platestack-vm` us-east1-b, PM2, nginx + HTTPS)
+- **Database**: Cloud SQL PostgreSQL 16 (`platestack-db`, us-east1)
+- **DNS**: Google Cloud DNS (`platestack-zone`)
 - **Deploy**: `git push` → SSH → `cd /opt/menu-planner && git pull && npm install && pm2 restart menu-planner`
-- **PM2**: Must start with `NODE_ENV=production` for WebAuthn RP_ID to resolve to `platestack.app`
-- **Env vars**: SESSION_SECRET, GMAIL_USER, GMAIL_APP_PASSWORD, APP_URL, DB_PATH, UPLOADS_PATH, SESSIONS_PATH, NODE_ENV, RP_ID, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET
+- **PM2**: Config in `ecosystem.config.js` (gitignored, contains secrets). Must start with `NODE_ENV=production`.
+- **Env vars**: DATABASE_URL, SESSION_SECRET, GMAIL_USER, GMAIL_APP_PASSWORD, APP_URL, UPLOADS_PATH, SESSIONS_PATH, NODE_ENV, RP_ID, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, VERTEX_PROJECT_ID, VERTEX_REGION
 - **WebAuthn config**: `IS_PROD` detected from `NODE_ENV=production` OR `APP_URL=https://platestack.app`. RP_ID defaults to `platestack.app` (prod) or `localhost` (dev)
+- **SSL**: Let's Encrypt cert at `/etc/letsencrypt/live/platestack.app/` (manual renewal needed before expiry)
 
 ## Linting
 ESLint 9 flat config (`eslint.config.js`). Three blocks: backend (`commonjs`, Node globals), frontend (`module`, browser globals), tests (`commonjs`, Node + Jest globals). Key rules: `no-var` (error), `prefer-const` (warn), `eqeqeq` (warn), `no-throw-literal` (error), `no-unused-vars` with `argsIgnorePattern: '^_'`.
 
 ## CI
-GitHub Actions on push/PR to main: Node 20/22 matrix → `npm ci` → `npm run lint` → `npm test`
+GitHub Actions on push/PR to main: Node 20/22 matrix + PostgreSQL 16 service container → `npm ci` → `npm run lint` → `npm test`
 
 @.claude/rules/backend.md
 @.claude/rules/frontend.md

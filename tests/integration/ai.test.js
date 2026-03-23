@@ -4,15 +4,18 @@ jest.mock('../../middleware/rateLimit', () => ({
   createRateLimit: () => (_req, _res, next) => next(),
 }));
 
-// Shared mock for Anthropic SDK — all instances share the same messages.create mock
+// Mock Vertex AI client — all instances share the same messages.create/stream mock
 const mockMessagesCreate = jest.fn();
-jest.mock('@anthropic-ai/sdk', () => {
-  return jest.fn().mockImplementation(() => ({
+const mockMessagesStream = jest.fn();
+jest.mock('../../services/ai/vertexClient', () => ({
+  getClaudeClient: () => ({
     messages: {
       create: mockMessagesCreate,
+      stream: mockMessagesStream,
     },
-  }));
-});
+  }),
+  isConfigured: () => true,
+}));
 
 const request = require('supertest');
 const { createTestApp } = require('../helpers/setupTestApp');
@@ -28,6 +31,7 @@ beforeAll(async () => {
     '../../services/ai/aiTools',
     '../../services/ai/aiContext',
     '../../services/ai/aiHistory',
+    '../../services/ai/vertexClient',
   ];
   for (const mod of aiModules) {
     try { delete require.cache[require.resolve(mod)]; } catch {}
@@ -60,18 +64,9 @@ beforeEach(() => {
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
-async function setApiKey(key = 'sk-ant-test-key-12345') {
-  const existing = await db.prepare('SELECT 1 FROM settings WHERE key = ?').get('ai_api_key');
-  if (existing) {
-    await db.prepare('UPDATE settings SET value = ? WHERE key = ?').run(key, 'ai_api_key');
-  } else {
-    await db.prepare('INSERT INTO settings (key, value) VALUES (?, ?)').run('ai_api_key', key);
-  }
-}
-
-async function clearApiKey() {
-  await db.prepare("DELETE FROM settings WHERE key = 'ai_api_key'").run();
-}
+// No-op: Vertex AI auth is via ADC (mocked by vertexClient mock above).
+// Kept as stub so existing test calls don't break.
+async function setApiKey() {}
 
 async function createTestDish(name = 'Test Dish') {
   const result = await db.prepare('INSERT INTO dishes (name, description, category) VALUES (?, ?, ?)').run(name, 'A test dish', 'main');
@@ -102,65 +97,17 @@ function mockFollowUpText(text = 'Done.') {
 // ─── SETTINGS ───────────────────────────────────────────────────────────────
 
 describe('GET /api/ai/settings', () => {
-  test('returns default settings when no API key is configured', async () => {
-    await clearApiKey();
+  test('returns default settings with configured status', async () => {
     const res = await agent.get('/api/ai/settings').expect(200);
 
-    expect(res.body.hasApiKey).toBe(false);
-    expect(res.body.apiKey).toBe('');
+    expect(res.body.configured).toBe(true);
     expect(res.body.features).toEqual({ cleanup: true, matching: true, allergens: true, scaling: true });
     expect(res.body.dailyLimit).toBe(0);
     expect(res.body.monthlyLimit).toBe(0);
   });
-
-  test('returns masked API key when configured', async () => {
-    await setApiKey('sk-ant-api03-very-long-key-here-1234');
-    const res = await agent.get('/api/ai/settings').expect(200);
-
-    expect(res.body.hasApiKey).toBe(true);
-    expect(res.body.apiKey).toMatch(/^sk-ant-api/);
-    expect(res.body.apiKey).toMatch(/1234$/);
-    // Key should be masked in the middle
-    expect(res.body.apiKey).toContain('...');
-  });
 });
 
 describe('POST /api/ai/settings', () => {
-  test('saves a valid API key', async () => {
-    const res = await agent
-      .post('/api/ai/settings')
-      .send({ apiKey: 'sk-ant-new-key-5678' })
-      .expect(200);
-
-    expect(res.body.success).toBe(true);
-
-    // Verify it persisted
-    const check = await agent.get('/api/ai/settings').expect(200);
-    expect(check.body.hasApiKey).toBe(true);
-  });
-
-  test('rejects an invalid API key format', async () => {
-    const res = await agent
-      .post('/api/ai/settings')
-      .send({ apiKey: 'invalid-key-format' })
-      .expect(400);
-
-    expect(res.body.error).toMatch(/invalid api key/i);
-  });
-
-  test('clears API key when empty string is sent', async () => {
-    await setApiKey();
-    const res = await agent
-      .post('/api/ai/settings')
-      .send({ apiKey: '' })
-      .expect(200);
-
-    expect(res.body.success).toBe(true);
-
-    const check = await agent.get('/api/ai/settings').expect(200);
-    expect(check.body.hasApiKey).toBe(false);
-  });
-
   test('saves feature toggles', async () => {
     const features = { cleanup: false, matching: true, allergens: true, scaling: false };
     await agent
@@ -211,17 +158,6 @@ describe('GET /api/ai/usage', () => {
 // ─── COMMAND ENDPOINT ───────────────────────────────────────────────────────
 
 describe('POST /api/ai/command', () => {
-  test('returns needsSetup when no API key', async () => {
-    await clearApiKey();
-    const res = await agent
-      .post('/api/ai/command')
-      .send({ message: 'hello', context: { page: '#/dishes' } })
-      .expect(200);
-
-    expect(res.body.needsSetup).toBe(true);
-    expect(res.body.response).toMatch(/api key/i);
-  });
-
   test('rejects empty message', async () => {
     await setApiKey();
     const res = await agent
@@ -566,11 +502,6 @@ describe('POST /api/ai/cleanup-recipe/:dishId', () => {
     await agent.post('/api/ai/cleanup-recipe/abc').expect(400);
   });
 
-  test('returns 400 when no API key', async () => {
-    await clearApiKey();
-    await agent.post('/api/ai/cleanup-recipe/1').expect(400);
-  });
-
   test('returns 404 for nonexistent dish', async () => {
     await setApiKey();
     await agent.post('/api/ai/cleanup-recipe/99999').expect(404);
@@ -626,14 +557,6 @@ describe('POST /api/ai/match-ingredients', () => {
     await agent
       .post('/api/ai/match-ingredients')
       .send({})
-      .expect(400);
-  });
-
-  test('returns 400 when no API key', async () => {
-    await clearApiKey();
-    await agent
-      .post('/api/ai/match-ingredients')
-      .send({ ingredients: [{ name: 'butter' }] })
       .expect(400);
   });
 
@@ -1110,12 +1033,6 @@ describe('chat conversations CRUD', () => {
 // ─── AI TASK GENERATION ────────────────────────────────────────────────────
 
 describe('POST /api/ai/generate-tasks/:menuId', () => {
-  test('returns 400 when no API key', async () => {
-    await clearApiKey();
-    const menuId = await createTestMenu('No Key Menu');
-    await agent.post(`/api/ai/generate-tasks/${menuId}`).expect(400);
-  });
-
   test('returns 404 for non-existent menu', async () => {
     await setApiKey();
     await agent.post('/api/ai/generate-tasks/99999').expect(404);

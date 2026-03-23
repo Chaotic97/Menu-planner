@@ -173,6 +173,8 @@ async function initialize() {
   try { await pool.query("DELETE FROM ai_conversations WHERE updated_at < NOW() - INTERVAL '7 days'"); } catch {}
   // Purge stale OAuth credentials
   try { await pool.query("DELETE FROM settings WHERE key IN ('gcal_client_id', 'gcal_client_secret')"); } catch {}
+  // Purge legacy Anthropic API key (migrated to Vertex AI with ADC)
+  try { await pool.query("DELETE FROM settings WHERE key = 'ai_api_key'"); } catch {}
 
   wrapper = new DbWrapper(pool);
 

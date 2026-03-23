@@ -74,54 +74,49 @@ All application code has been converted from SQLite (sql.js) to PostgreSQL (pg).
 
 ---
 
+## What's Done (Deployment)
+
+### 4. Configure VM ✅
+- [x] `ecosystem.config.js` configured with DATABASE_URL, SESSION_SECRET
+- [x] App started with PM2, connected to Cloud SQL
+- [x] PM2 startup configured for auto-restart on reboot
+- [x] VM IP authorized in Cloud SQL
+
+### 5. SSL Certificate ✅
+- [x] Let's Encrypt cert via DNS challenge (expires 2026-06-21)
+- [x] nginx configured with HTTPS + HTTP→HTTPS redirect
+
+### 6. DNS Cutover ✅
+- [x] Migrated DNS from DigitalOcean to Google Cloud DNS (`platestack-zone`)
+- [x] A record → `34.148.149.170`, MX → Zoho, TXT → SPF + Zoho verification
+- [x] App live at https://platestack.app
+
+---
+
+## What's Done (Post-Deployment)
+
+### 7. Remaining Setup ✅
+- [x] Set up certbot auto-renewal (certbot-dns-google plugin + cron at `/etc/cron.d/certbot-renew`)
+- [x] Copy `uploads/` directory — skipped (no dish photos uploaded yet)
+- [x] Verify: WebSocket sync ✓, PWA installs ✓
+
+### 8. Lock Down Cloud SQL ✅
+- [x] Added private IP via VPC peering (`10.26.0.3`)
+- [x] Updated `DATABASE_URL` in ecosystem.config.js to use private IP
+- [x] Removed public IP from Cloud SQL instance
+- [x] `pm2 restart menu-planner`
+
+### 9. Decommission DO ✅
+- [x] DO droplet destroyed
+
+---
+
 ## What's Left
 
-### 4. Configure VM
-- [ ] Edit `ecosystem.config.js` on the VM with real env vars:
-  ```bash
-  gcloud compute ssh platestack-vm --zone=us-east1-b
-  nano /opt/menu-planner/ecosystem.config.js
-  ```
-  Fill in:
-  - `DATABASE_URL`: `postgresql://platestack_app:PASSWORD@34.75.214.150:5432/platestack` (public IP for now)
-  - `SESSION_SECRET`: any random string
-  - `GMAIL_USER`, `GMAIL_APP_PASSWORD`
-  - `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`
-- [ ] Copy `uploads/` directory from DO droplet to VM:
-  ```bash
-  scp -r root@DO_IP:/opt/menu-planner/uploads/ /tmp/uploads/
-  gcloud compute scp --zone=us-east1-b --recurse /tmp/uploads/ platestack-vm:/opt/menu-planner/uploads/
-  ```
-- [ ] Start app: `cd /opt/menu-planner && pm2 start ecosystem.config.js && pm2 save && pm2 startup`
-- [ ] Test app works on HTTP at `http://34.148.149.170`
-
-### 5. SSL Certificate
-- [ ] Get cert (before DNS cutover, use DNS challenge):
-  ```bash
-  sudo certbot certonly --manual --preferred-challenges dns -d platestack.app
-  ```
-- [ ] Swap nginx to full HTTPS config:
-  ```bash
-  sudo cp /opt/menu-planner/nginx/platestack.conf /etc/nginx/sites-available/platestack
-  sudo nginx -t && sudo systemctl reload nginx
-  ```
-  (Or write the config from the template already on the VM at `/etc/nginx/sites-available/platestack`)
-
-### 6. DNS Cutover
-- [ ] Update A record for `platestack.app` → `34.148.149.170`
-- [ ] Switch certbot to `certbot --nginx` for auto-renewal
-- [ ] Verify: app loads, login works, WebSocket sync, photos display, AI works, PWA installs
-
-### 7. Lock Down Cloud SQL
-- [ ] Remove public IP from Cloud SQL instance
-- [ ] Add private IP (same VPC as VM): `gcloud sql instances patch platestack-db --no-assign-ip --network=default`
-- [ ] Update `DATABASE_URL` in ecosystem.config.js to use private IP
-- [ ] `pm2 restart menu-planner`
-
-### 8. Decommission DO
-- [ ] Confirm everything works for a few days
-- [ ] Take final backup from DO (just in case)
-- [ ] Destroy DO droplet
+### 10. Optional / Deferred
+- [ ] Add GMAIL_USER, GMAIL_APP_PASSWORD to ecosystem.config.js (email sending)
+- [ ] Add GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET to ecosystem.config.js (Google Calendar OAuth)
+- [ ] Add Anthropic API key in app Settings (AI command bar)
 
 ---
 

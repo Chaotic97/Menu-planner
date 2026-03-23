@@ -10,8 +10,8 @@ globs: ["tests/**"]
 - Pure functions only, no DB/network. Place in `tests/`.
 
 ## Integration tests (`tests/integration/*.test.js`)
-- Full request→response via supertest against in-memory SQLite.
-- Setup: `createTestApp()` from `tests/helpers/setupTestApp.js` (fresh DB per suite).
+- Full request→response via supertest against PostgreSQL (isolated schema per suite).
+- Setup: `createTestApp()` from `tests/helpers/setupTestApp.js` (fresh PG schema per suite).
 - Auth: `loginAgent(app)` from `tests/helpers/auth.js` (sets up password, returns authenticated agent).
 - **Every integration test must mock rate limiting:**
   ```js
@@ -22,7 +22,7 @@ globs: ["tests/**"]
 
 ## E2E tests (`tests/e2e/*.spec.js`)
 - Playwright with Chromium. Run with `npm run test:e2e`.
-- Spins up a real server on port 3001 with a disposable `test-e2e.db`.
+- Spins up a real server on port 3001 with a test PostgreSQL database.
 - Auth handled via `global-setup.js` project — saves session to `tests/e2e/.auth/state.json`, reused by smoke tests.
 - Smoke tests cover page navigation, dish/menu/service-note CRUD.
 - Config in `playwright.config.js`. Jest excludes `tests/e2e/` via `--testPathIgnorePatterns`.

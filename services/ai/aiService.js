@@ -4,7 +4,7 @@
  * Handles API calls, retries, and usage tracking.
  */
 
-const Anthropic = require('@anthropic-ai/sdk');
+const { getClaudeClient, isConfigured } = require('./vertexClient');
 const { getDb } = require('../../db/database');
 const { getToolDefinitions, executeToolHandler, isAutoApproved } = require('./aiTools');
 const { buildContext } = require('./aiContext');
@@ -35,26 +35,16 @@ function invalidateContextCache() {
 }
 
 /**
- * Get the API key from settings table
- */
-async function getApiKey() {
-  const db = await getDb();
-  const row = await db.prepare('SELECT value FROM settings WHERE key = ?').get('ai_api_key');
-  return row ? row.value : null;
-}
-
-/**
  * Get AI feature settings
  */
 async function getAiSettings() {
   const db = await getDb();
-  const keyRow = await db.prepare('SELECT value FROM settings WHERE key = ?').get('ai_api_key');
   const featRow = await db.prepare('SELECT value FROM settings WHERE key = ?').get('ai_features');
   const dailyRow = await db.prepare('SELECT value FROM settings WHERE key = ?').get('ai_daily_limit');
   const monthlyRow = await db.prepare('SELECT value FROM settings WHERE key = ?').get('ai_monthly_limit');
 
   return {
-    hasApiKey: !!(keyRow && keyRow.value),
+    configured: isConfigured(),
     features: featRow ? JSON.parse(featRow.value) : { cleanup: true, matching: true, allergens: true, scaling: true },
     dailyLimit: dailyRow ? parseInt(dailyRow.value) : 0,
     monthlyLimit: monthlyRow ? parseInt(monthlyRow.value) : 0,
@@ -185,9 +175,8 @@ async function callApi(client, systemPrompt, tools, messages) {
  * Returns: { response, autoExecuted?, toolCall?, preview?, confirmationData?, toolResults? }
  */
 async function processCommand(message, pageContext, conversationHistory, broadcast, options = {}) {
-  const apiKey = await getApiKey();
-  if (!apiKey) {
-    return { response: 'Please set up your Anthropic API key in Settings to use AI features.', needsSetup: true };
+  if (!isConfigured()) {
+    return { response: 'Vertex AI is not configured. Set VERTEX_PROJECT_ID on the server.', needsSetup: true };
   }
 
   const limitCheck = await checkUsageLimits();
@@ -195,7 +184,7 @@ async function processCommand(message, pageContext, conversationHistory, broadca
     return { response: limitCheck.reason, rateLimited: true };
   }
 
-  const client = new Anthropic({ apiKey, timeout: 45 * 1000 });
+  const client = getClaudeClient({ timeout: 45 * 1000 });
   let context = getCachedContext(pageContext);
   if (context === null) {
     context = await buildContext(pageContext);
@@ -372,9 +361,8 @@ async function executeConfirmedAction(confirmationData, broadcast) {
  * @param {Function} emit - callback(eventType, data) for SSE events
  */
 async function processCommandStream(message, pageContext, conversationHistory, broadcast, emit, options = {}) {
-  const apiKey = await getApiKey();
-  if (!apiKey) {
-    emit('error', { message: 'Please set up your Anthropic API key in Settings to use AI features.' });
+  if (!isConfigured()) {
+    emit('error', { message: 'Vertex AI is not configured. Set VERTEX_PROJECT_ID on the server.' });
     emit('done', {});
     return;
   }
@@ -386,7 +374,7 @@ async function processCommandStream(message, pageContext, conversationHistory, b
     return;
   }
 
-  const client = new Anthropic({ apiKey, timeout: 60 * 1000 });
+  const client = getClaudeClient({ timeout: 60 * 1000 });
   let context = getCachedContext(pageContext);
   if (context === null) {
     context = await buildContext(pageContext);
@@ -615,7 +603,6 @@ module.exports = {
   executeConfirmedAction,
   getAiSettings,
   getUsageStats,
-  getApiKey,
   checkUsageLimits,
   buildSystemPrompt,
   buildContext: require('./aiContext').buildContext,

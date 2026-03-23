@@ -7,7 +7,8 @@ const multer = require('multer');
 const { getDb } = require('../db/database');
 const asyncHandler = require('../middleware/asyncHandler');
 const { createRateLimit } = require('../middleware/rateLimit');
-const { processCommand, processCommandStream, executeConfirmedAction, getAiSettings, getUsageStats, getApiKey, checkUsageLimits } = require('../services/ai/aiService');
+const { processCommand, processCommandStream, executeConfirmedAction, getAiSettings, getUsageStats, checkUsageLimits } = require('../services/ai/aiService');
+const { getClaudeClient, isConfigured } = require('../services/ai/vertexClient');
 const { restoreSnapshot, cleanupOldSnapshots } = require('../services/ai/aiHistory');
 const { extractText } = require('../services/textExtractor');
 
@@ -43,8 +44,7 @@ setInterval(() => {
  * Returns the parsed cleaned directions array.
  */
 async function fetchCleanedDirections(dishId) {
-  const apiKey = await getApiKey();
-  if (!apiKey) throw new Error('API key not configured');
+  if (!isConfigured()) throw new Error('Vertex AI not configured');
 
   const db = await getDb();
   const dish = await db.prepare('SELECT id, name, chefs_notes FROM dishes WHERE id = ? AND deleted_at IS NULL').get(dishId);
@@ -76,8 +76,7 @@ async function fetchCleanedDirections(dishId) {
     return `${qty} ${i.name}${i.prep_note ? ' (' + i.prep_note + ')' : ''}`.trim();
   }).join(', ');
 
-  const Anthropic = require('@anthropic-ai/sdk');
-  const client = new Anthropic({ apiKey, timeout: 45 * 1000 });
+  const client = getClaudeClient({ timeout: 45 * 1000 });
 
   const response = await client.messages.create({
     model: 'claude-haiku-4-5-20251001',
@@ -190,12 +189,12 @@ router.post('/command', aiRateLimit, asyncHandler(async (req, res) => {
   } catch (err) {
     console.error('AI command error:', err);
 
-    // Handle specific Anthropic API errors
-    if (err.status === 401) {
-      return res.status(400).json({ error: 'Invalid API key. Please check your Anthropic API key in Settings.' });
+    // Handle specific Vertex AI / Anthropic API errors
+    if (err.status === 401 || err.status === 403) {
+      return res.status(400).json({ error: 'Vertex AI authentication failed. Check the VM service account permissions.' });
     }
     if (err.status === 429) {
-      return res.status(429).json({ error: 'Anthropic API rate limit reached. Please try again in a moment.' });
+      return res.status(429).json({ error: 'API rate limit reached. Please try again in a moment.' });
     }
     if (err.status === 400) {
       return res.status(400).json({ error: 'AI request failed: ' + (err.message || 'Bad request') });
@@ -344,9 +343,8 @@ router.post('/cleanup-recipe/:dishId', aiRateLimit, asyncHandler(async (req, res
     return res.status(400).json({ error: 'Invalid dish ID' });
   }
 
-  const apiKey = await getApiKey();
-  if (!apiKey) {
-    return res.status(400).json({ error: 'Please set up your Anthropic API key in Settings.' });
+  if (!isConfigured()) {
+    return res.status(400).json({ error: 'Vertex AI is not configured on the server.' });
   }
 
   const limitCheck = await checkUsageLimits();
@@ -397,9 +395,6 @@ router.post('/cleanup-recipe/:dishId', aiRateLimit, asyncHandler(async (req, res
     });
   } catch (err) {
     console.error('Cleanup recipe error:', err);
-    if (err.status === 401) {
-      return res.status(400).json({ error: 'Invalid API key.' });
-    }
     return res.status(500).json({ error: 'AI request failed. Please try again.' });
   }
 }));
@@ -415,9 +410,8 @@ router.post('/match-ingredients', aiRateLimit, asyncHandler(async (req, res) => 
     return res.status(400).json({ error: 'Ingredients array is required' });
   }
 
-  const apiKey = await getApiKey();
-  if (!apiKey) {
-    return res.status(400).json({ error: 'AI features require an API key.' });
+  if (!isConfigured()) {
+    return res.status(400).json({ error: 'Vertex AI is not configured on the server.' });
   }
 
   const limitCheck = await checkUsageLimits();
@@ -433,8 +427,7 @@ router.post('/match-ingredients', aiRateLimit, asyncHandler(async (req, res) => 
 
   const inputNames = ingredients.map(i => i.name).join('\n');
 
-  const Anthropic = require('@anthropic-ai/sdk');
-  const client = new Anthropic({ apiKey, timeout: 45 * 1000 });
+  const client = getClaudeClient({ timeout: 45 * 1000 });
 
   try {
     const response = await client.messages.create({
@@ -502,23 +495,13 @@ router.get('/suggestions', asyncHandler(async (req, res) => {
 }));
 
 /**
- * GET /api/ai/settings — Get AI config (key masked)
+ * GET /api/ai/settings — Get AI config
  */
 router.get('/settings', asyncHandler(async (req, res) => {
-  const db = await getDb();
   const settings = await getAiSettings();
 
-  // Mask the API key for display
-  const keyRow = await db.prepare('SELECT value FROM settings WHERE key = ?').get('ai_api_key');
-  let maskedKey = '';
-  if (keyRow && keyRow.value) {
-    const key = keyRow.value;
-    maskedKey = key.slice(0, 10) + '...' + key.slice(-4);
-  }
-
   res.json({
-    apiKey: maskedKey,
-    hasApiKey: settings.hasApiKey,
+    configured: settings.configured,
     features: settings.features,
     dailyLimit: settings.dailyLimit,
     monthlyLimit: settings.monthlyLimit,
@@ -527,24 +510,11 @@ router.get('/settings', asyncHandler(async (req, res) => {
 
 /**
  * POST /api/ai/settings — Save AI config
- * Body: { apiKey?, features?, dailyLimit?, monthlyLimit? }
+ * Body: { features?, dailyLimit?, monthlyLimit? }
  */
 router.post('/settings', asyncHandler(async (req, res) => {
   const db = await getDb();
-  const { apiKey, features, dailyLimit, monthlyLimit } = req.body;
-
-  if (apiKey !== undefined) {
-    if (apiKey === '') {
-      // Clear the key
-      await db.prepare("DELETE FROM settings WHERE key = 'ai_api_key'").run();
-    } else {
-      // Validate key format
-      if (typeof apiKey !== 'string' || !apiKey.startsWith('sk-')) {
-        return res.status(400).json({ error: 'Invalid API key format. Key should start with "sk-".' });
-      }
-      await db.prepare('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value').run('ai_api_key', apiKey);
-    }
-  }
+  const { features, dailyLimit, monthlyLimit } = req.body;
 
   if (features !== undefined) {
     const featJson = JSON.stringify(features);
@@ -581,11 +551,10 @@ router.post('/extract-text', upload.single('file'), asyncHandler(async (req, res
       return res.status(400).json({ error: 'Unsupported file type' });
     }
 
-    // For images, use Haiku vision to extract text
+    // For images, use Gemini Flash vision to extract text
     if (result.type === 'image') {
-      const apiKey = await getApiKey();
-      if (!apiKey) {
-        return res.status(400).json({ error: 'AI features require an API key to process images.' });
+      if (!isConfigured()) {
+        return res.status(400).json({ error: 'Vertex AI is not configured on the server.' });
       }
 
       const limitCheck = await checkUsageLimits();
@@ -593,38 +562,29 @@ router.post('/extract-text', upload.single('file'), asyncHandler(async (req, res
         return res.status(429).json({ error: limitCheck.reason });
       }
 
-      const Anthropic = require('@anthropic-ai/sdk');
-      const client = new Anthropic({ apiKey, timeout: 45 * 1000 });
+      const { getGeminiModel } = require('../services/ai/geminiClient');
+      const model = getGeminiModel();
 
-      const response = await client.messages.create({
-        model: 'claude-haiku-4-5-20251001',
-        max_tokens: 2048,
-        messages: [{
+      const geminiResult = await model.generateContent({
+        contents: [{
           role: 'user',
-          content: [
-            {
-              type: 'image',
-              source: { type: 'base64', media_type: result.mediaType, data: result.base64 },
-            },
-            {
-              type: 'text',
-              text: 'Extract ALL text content from this image. If it contains a menu, recipe, ingredient list, invoice, or pricing — format it as structured text. Include all numbers, prices, quantities, and names exactly as they appear.',
-            },
+          parts: [
+            { inlineData: { mimeType: result.mediaType, data: result.base64 } },
+            { text: 'Extract ALL text content from this image. If it contains a menu, recipe, ingredient list, invoice, or pricing — format it as structured text. Include all numbers, prices, quantities, and names exactly as they appear.' },
           ],
         }],
       });
 
+      const geminiResponse = geminiResult.response;
+      const tokensIn = geminiResponse.usageMetadata?.promptTokenCount || 0;
+      const tokensOut = geminiResponse.usageMetadata?.candidatesTokenCount || 0;
+
       const db = await getDb();
       await db.prepare(
         'INSERT INTO ai_usage (tokens_in, tokens_out, model, tool_used) VALUES (?, ?, ?, ?)'
-      ).run(
-        response.usage?.input_tokens || 0,
-        response.usage?.output_tokens || 0,
-        'claude-haiku-4-5-20251001',
-        'extract_image_text'
-      );
+      ).run(tokensIn, tokensOut, 'gemini-2.5-flash', 'extract_image_text');
 
-      const extractedText = response.content[0]?.text || '';
+      const extractedText = geminiResponse.candidates?.[0]?.content?.parts?.[0]?.text || '';
       return res.json({ text: extractedText, type: 'image' });
     }
 
@@ -636,6 +596,71 @@ router.post('/extract-text', upload.single('file'), asyncHandler(async (req, res
   } catch (err) {
     console.error('Text extraction error:', err);
     return res.status(500).json({ error: 'Failed to extract text from file.' });
+  }
+}));
+
+// ─── Voice Transcription (Gemini Flash) ──────────────────────────
+
+/**
+ * POST /api/ai/voice — Transcribe audio via Gemini Flash
+ * Accepts audio blob (multipart/form-data from MediaRecorder)
+ * Returns: { text }
+ */
+router.post('/voice', upload.single('audio'), asyncHandler(async (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({ error: 'No audio file uploaded' });
+  }
+
+  if (!isConfigured()) {
+    return res.status(400).json({ error: 'Vertex AI is not configured on the server.' });
+  }
+
+  const limitCheck = await checkUsageLimits();
+  if (!limitCheck.allowed) {
+    return res.status(429).json({ error: limitCheck.reason });
+  }
+
+  const { getGeminiModel } = require('../services/ai/geminiClient');
+  const { buildContext } = require('../services/ai/aiContext');
+
+  const context = req.body.context ? JSON.parse(req.body.context) : {};
+  let contextStr = '';
+  try {
+    contextStr = await buildContext(context);
+  } catch {}
+
+  const model = getGeminiModel();
+  const base64Audio = req.file.buffer.toString('base64');
+  const mimeType = req.file.mimetype || 'audio/webm';
+
+  const systemInstruction = `You are a kitchen voice assistant for PlateStack. Transcribe the chef's spoken command accurately. Return ONLY the transcribed text — no commentary, no formatting, no quotes.${contextStr ? '\n\nContext: ' + contextStr : ''}`;
+
+  try {
+    const result = await model.generateContent({
+      systemInstruction,
+      contents: [{
+        role: 'user',
+        parts: [
+          { inlineData: { mimeType, data: base64Audio } },
+          { text: 'Transcribe this audio.' },
+        ],
+      }],
+    });
+
+    const response = result.response;
+    const tokensIn = response.usageMetadata?.promptTokenCount || 0;
+    const tokensOut = response.usageMetadata?.candidatesTokenCount || 0;
+
+    const db = await getDb();
+    await db.prepare(
+      'INSERT INTO ai_usage (tokens_in, tokens_out, model, tool_used) VALUES (?, ?, ?, ?)'
+    ).run(tokensIn, tokensOut, 'gemini-2.5-flash', 'voice_transcription');
+
+    const text = response.candidates?.[0]?.content?.parts?.[0]?.text || '';
+    return res.json({ text: text.trim() });
+  } catch (err) {
+    console.error('Voice transcription error:', err);
+    return res.status(500).json({ error: 'Voice transcription failed. Please try again.' });
   }
 }));
 
@@ -729,9 +754,8 @@ router.post('/generate-tasks/:menuId', aiRateLimit, asyncHandler(async (req, res
     return res.status(400).json({ error: 'Invalid menu ID' });
   }
 
-  const apiKey = await getApiKey();
-  if (!apiKey) {
-    return res.status(400).json({ error: 'AI features require an API key.' });
+  if (!isConfigured()) {
+    return res.status(400).json({ error: 'Vertex AI is not configured on the server.' });
   }
 
   const limitCheck = await checkUsageLimits();
@@ -794,8 +818,7 @@ router.post('/generate-tasks/:menuId', aiRateLimit, asyncHandler(async (req, res
   }).join('\n\n');
 
   try {
-    const Anthropic = require('@anthropic-ai/sdk');
-    const client = new Anthropic({ apiKey, timeout: 45 * 1000 });
+    const client = getClaudeClient({ timeout: 45 * 1000 });
 
     const response = await client.messages.create({
       model: 'claude-haiku-4-5-20251001',
@@ -881,9 +904,6 @@ ONLY output the JSON array, nothing else.`,
 
   } catch (err) {
     console.error('AI task generation error:', err);
-    if (err.status === 401) {
-      return res.status(400).json({ error: 'Invalid API key.' });
-    }
     return res.status(500).json({ error: 'AI task generation failed. Please try again.' });
   }
 }));

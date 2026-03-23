@@ -381,6 +381,23 @@ async function setupNotificationsSection(container) {
 
 /** Wire up voice input model download/delete */
 function setupVoiceInputSection(container) {
+  // Voice mode toggle (local vs cloud)
+  const voiceModeLocal = container.querySelector('#voice-mode-local');
+  const voiceModeCloud = container.querySelector('#voice-mode-cloud');
+  const currentMode = localStorage.getItem('voice_mode') || 'local';
+  if (currentMode === 'cloud') {
+    voiceModeCloud.checked = true;
+  } else {
+    voiceModeLocal.checked = true;
+  }
+  [voiceModeLocal, voiceModeCloud].forEach(radio => {
+    radio.addEventListener('change', () => {
+      const mode = container.querySelector('input[name="voice-mode"]:checked').value;
+      localStorage.setItem('voice_mode', mode);
+      window.dispatchEvent(new CustomEvent('voicemode:changed'));
+    });
+  });
+
   const sttBadge = container.querySelector('#stt-status-badge');
   const sttProgressContainer = container.querySelector('#stt-progress-container');
   const sttProgressFill = container.querySelector('#stt-progress-fill');
@@ -453,32 +470,23 @@ function setupVoiceInputSection(container) {
   });
 }
 
-/** Wire up AI assistant settings (API key, features, usage, save) */
+/** Wire up AI assistant settings (connection status, features, usage, save) */
 async function setupAiSection(container) {
-  const aiKeyInput = container.querySelector('#ai-api-key');
-  const aiKeyToggle = container.querySelector('#ai-key-toggle');
-  const aiKeyStatus = container.querySelector('#ai-key-status');
+  const aiConnectionStatus = container.querySelector('#ai-connection-status');
   const aiDailyLimit = container.querySelector('#ai-daily-limit');
   const aiMonthlyLimit = container.querySelector('#ai-monthly-limit');
   const aiSaveBtn = container.querySelector('#ai-save-btn');
   const aiUsageStats = container.querySelector('#ai-usage-stats');
 
-  aiKeyToggle.addEventListener('click', () => {
-    const isPassword = aiKeyInput.type === 'password';
-    aiKeyInput.type = isPassword ? 'text' : 'password';
-    aiKeyToggle.textContent = isPassword ? 'Hide' : 'Show';
-  });
-
   async function loadAiSettings() {
     try {
       const settings = await getAiSettings();
-      if (settings.hasApiKey) {
-        aiKeyInput.placeholder = settings.apiKey || 'Key configured';
-        aiKeyStatus.textContent = 'API key is configured';
-        aiKeyStatus.className = 'ai-key-status ai-key-status--ok';
+      if (settings.configured) {
+        aiConnectionStatus.textContent = 'Connected via Google Cloud Vertex AI';
+        aiConnectionStatus.className = 'ai-key-status ai-key-status--ok';
       } else {
-        aiKeyStatus.textContent = 'No API key set \u2014 AI features disabled';
-        aiKeyStatus.className = 'ai-key-status ai-key-status--warning';
+        aiConnectionStatus.textContent = 'Not configured \u2014 set VERTEX_PROJECT_ID on the server';
+        aiConnectionStatus.className = 'ai-key-status ai-key-status--warning';
       }
       aiDailyLimit.value = settings.dailyLimit || 0;
       aiMonthlyLimit.value = settings.monthlyLimit || 0;
@@ -489,8 +497,8 @@ async function setupAiSection(container) {
       container.querySelector('#ai-feat-allergens').checked = feats.allergens !== false;
       container.querySelector('#ai-feat-scaling').checked = feats.scaling !== false;
     } catch {
-      aiKeyStatus.textContent = 'Failed to load AI settings';
-      aiKeyStatus.className = 'ai-key-status ai-key-status--warning';
+      aiConnectionStatus.textContent = 'Failed to load AI settings';
+      aiConnectionStatus.className = 'ai-key-status ai-key-status--warning';
     }
   }
 
@@ -531,14 +539,9 @@ async function setupAiSection(container) {
       monthlyLimit: parseInt(aiMonthlyLimit.value) || 0,
     };
 
-    if (aiKeyInput.value.trim()) {
-      body.apiKey = aiKeyInput.value.trim();
-    }
-
     try {
       await saveAiSettings(body);
       showToast('AI settings saved');
-      aiKeyInput.value = '';
       await loadAiSettings();
       await loadAiUsage();
     } catch (err) {
@@ -774,19 +777,12 @@ export async function renderSettings(container) {
         </button>
         <div class="st-section-body">
           <p class="ak-intro">
-            Connect to Claude Haiku for recipe cleanup, smart commands, and kitchen workflow assistance.
-            AI features require an Anthropic API key.
+            AI features powered by Google Cloud Vertex AI &mdash; Claude Haiku for text commands,
+            Gemini Flash for vision and voice. No API key needed; authenticated via the server's GCP service account.
           </p>
           <div class="card" style="padding: var(--space-md);">
-            <h3 class="st-card-heading">API Key</h3>
-            <div class="st-form-group">
-              <label class="st-label" for="ai-api-key">Anthropic API Key</label>
-              <div class="ai-key-row">
-                <input type="password" id="ai-api-key" class="input" placeholder="sk-ant-..." autocomplete="off">
-                <button id="ai-key-toggle" class="btn btn-secondary btn-sm" type="button">Show</button>
-              </div>
-              <p id="ai-key-status" class="ai-key-status"></p>
-            </div>
+            <h3 class="st-card-heading">Connection</h3>
+            <p id="ai-connection-status" class="ai-key-status"></p>
 
             <h3 class="st-card-heading" style="margin-top: var(--space-lg);">Usage Limits</h3>
             <div class="ai-limits-row">
@@ -841,9 +837,21 @@ export async function renderSettings(container) {
         </button>
         <div class="st-section-body">
           <p class="ak-intro">
-            Voice input uses a local Whisper model (~150 MB) that runs entirely in your browser.
-            Pre-download it here so it's ready when you tap the microphone.
+            Voice input can use a local Whisper model (works offline) or cloud-based Gemini transcription (more accurate, requires internet).
           </p>
+          <div class="card" style="padding: var(--space-md); margin-bottom: var(--space-md);">
+            <h3 class="st-card-heading">Voice Mode</h3>
+            <div class="ai-features-list">
+              <label class="nt-toggle-label">
+                <input type="radio" name="voice-mode" value="local" id="voice-mode-local" class="nt-checkbox" checked>
+                <span class="nt-toggle-text">Local (Whisper, works offline)</span>
+              </label>
+              <label class="nt-toggle-label">
+                <input type="radio" name="voice-mode" value="cloud" id="voice-mode-cloud" class="nt-checkbox">
+                <span class="nt-toggle-text">Cloud (Gemini, more accurate)</span>
+              </label>
+            </div>
+          </div>
           <div class="card" style="padding: var(--space-md);">
             <div id="stt-status-row" class="st-stt-status-row">
               <span id="stt-status-badge" class="st-stt-badge st-stt-badge--warning">Checking...</span>

@@ -3,23 +3,15 @@
  * Photo → sharp processing → Claude Sonnet structured parse → action execution.
  */
 
-const Anthropic = require('@anthropic-ai/sdk');
+const { getGeminiModel } = require('./ai/geminiClient');
+const { isConfigured } = require('./ai/vertexClient');
 const sharp = require('sharp');
 const path = require('path');
 const fs = require('fs');
 const { getDb } = require('../db/database');
 
-const MODEL = 'claude-sonnet-4-20250514';
+const MODEL = 'gemini-2.5-flash';
 const UPLOADS_DIR = process.env.UPLOADS_PATH || path.join(__dirname, '..', 'uploads');
-
-/**
- * Get the API key from settings table (shared with aiService)
- */
-async function getApiKey() {
-  const db = await getDb();
-  const row = await db.prepare('SELECT value FROM settings WHERE key = ?').get('ai_api_key');
-  return row ? row.value : null;
-}
 
 /**
  * Track usage in the ai_usage table
@@ -96,99 +88,82 @@ RULES:
  * Returns the parsed actions array.
  */
 async function parseSheet(imagePath) {
-  const apiKey = await getApiKey();
-  if (!apiKey) {
-    throw new Error('No API key configured. Set up your Anthropic API key in Settings.');
+  if (!isConfigured()) {
+    throw new Error('Vertex AI is not configured. Set VERTEX_PROJECT_ID on the server.');
   }
 
   const fullPath = path.join(UPLOADS_DIR, imagePath);
   const imageBuffer = fs.readFileSync(fullPath);
   const base64Image = imageBuffer.toString('base64');
-  const mediaType = 'image/jpeg';
+  const mimeType = 'image/jpeg';
 
-  const client = new Anthropic({ apiKey, timeout: 120 * 1000 });
   const systemPrompt = await buildSystemPrompt();
 
-  const response = await client.messages.create({
-    model: MODEL,
-    max_tokens: 4096,
-    system: systemPrompt,
-    messages: [{
-      role: 'user',
-      content: [
-        {
-          type: 'image',
-          source: { type: 'base64', media_type: mediaType, data: base64Image },
-        },
-        {
-          type: 'text',
-          text: 'Parse this ChefSheet photo. Extract all handwritten items into structured actions. Return a JSON object with an "actions" array.',
-        },
-      ],
-    }],
-    output_format: {
-      type: 'json_schema',
-      json_schema: {
-        name: 'chefsheet_parse',
-        strict: true,
-        schema: {
+  const responseSchema = {
+    type: 'object',
+    properties: {
+      actions: {
+        type: 'array',
+        items: {
           type: 'object',
           properties: {
-            actions: {
-              type: 'array',
-              items: {
-                type: 'object',
-                properties: {
-                  type: {
-                    type: 'string',
-                    enum: ['task', 'service_note', 'menu_change', 'order', 'recipe_note'],
-                  },
-                  raw_text: { type: 'string' },
-                  confidence: {
-                    type: 'string',
-                    enum: ['high', 'medium', 'low'],
-                  },
-                  parsed: {
-                    type: 'object',
-                    properties: {
-                      title: { type: 'string' },
-                      content: { type: 'string' },
-                      date: { type: 'string' },
-                      shift: { type: 'string' },
-                      dish_name: { type: 'string' },
-                      menu_name: { type: 'string' },
-                      action: { type: 'string' },
-                      priority: { type: 'string' },
-                      timing_bucket: { type: 'string' },
-                    },
-                    required: ['title'],
-                    additionalProperties: false,
-                  },
-                },
-                required: ['type', 'raw_text', 'confidence', 'parsed'],
-                additionalProperties: false,
+            type: {
+              type: 'string',
+              enum: ['task', 'service_note', 'menu_change', 'order', 'recipe_note'],
+            },
+            raw_text: { type: 'string' },
+            confidence: {
+              type: 'string',
+              enum: ['high', 'medium', 'low'],
+            },
+            parsed: {
+              type: 'object',
+              properties: {
+                title: { type: 'string' },
+                content: { type: 'string' },
+                date: { type: 'string' },
+                shift: { type: 'string' },
+                dish_name: { type: 'string' },
+                menu_name: { type: 'string' },
+                action: { type: 'string' },
+                priority: { type: 'string' },
+                timing_bucket: { type: 'string' },
               },
+              required: ['title'],
             },
           },
-          required: ['actions'],
-          additionalProperties: false,
+          required: ['type', 'raw_text', 'confidence', 'parsed'],
         },
       },
     },
+    required: ['actions'],
+  };
+
+  const model = getGeminiModel(MODEL, {
+    generationConfig: {
+      responseMimeType: 'application/json',
+      responseSchema,
+    },
   });
 
-  const tokensIn = response.usage?.input_tokens || 0;
-  const tokensOut = response.usage?.output_tokens || 0;
+  const result = await model.generateContent({
+    systemInstruction: systemPrompt,
+    contents: [{
+      role: 'user',
+      parts: [
+        { inlineData: { mimeType, data: base64Image } },
+        { text: 'Parse this ChefSheet photo. Extract all handwritten items into structured actions. Return a JSON object with an "actions" array.' },
+      ],
+    }],
+  });
+
+  const response = result.response;
+  const tokensIn = response.usageMetadata?.promptTokenCount || 0;
+  const tokensOut = response.usageMetadata?.candidatesTokenCount || 0;
   await trackUsage(tokensIn, tokensOut);
 
-  // Extract JSON from response
-  let parsed;
-  for (const block of response.content) {
-    if (block.type === 'text') {
-      parsed = JSON.parse(block.text);
-      break;
-    }
-  }
+  const text = response.candidates?.[0]?.content?.parts?.[0]?.text || '';
+  const parsed = JSON.parse(text);
 
   if (!parsed || !Array.isArray(parsed.actions)) {
     throw new Error('Failed to parse ChefSheet — unexpected response format');
