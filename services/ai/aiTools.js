@@ -981,7 +981,7 @@ function isAutoApproved(toolName) {
 // ─── Tool Handlers ───────────────────────────────────────────────
 
 const handlers = {
-  create_menu(input, opts) {
+  async create_menu(input, opts) {
     const menuType = input.menu_type || 'event';
     const eventDate = menuType === 'event' ? (input.event_date || null) : null;
 
@@ -1003,19 +1003,19 @@ const handlers = {
       return { description: desc, message: msg };
     }
 
-    const db = getDb();
+    const db = await getDb();
 
     // If creating a standard menu, demote any existing standard menu to event
     if (menuType === 'standard') {
-      db.prepare("UPDATE menus SET menu_type = 'event' WHERE menu_type = 'standard' AND deleted_at IS NULL").run();
+      await db.prepare("UPDATE menus SET menu_type = 'event' WHERE menu_type = 'standard' AND deleted_at IS NULL").run();
     }
 
     const serviceStyle = input.service_style || 'alacarte';
-    const result = db.prepare(
+    const result = await db.prepare(
       'INSERT INTO menus (name, description, menu_type, event_date, service_style) VALUES (?, ?, ?, ?, ?)'
     ).run(input.name, input.description || '', menuType, eventDate, serviceStyle);
     const id = result.lastInsertRowid;
-    const undoId = saveSnapshot('menu', id, 'create', null);
+    const undoId = await saveSnapshot('menu', id, 'create', null);
 
     if (opts.broadcast) opts.broadcast('menu_created', { id });
 
@@ -1029,7 +1029,7 @@ const handlers = {
     };
   },
 
-  create_dish(input, opts) {
+  async create_dish(input, opts) {
     if (opts.preview) {
       return {
         description: `Create dish: "${input.name}"${input.category ? ` (${input.category})` : ''}`,
@@ -1037,12 +1037,12 @@ const handlers = {
       };
     }
 
-    const db = getDb();
-    const result = db.prepare('INSERT INTO dishes (name, description, category) VALUES (?, ?, ?)').run(
+    const db = await getDb();
+    const result = await db.prepare('INSERT INTO dishes (name, description, category) VALUES (?, ?, ?)').run(
       input.name, input.description || '', input.category || 'other'
     );
     const id = result.lastInsertRowid;
-    const undoId = saveSnapshot('dish', id, 'create', null);
+    const undoId = await saveSnapshot('dish', id, 'create', null);
 
     if (opts.broadcast) opts.broadcast('dish_created', { id });
 
@@ -1056,7 +1056,7 @@ const handlers = {
     };
   },
 
-  create_task(input, opts) {
+  async create_task(input, opts) {
     const today = new Date().toISOString().slice(0, 10);
     const title = input.title;
     const priority = input.priority || 'medium';
@@ -1072,12 +1072,12 @@ const handlers = {
       return { description: desc, message: `I'll create a task: "${title}".` };
     }
 
-    const db = getDb();
-    const result = db.prepare(
+    const db = await getDb();
+    const result = await db.prepare(
       'INSERT INTO tasks (title, type, priority, due_date, due_time, source) VALUES (?, ?, ?, ?, ?, ?)'
     ).run(title, type, priority, dueDate, dueTime, 'manual');
     const id = result.lastInsertRowid;
-    const undoId = saveSnapshot('task', id, 'create', null);
+    const undoId = await saveSnapshot('task', id, 'create', null);
 
     if (opts.broadcast) opts.broadcast('task_created', { id, type });
 
@@ -1090,20 +1090,20 @@ const handlers = {
     };
   },
 
-  add_dish_to_menu(input, opts) {
-    const db = getDb();
+  async add_dish_to_menu(input, opts) {
+    const db = await getDb();
 
     // Resolve dish
     let dishId = input.dish_id;
     let dishName = input.dish_name;
     if (!dishId && dishName) {
-      const dish = db.prepare(
+      const dish = await db.prepare(
         "SELECT id, name FROM dishes WHERE name LIKE ? AND deleted_at IS NULL LIMIT 1"
       ).get(`%${dishName}%`);
       if (dish) { dishId = dish.id; dishName = dish.name; }
     }
     if (dishId && !dishName) {
-      const dish = db.prepare('SELECT name FROM dishes WHERE id = ? AND deleted_at IS NULL').get(dishId);
+      const dish = await db.prepare('SELECT name FROM dishes WHERE id = ? AND deleted_at IS NULL').get(dishId);
       if (dish) dishName = dish.name;
     }
 
@@ -1111,13 +1111,13 @@ const handlers = {
     let menuId = input.menu_id;
     let menuName = input.menu_name;
     if (!menuId && menuName) {
-      const menu = db.prepare(
+      const menu = await db.prepare(
         "SELECT id, name FROM menus WHERE name LIKE ? AND deleted_at IS NULL LIMIT 1"
       ).get(`%${menuName}%`);
       if (menu) { menuId = menu.id; menuName = menu.name; }
     }
     if (menuId && !menuName) {
-      const menu = db.prepare('SELECT name FROM menus WHERE id = ? AND deleted_at IS NULL').get(menuId);
+      const menu = await db.prepare('SELECT name FROM menus WHERE id = ? AND deleted_at IS NULL').get(menuId);
       if (menu) menuName = menu.name;
     }
 
@@ -1137,7 +1137,7 @@ const handlers = {
     let courseId = null;
     let courseName = input.course_name;
     if (courseName) {
-      const course = db.prepare(
+      const course = await db.prepare(
         "SELECT id, name FROM menu_courses WHERE menu_id = ? AND name LIKE ? LIMIT 1"
       ).get(menuId, `%${courseName}%`);
       if (course) {
@@ -1156,7 +1156,7 @@ const handlers = {
     }
 
     // Check if already on menu
-    const existing = db.prepare('SELECT 1 FROM menu_dishes WHERE menu_id = ? AND dish_id = ?').get(menuId, dishId);
+    const existing = await db.prepare('SELECT 1 FROM menu_dishes WHERE menu_id = ? AND dish_id = ?').get(menuId, dishId);
     if (existing) {
       return {
         success: false,
@@ -1166,16 +1166,16 @@ const handlers = {
 
     // Create course if named but not found
     if (input.course_name && !courseId) {
-      const maxCourseOrder = db.prepare('SELECT COALESCE(MAX(sort_order), -1) + 1 as next FROM menu_courses WHERE menu_id = ?').get(menuId);
-      const result = db.prepare('INSERT INTO menu_courses (menu_id, name, sort_order) VALUES (?, ?, ?)').run(
+      const maxCourseOrder = await db.prepare('SELECT COALESCE(MAX(sort_order), -1) + 1 as next FROM menu_courses WHERE menu_id = ?').get(menuId);
+      const result = await db.prepare('INSERT INTO menu_courses (menu_id, name, sort_order) VALUES (?, ?, ?)').run(
         menuId, input.course_name, maxCourseOrder.next
       );
       courseId = result.lastInsertRowid;
       courseName = input.course_name;
     }
 
-    const maxOrder = db.prepare('SELECT COALESCE(MAX(sort_order), -1) + 1 as next FROM menu_dishes WHERE menu_id = ?').get(menuId);
-    db.prepare('INSERT INTO menu_dishes (menu_id, dish_id, servings, sort_order, course_id) VALUES (?, ?, ?, ?, ?)').run(
+    const maxOrder = await db.prepare('SELECT COALESCE(MAX(sort_order), -1) + 1 as next FROM menu_dishes WHERE menu_id = ?').get(menuId);
+    await db.prepare('INSERT INTO menu_dishes (menu_id, dish_id, servings, sort_order, course_id) VALUES (?, ?, ?, ?, ?)').run(
       menuId, dishId, servings, maxOrder.next, courseId
     );
 
@@ -1189,16 +1189,16 @@ const handlers = {
     };
   },
 
-  cleanup_recipe(input, opts) {
-    const db = getDb();
+  async cleanup_recipe(input, opts) {
+    const db = await getDb();
     const dishId = input.dish_id;
 
-    const dish = db.prepare('SELECT id, name, chefs_notes FROM dishes WHERE id = ? AND deleted_at IS NULL').get(dishId);
+    const dish = await db.prepare('SELECT id, name, chefs_notes FROM dishes WHERE id = ? AND deleted_at IS NULL').get(dishId);
     if (!dish) {
       return { description: 'Dish not found', message: 'Could not find that dish.' };
     }
 
-    const directions = db.prepare(
+    const directions = await db.prepare(
       'SELECT id, type, text, sort_order FROM dish_directions WHERE dish_id = ? ORDER BY sort_order'
     ).all(dishId);
 
@@ -1222,18 +1222,18 @@ const handlers = {
     // The actual cleaned directions come from the AI response, passed through input.cleaned_directions
     if (input.cleaned_directions) {
       // Save snapshot of current directions for undo
-      const undoId = saveSnapshot('dish', dishId, 'update', { directions });
+      const undoId = await saveSnapshot('dish', dishId, 'update', { directions });
 
       // Replace directions
-      db.prepare('DELETE FROM dish_directions WHERE dish_id = ?').run(dishId);
+      await db.prepare('DELETE FROM dish_directions WHERE dish_id = ?').run(dishId);
       for (let i = 0; i < input.cleaned_directions.length; i++) {
         const dir = input.cleaned_directions[i];
-        db.prepare('INSERT INTO dish_directions (dish_id, type, text, sort_order) VALUES (?, ?, ?, ?)')
+        await db.prepare('INSERT INTO dish_directions (dish_id, type, text, sort_order) VALUES (?, ?, ?, ?)')
           .run(dishId, dir.type || 'step', dir.text, i);
       }
 
       // Clear legacy chefs_notes since we now have structured directions
-      db.prepare('UPDATE dishes SET chefs_notes = ? WHERE id = ?').run('', dishId);
+      await db.prepare('UPDATE dishes SET chefs_notes = ? WHERE id = ?').run('', dishId);
 
       if (opts.broadcast) opts.broadcast('dish_updated', { id: dishId });
 
@@ -1249,20 +1249,20 @@ const handlers = {
     return { success: false, message: 'Missing cleaned directions data.' };
   },
 
-  check_allergens(input, opts) {
-    const db = getDb();
+  async check_allergens(input, opts) {
+    const db = await getDb();
     const dishId = input.dish_id;
 
-    const dish = db.prepare('SELECT id, name FROM dishes WHERE id = ? AND deleted_at IS NULL').get(dishId);
+    const dish = await db.prepare('SELECT id, name FROM dishes WHERE id = ? AND deleted_at IS NULL').get(dishId);
     if (!dish) {
       return { description: 'Dish not found', message: 'Could not find that dish.' };
     }
 
-    const ingredients = db.prepare(
+    const ingredients = await db.prepare(
       `SELECT i.name FROM dish_ingredients di JOIN ingredients i ON di.ingredient_id = i.id WHERE di.dish_id = ?`
     ).all(dishId);
 
-    const currentAllergens = getDishAllergens(dishId);
+    const currentAllergens = await getDishAllergens(dishId);
 
     if (opts.preview) {
       return {
@@ -1281,9 +1281,9 @@ const handlers = {
     };
   },
 
-  scale_recipe(input, opts) {
-    const db = getDb();
-    const dish = db.prepare('SELECT id, name, batch_yield FROM dishes WHERE id = ? AND deleted_at IS NULL').get(input.dish_id);
+  async scale_recipe(input, opts) {
+    const db = await getDb();
+    const dish = await db.prepare('SELECT id, name, batch_yield FROM dishes WHERE id = ? AND deleted_at IS NULL').get(input.dish_id);
     if (!dish) {
       return { description: 'Dish not found', message: 'Could not find that dish.' };
     }
@@ -1292,7 +1292,7 @@ const handlers = {
     const multiplier = input.target_portions / batchYield;
 
     // Fetch ingredients for actual quantity calculation
-    const ingredients = db.prepare(`
+    const ingredients = await db.prepare(`
       SELECT di.quantity, di.unit, i.name AS ingredient_name, i.g_per_ml
       FROM dish_ingredients di
       JOIN ingredients i ON i.id = di.ingredient_id
@@ -1335,7 +1335,7 @@ const handlers = {
     return { success: true, message: 'Conversion provided.' };
   },
 
-  add_service_note(input, opts) {
+  async add_service_note(input, opts) {
     const today = new Date().toISOString().slice(0, 10);
     const date = input.date || today;
     const shift = input.shift || 'all';
@@ -1347,12 +1347,12 @@ const handlers = {
       };
     }
 
-    const db = getDb();
-    const result = db.prepare(
+    const db = await getDb();
+    const result = await db.prepare(
       'INSERT INTO service_notes (date, shift, title, content) VALUES (?, ?, ?, ?)'
     ).run(date, shift, input.title, input.content);
     const id = result.lastInsertRowid;
-    const undoId = saveSnapshot('service_note', id, 'create', null);
+    const undoId = await saveSnapshot('service_note', id, 'create', null);
 
     if (opts.broadcast) opts.broadcast('service_note_created', { id, date });
 
@@ -1365,9 +1365,9 @@ const handlers = {
     };
   },
 
-  search_dishes(input, opts) {
-    const db = getDb();
-    const dishes = db.prepare(
+  async search_dishes(input, opts) {
+    const db = await getDb();
+    const dishes = await db.prepare(
       "SELECT id, name, category, description FROM dishes WHERE deleted_at IS NULL AND (name LIKE ? OR description LIKE ?) ORDER BY name LIMIT 10"
     ).all(`%${input.query}%`, `%${input.query}%`);
 
@@ -1382,29 +1382,29 @@ const handlers = {
     return { success: true, message, dishes };
   },
 
-  lookup_dish(input, opts) {
-    const db = getDb();
+  async lookup_dish(input, opts) {
+    const db = await getDb();
     let dish;
 
     if (input.dish_id) {
-      dish = db.prepare('SELECT * FROM dishes WHERE id = ? AND deleted_at IS NULL').get(input.dish_id);
+      dish = await db.prepare('SELECT * FROM dishes WHERE id = ? AND deleted_at IS NULL').get(input.dish_id);
     } else if (input.dish_name) {
-      dish = db.prepare("SELECT * FROM dishes WHERE name LIKE ? AND deleted_at IS NULL LIMIT 1").get(`%${input.dish_name}%`);
+      dish = await db.prepare("SELECT * FROM dishes WHERE name LIKE ? AND deleted_at IS NULL LIMIT 1").get(`%${input.dish_name}%`);
     }
 
     if (!dish) {
       return { success: true, message: 'Dish not found.' };
     }
 
-    const ingredients = db.prepare(
+    const ingredients = await db.prepare(
       `SELECT di.quantity, di.unit, i.name, i.unit_cost, di.prep_note
        FROM dish_ingredients di JOIN ingredients i ON di.ingredient_id = i.id
        WHERE di.dish_id = ? ORDER BY di.sort_order`
     ).all(dish.id);
 
-    const allergens = getDishAllergens(dish.id);
+    const allergens = await getDishAllergens(dish.id);
 
-    const directions = db.prepare(
+    const directions = await db.prepare(
       'SELECT type, text FROM dish_directions WHERE dish_id = ? ORDER BY sort_order'
     ).all(dish.id);
 
@@ -1444,27 +1444,27 @@ const handlers = {
     return { success: true, message };
   },
 
-  lookup_menu(input, opts) {
-    const db = getDb();
+  async lookup_menu(input, opts) {
+    const db = await getDb();
     let menu;
 
     if (input.menu_id) {
-      menu = db.prepare('SELECT * FROM menus WHERE id = ? AND deleted_at IS NULL').get(input.menu_id);
+      menu = await db.prepare('SELECT * FROM menus WHERE id = ? AND deleted_at IS NULL').get(input.menu_id);
     } else if (input.menu_name) {
-      menu = db.prepare("SELECT * FROM menus WHERE name LIKE ? AND deleted_at IS NULL LIMIT 1").get(`%${input.menu_name}%`);
+      menu = await db.prepare("SELECT * FROM menus WHERE name LIKE ? AND deleted_at IS NULL LIMIT 1").get(`%${input.menu_name}%`);
     }
 
     if (!menu) {
       return { success: true, message: 'Menu not found.' };
     }
 
-    const dishes = db.prepare(
+    const dishes = await db.prepare(
       `SELECT d.id, d.name, d.category, d.suggested_price, d.batch_yield, md.servings, md.course_id, md.notes AS menu_dish_notes
        FROM menu_dishes md JOIN dishes d ON md.dish_id = d.id
        WHERE md.menu_id = ? AND d.deleted_at IS NULL ORDER BY md.sort_order`
     ).all(menu.id);
 
-    const courses = db.prepare('SELECT * FROM menu_courses WHERE menu_id = ? ORDER BY sort_order').all(menu.id);
+    const courses = await db.prepare('SELECT * FROM menu_courses WHERE menu_id = ? ORDER BY sort_order').all(menu.id);
 
     const parts = [`Menu: "${menu.name}" (ID: ${menu.id})`];
     if (menu.menu_type) parts.push(`Type: ${menu.menu_type}`);
@@ -1503,10 +1503,10 @@ const handlers = {
     return { success: true, message };
   },
 
-  search_ingredients(input, opts) {
-    const db = getDb();
+  async search_ingredients(input, opts) {
+    const db = await getDb();
     // Single query with LEFT JOIN to count dish usage — avoids N+1
-    const ingredients = db.prepare(
+    const ingredients = await db.prepare(
       `SELECT i.id, i.name, i.unit_cost, i.base_unit, i.category,
               COUNT(di.ingredient_id) as dish_count
        FROM ingredients i
@@ -1532,18 +1532,18 @@ const handlers = {
     return { success: true, message };
   },
 
-  search_tasks(input, opts) {
-    const db = getDb();
+  async search_tasks(input, opts) {
+    const db = await getDb();
     let sql = 'SELECT t.*, m.name as menu_name FROM tasks t LEFT JOIN menus m ON t.menu_id = m.id WHERE 1=1';
     const params = [];
 
     if (input.query) { sql += ' AND t.title LIKE ?'; params.push(`%${input.query}%`); }
     if (input.type) { sql += ' AND t.type = ?'; params.push(input.type); }
     if (input.completed !== undefined) { sql += ' AND t.completed = ?'; params.push(input.completed ? 1 : 0); }
-    if (input.overdue) { sql += " AND t.due_date < date('now') AND t.completed = 0"; }
+    if (input.overdue) { sql += " AND t.due_date < CURRENT_DATE AND t.completed = 0"; }
 
     sql += ' ORDER BY t.due_date, t.priority LIMIT 20';
-    const tasks = db.prepare(sql).all(...params);
+    const tasks = await db.prepare(sql).all(...params);
 
     if (!tasks.length) {
       const message = 'No matching tasks found.';
@@ -1563,8 +1563,8 @@ const handlers = {
     return { success: true, message };
   },
 
-  search_service_notes(input, opts) {
-    const db = getDb();
+  async search_service_notes(input, opts) {
+    const db = await getDb();
     let sql = 'SELECT * FROM service_notes WHERE 1=1';
     const params = [];
 
@@ -1573,7 +1573,7 @@ const handlers = {
     if (input.query) { sql += ' AND (title LIKE ? OR content LIKE ?)'; params.push(`%${input.query}%`, `%${input.query}%`); }
 
     sql += ' ORDER BY date DESC, created_at DESC LIMIT 15';
-    const notes = db.prepare(sql).all(...params);
+    const notes = await db.prepare(sql).all(...params);
 
     if (!notes.length) {
       const message = 'No matching service notes found.';
@@ -1592,17 +1592,17 @@ const handlers = {
     return { success: true, message };
   },
 
-  get_shopping_list(input, opts) {
-    const db = getDb();
+  async get_shopping_list(input, opts) {
+    const db = await getDb();
     let menuId = input.menu_id;
     let menuName = input.menu_name;
 
     if (!menuId && menuName) {
-      const menu = db.prepare("SELECT id, name FROM menus WHERE name LIKE ? AND deleted_at IS NULL LIMIT 1").get(`%${menuName}%`);
+      const menu = await db.prepare("SELECT id, name FROM menus WHERE name LIKE ? AND deleted_at IS NULL LIMIT 1").get(`%${menuName}%`);
       if (menu) { menuId = menu.id; menuName = menu.name; }
     }
     if (menuId && !menuName) {
-      const menu = db.prepare('SELECT name FROM menus WHERE id = ? AND deleted_at IS NULL').get(menuId);
+      const menu = await db.prepare('SELECT name FROM menus WHERE id = ? AND deleted_at IS NULL').get(menuId);
       if (menu) menuName = menu.name;
     }
 
@@ -1611,7 +1611,7 @@ const handlers = {
     }
 
     // Aggregate ingredients from all dishes on this menu
-    const items = db.prepare(
+    const items = await db.prepare(
       `SELECT i.name, i.unit_cost, i.base_unit,
               SUM(di.quantity * md.servings) as total_qty, di.unit
        FROM menu_dishes md
@@ -1642,25 +1642,25 @@ const handlers = {
     return { success: true, message };
   },
 
-  get_system_summary(input, opts) {
-    const db = getDb();
+  async get_system_summary(input, opts) {
+    const db = await getDb();
 
-    const dishCount = db.prepare('SELECT COUNT(*) as cnt FROM dishes WHERE deleted_at IS NULL').get().cnt;
-    const menuCount = db.prepare('SELECT COUNT(*) as cnt FROM menus WHERE deleted_at IS NULL').get().cnt;
-    const ingredientCount = db.prepare('SELECT COUNT(*) as cnt FROM ingredients').get().cnt;
-    const taskTotal = db.prepare('SELECT COUNT(*) as cnt FROM tasks').get().cnt;
-    const taskPending = db.prepare('SELECT COUNT(*) as cnt FROM tasks WHERE completed = 0').get().cnt;
-    const taskOverdue = db.prepare("SELECT COUNT(*) as cnt FROM tasks WHERE completed = 0 AND due_date < date('now')").get().cnt;
-    const noteCount = db.prepare('SELECT COUNT(*) as cnt FROM service_notes').get().cnt;
-    const specialCount = db.prepare('SELECT COUNT(*) as cnt FROM weekly_specials WHERE is_active = 1').get().cnt;
+    const dishCount = (await db.prepare('SELECT COUNT(*) as cnt FROM dishes WHERE deleted_at IS NULL').get()).cnt;
+    const menuCount = (await db.prepare('SELECT COUNT(*) as cnt FROM menus WHERE deleted_at IS NULL').get()).cnt;
+    const ingredientCount = (await db.prepare('SELECT COUNT(*) as cnt FROM ingredients').get()).cnt;
+    const taskTotal = (await db.prepare('SELECT COUNT(*) as cnt FROM tasks').get()).cnt;
+    const taskPending = (await db.prepare('SELECT COUNT(*) as cnt FROM tasks WHERE completed = 0').get()).cnt;
+    const taskOverdue = (await db.prepare("SELECT COUNT(*) as cnt FROM tasks WHERE completed = 0 AND due_date < CURRENT_DATE").get()).cnt;
+    const noteCount = (await db.prepare('SELECT COUNT(*) as cnt FROM service_notes').get()).cnt;
+    const specialCount = (await db.prepare('SELECT COUNT(*) as cnt FROM weekly_specials WHERE is_active = 1').get()).cnt;
     // Recent activity
-    const recentDishes = db.prepare(
+    const recentDishes = await db.prepare(
       "SELECT name, created_at FROM dishes WHERE deleted_at IS NULL ORDER BY created_at DESC LIMIT 5"
     ).all();
 
     // Upcoming events with dates
-    const upcomingEvents = db.prepare(
-      "SELECT name, event_date FROM menus WHERE deleted_at IS NULL AND event_date IS NOT NULL AND event_date >= date('now') ORDER BY event_date ASC LIMIT 5"
+    const upcomingEvents = await db.prepare(
+      "SELECT name, event_date FROM menus WHERE deleted_at IS NULL AND event_date IS NOT NULL AND event_date >= CURRENT_DATE ORDER BY event_date ASC LIMIT 5"
     ).all();
 
     const parts = [
@@ -1694,9 +1694,9 @@ const handlers = {
 
   // ─── New Data Access Handlers ───────────────────────────────────
 
-  list_menus(_input, opts) {
-    const db = getDb();
-    const menus = db.prepare(
+  async list_menus(_input, opts) {
+    const db = await getDb();
+    const menus = await db.prepare(
       `SELECT m.*, COUNT(md.dish_id) as dish_count
        FROM menus m
        LEFT JOIN menu_dishes md ON md.menu_id = m.id
@@ -1727,8 +1727,8 @@ const handlers = {
     return { success: true, message };
   },
 
-  list_dishes(input, opts) {
-    const db = getDb();
+  async list_dishes(input, opts) {
+    const db = await getDb();
     let sql = `SELECT d.id, d.name, d.category, d.is_favorite, d.suggested_price, d.batch_yield,
                       COUNT(di.ingredient_id) as ingredient_count
                FROM dishes d
@@ -1744,7 +1744,7 @@ const handlers = {
     }
 
     sql += ' GROUP BY d.id ORDER BY d.name LIMIT 50';
-    const dishes = db.prepare(sql).all(...params);
+    const dishes = await db.prepare(sql).all(...params);
 
     if (!dishes.length) {
       const message = 'No dishes found matching those criteria.';
@@ -1766,14 +1766,14 @@ const handlers = {
     return { success: true, message };
   },
 
-  lookup_ingredient(input, opts) {
-    const db = getDb();
+  async lookup_ingredient(input, opts) {
+    const db = await getDb();
     let ingredient;
 
     if (input.ingredient_id) {
-      ingredient = db.prepare('SELECT * FROM ingredients WHERE id = ?').get(input.ingredient_id);
+      ingredient = await db.prepare('SELECT * FROM ingredients WHERE id = ?').get(input.ingredient_id);
     } else if (input.ingredient_name) {
-      ingredient = db.prepare("SELECT * FROM ingredients WHERE name LIKE ? LIMIT 1").get(`%${input.ingredient_name}%`);
+      ingredient = await db.prepare("SELECT * FROM ingredients WHERE name LIKE ? LIMIT 1").get(`%${input.ingredient_name}%`);
     }
 
     if (!ingredient) {
@@ -1783,7 +1783,7 @@ const handlers = {
     }
 
     // Find which dishes use this ingredient
-    const dishUsage = db.prepare(
+    const dishUsage = await db.prepare(
       `SELECT d.id, d.name, di.quantity, di.unit
        FROM dish_ingredients di
        JOIN dishes d ON di.dish_id = d.id
@@ -1811,8 +1811,8 @@ const handlers = {
     return { success: true, message };
   },
 
-  list_specials(input, opts) {
-    const db = getDb();
+  async list_specials(input, opts) {
+    const db = await getDb();
     let sql = `SELECT ws.*, d.name as dish_name, d.category, d.description as dish_description
                FROM weekly_specials ws
                JOIN dishes d ON ws.dish_id = d.id
@@ -1825,7 +1825,7 @@ const handlers = {
     }
 
     sql += ' ORDER BY ws.week_start DESC, d.name LIMIT 20';
-    const specials = db.prepare(sql).all(...params);
+    const specials = await db.prepare(sql).all(...params);
 
     if (!specials.length) {
       const message = input.week_start
@@ -1848,9 +1848,9 @@ const handlers = {
     return { success: true, message };
   },
 
-  list_tags(_input, opts) {
-    const db = getDb();
-    const tags = db.prepare(
+  async list_tags(_input, opts) {
+    const db = await getDb();
+    const tags = await db.prepare(
       `SELECT t.id, t.name, COUNT(dt.dish_id) as dish_count
        FROM tags t
        LEFT JOIN dish_tags dt ON dt.tag_id = t.id
@@ -1874,14 +1874,14 @@ const handlers = {
     return { success: true, message };
   },
 
-  get_menu_cost_analysis(input, opts) {
-    const db = getDb();
-    const resolved = resolveMenu(db, input);
+  async get_menu_cost_analysis(input, opts) {
+    const db = await getDb();
+    const resolved = await resolveMenu(db, input);
     if (!resolved) return { success: true, message: 'Menu not found.' };
     const { menuId, menuName } = resolved;
 
-    const menu = db.prepare('SELECT sell_price, expected_covers FROM menus WHERE id = ?').get(menuId);
-    const dishes = db.prepare(
+    const menu = await db.prepare('SELECT sell_price, expected_covers FROM menus WHERE id = ?').get(menuId);
+    const dishes = await db.prepare(
       `SELECT d.id, d.name, d.category, d.suggested_price, d.batch_yield, md.servings
        FROM menu_dishes md JOIN dishes d ON md.dish_id = d.id
        WHERE md.menu_id = ? AND d.deleted_at IS NULL ORDER BY md.sort_order`
@@ -1898,7 +1898,7 @@ const handlers = {
     parts.push('');
 
     for (const d of dishes) {
-      const ingredients = db.prepare(
+      const ingredients = await db.prepare(
         `SELECT di.quantity, i.unit_cost
          FROM dish_ingredients di JOIN ingredients i ON di.ingredient_id = i.id
          WHERE di.dish_id = ?`
@@ -1936,12 +1936,13 @@ const handlers = {
     return { success: true, message };
   },
 
-  get_dish_allergens(input, opts) {
-    const resolved = resolveDish(getDb(), input);
+  async get_dish_allergens(input, opts) {
+    const db = await getDb();
+    const resolved = await resolveDish(db, input);
     if (!resolved) return { success: true, message: 'Dish not found.' };
     const { dishId, dishName } = resolved;
 
-    const allergens = getDishAllergens(dishId);
+    const allergens = await getDishAllergens(dishId);
 
     if (!allergens.length) {
       const message = `"${dishName}" has no allergens flagged.`;
@@ -1964,13 +1965,13 @@ const handlers = {
     return { success: true, message };
   },
 
-  get_menu_allergens(input, opts) {
-    const db = getDb();
-    const resolved = resolveMenu(db, input);
+  async get_menu_allergens(input, opts) {
+    const db = await getDb();
+    const resolved = await resolveMenu(db, input);
     if (!resolved) return { success: true, message: 'Menu not found.' };
     const { menuId, menuName } = resolved;
 
-    const dishes = db.prepare(
+    const dishes = await db.prepare(
       `SELECT d.id, d.name FROM menu_dishes md
        JOIN dishes d ON md.dish_id = d.id
        WHERE md.menu_id = ? AND d.deleted_at IS NULL ORDER BY md.sort_order`
@@ -1981,10 +1982,8 @@ const handlers = {
     }
 
     const dishIds = dishes.map(d => d.id);
-    const dishNameMap = {};
-    for (const d of dishes) dishNameMap[d.id] = d.name;
 
-    const batchAllergens = getDishAllergensBatch(dishIds);
+    const batchAllergens = await getDishAllergensBatch(dishIds);
 
     const allergenMap = {};
     for (const d of dishes) {
@@ -2015,7 +2014,7 @@ const handlers = {
 
   // ─── New Mutation Handlers ──────────────────────────────────────
 
-  create_ingredient(input, opts) {
+  async create_ingredient(input, opts) {
     if (opts.preview) {
       return {
         description: `Create ingredient: "${input.name}"`,
@@ -2023,9 +2022,9 @@ const handlers = {
       };
     }
 
-    const db = getDb();
-    // Upsert by name (case-insensitive)
-    const existing = db.prepare('SELECT id FROM ingredients WHERE name = ? COLLATE NOCASE').get(input.name);
+    const db = await getDb();
+    // Upsert by name (case-insensitive via citext)
+    const existing = await db.prepare('SELECT id FROM ingredients WHERE name = ?').get(input.name);
     if (existing) {
       const updates = [];
       const params = [];
@@ -2034,22 +2033,22 @@ const handlers = {
       if (input.category) { updates.push('category = ?'); params.push(input.category); }
       if (updates.length) {
         params.push(existing.id);
-        db.prepare(`UPDATE ingredients SET ${updates.join(', ')} WHERE id = ?`).run(...params);
+        await db.prepare(`UPDATE ingredients SET ${updates.join(', ')} WHERE id = ?`).run(...params);
       }
       if (opts.broadcast) opts.broadcast('ingredient_updated', { id: existing.id });
       return { success: true, message: `Ingredient "${input.name}" updated (already existed).`, entityType: 'ingredient', entityId: existing.id };
     }
 
-    const result = db.prepare('INSERT INTO ingredients (name, unit_cost, base_unit, category) VALUES (?, ?, ?, ?)').run(
+    const result = await db.prepare('INSERT INTO ingredients (name, unit_cost, base_unit, category) VALUES (?, ?, ?, ?)').run(
       input.name, input.unit_cost || 0, input.base_unit || '', input.category || ''
     );
     if (opts.broadcast) opts.broadcast('ingredient_created', { id: result.lastInsertRowid });
     return { success: true, message: `Ingredient "${input.name}" created.`, entityType: 'ingredient', entityId: result.lastInsertRowid };
   },
 
-  create_special(input, opts) {
-    const db = getDb();
-    const resolved = resolveDish(db, input);
+  async create_special(input, opts) {
+    const db = await getDb();
+    const resolved = await resolveDish(db, input);
     if (!resolved) return { description: 'Dish not found', message: 'Could not find that dish.' };
     const { dishId, dishName } = resolved;
 
@@ -2064,7 +2063,7 @@ const handlers = {
       };
     }
 
-    const result = db.prepare(
+    const result = await db.prepare(
       'INSERT INTO weekly_specials (dish_id, week_start, week_end, notes, is_active) VALUES (?, ?, ?, ?, 1)'
     ).run(dishId, weekStart, weekEnd, input.notes || '');
     if (opts.broadcast) opts.broadcast('special_created', { id: result.lastInsertRowid });
@@ -2077,9 +2076,9 @@ const handlers = {
     };
   },
 
-  update_dish(input, opts) {
-    const db = getDb();
-    const resolved = resolveDish(db, input);
+  async update_dish(input, opts) {
+    const db = await getDb();
+    const resolved = await resolveDish(db, input);
     if (!resolved) return { description: 'Dish not found', message: 'Could not find that dish.' };
     const { dishId, dishName } = resolved;
 
@@ -2102,11 +2101,11 @@ const handlers = {
     }
 
     // Save snapshot for undo
-    const current = db.prepare('SELECT * FROM dishes WHERE id = ?').get(dishId);
-    const undoId = saveSnapshot('dish', dishId, 'update', current);
+    const current = await db.prepare('SELECT * FROM dishes WHERE id = ?').get(dishId);
+    const undoId = await saveSnapshot('dish', dishId, 'update', current);
 
     params.push(dishId);
-    db.prepare(`UPDATE dishes SET ${updates.join(', ')}, updated_at = datetime('now') WHERE id = ?`).run(...params);
+    await db.prepare(`UPDATE dishes SET ${updates.join(', ')}, updated_at = NOW() WHERE id = ?`).run(...params);
     if (opts.broadcast) opts.broadcast('dish_updated', { id: dishId });
 
     return {
@@ -2118,9 +2117,9 @@ const handlers = {
     };
   },
 
-  update_menu(input, opts) {
-    const db = getDb();
-    const resolved = resolveMenu(db, input);
+  async update_menu(input, opts) {
+    const db = await getDb();
+    const resolved = await resolveMenu(db, input);
     if (!resolved) return { description: 'Menu not found', message: 'Could not find that menu.' };
     const { menuId, menuName } = resolved;
 
@@ -2143,11 +2142,11 @@ const handlers = {
       };
     }
 
-    const current = db.prepare('SELECT * FROM menus WHERE id = ?').get(menuId);
-    const undoId = saveSnapshot('menu', menuId, 'update', current);
+    const current = await db.prepare('SELECT * FROM menus WHERE id = ?').get(menuId);
+    const undoId = await saveSnapshot('menu', menuId, 'update', current);
 
     params.push(menuId);
-    db.prepare(`UPDATE menus SET ${updates.join(', ')}, updated_at = datetime('now') WHERE id = ?`).run(...params);
+    await db.prepare(`UPDATE menus SET ${updates.join(', ')}, updated_at = NOW() WHERE id = ?`).run(...params);
     if (opts.broadcast) opts.broadcast('menu_updated', { id: menuId });
 
     return {
@@ -2159,9 +2158,9 @@ const handlers = {
     };
   },
 
-  update_task(input, opts) {
-    const db = getDb();
-    const task = db.prepare('SELECT * FROM tasks WHERE id = ?').get(input.task_id);
+  async update_task(input, opts) {
+    const db = await getDb();
+    const task = await db.prepare('SELECT * FROM tasks WHERE id = ?').get(input.task_id);
     if (!task) return { success: true, message: 'Task not found.' };
 
     const updates = [];
@@ -2177,7 +2176,7 @@ const handlers = {
       updates.push('completed = ?');
       params.push(input.completed ? 1 : 0);
       if (input.completed) {
-        updates.push("completed_at = datetime('now')");
+        updates.push("completed_at = NOW()");
         changes.push('marked complete');
       } else {
         updates.push('completed_at = NULL');
@@ -2201,15 +2200,15 @@ const handlers = {
     }
 
     params.push(input.task_id);
-    db.prepare(`UPDATE tasks SET ${updates.join(', ')}, updated_at = datetime('now') WHERE id = ?`).run(...params);
+    await db.prepare(`UPDATE tasks SET ${updates.join(', ')}, updated_at = NOW() WHERE id = ?`).run(...params);
     if (opts.broadcast) opts.broadcast('task_updated', { id: input.task_id });
 
     return { success: true, message: `Task "${task.title}" updated: ${changes.join(', ')}.` };
   },
 
-  update_ingredient(input, opts) {
-    const db = getDb();
-    const resolved = resolveIngredient(db, input);
+  async update_ingredient(input, opts) {
+    const db = await getDb();
+    const resolved = await resolveIngredient(db, input);
     if (!resolved) return { description: 'Ingredient not found', message: 'Could not find that ingredient.' };
     const { ingredientId, ingredientName } = resolved;
 
@@ -2230,17 +2229,17 @@ const handlers = {
     }
 
     params.push(ingredientId);
-    db.prepare(`UPDATE ingredients SET ${updates.join(', ')} WHERE id = ?`).run(...params);
+    await db.prepare(`UPDATE ingredients SET ${updates.join(', ')} WHERE id = ?`).run(...params);
     if (opts.broadcast) opts.broadcast('ingredient_updated', { id: ingredientId });
 
     return { success: true, message: `Ingredient "${ingredientName}" updated: ${changes.join(', ')}.` };
   },
 
-  update_servings(input, opts) {
-    const db = getDb();
-    const menuResolved = resolveMenu(db, input);
+  async update_servings(input, opts) {
+    const db = await getDb();
+    const menuResolved = await resolveMenu(db, input);
     if (!menuResolved) return { success: true, message: 'Menu not found.' };
-    const dishResolved = resolveDish(db, input);
+    const dishResolved = await resolveDish(db, input);
     if (!dishResolved) return { success: true, message: 'Dish not found.' };
 
     if (opts.preview) {
@@ -2250,7 +2249,7 @@ const handlers = {
       };
     }
 
-    const result = db.prepare('UPDATE menu_dishes SET servings = ? WHERE menu_id = ? AND dish_id = ?').run(
+    const result = await db.prepare('UPDATE menu_dishes SET servings = ? WHERE menu_id = ? AND dish_id = ?').run(
       input.servings, menuResolved.menuId, dishResolved.dishId
     );
     if (result.changes === 0) return { success: false, message: `"${dishResolved.dishName}" is not on "${menuResolved.menuName}".` };
@@ -2259,9 +2258,9 @@ const handlers = {
     return { success: true, message: `"${dishResolved.dishName}" set to ${input.servings} servings on "${menuResolved.menuName}".` };
   },
 
-  update_service_note(input, opts) {
-    const db = getDb();
-    const note = db.prepare('SELECT * FROM service_notes WHERE id = ?').get(input.note_id);
+  async update_service_note(input, opts) {
+    const db = await getDb();
+    const note = await db.prepare('SELECT * FROM service_notes WHERE id = ?').get(input.note_id);
     if (!note) return { success: true, message: 'Service note not found.' };
 
     const updates = [];
@@ -2282,7 +2281,7 @@ const handlers = {
     }
 
     params.push(input.note_id);
-    db.prepare(`UPDATE service_notes SET ${updates.join(', ')}, updated_at = datetime('now') WHERE id = ?`).run(...params);
+    await db.prepare(`UPDATE service_notes SET ${updates.join(', ')}, updated_at = NOW() WHERE id = ?`).run(...params);
     if (opts.broadcast) opts.broadcast('service_note_updated', { id: input.note_id });
 
     return { success: true, message: `Service note "${note.title}" updated: ${changes.join(', ')}.` };
@@ -2290,9 +2289,9 @@ const handlers = {
 
   // ─── Delete Handlers ──────────────────────────────────────────
 
-  delete_dish(input, opts) {
-    const db = getDb();
-    const resolved = resolveDish(db, input);
+  async delete_dish(input, opts) {
+    const db = await getDb();
+    const resolved = await resolveDish(db, input);
     if (!resolved) return { description: 'Dish not found', message: 'Could not find that dish.' };
     const { dishId, dishName } = resolved;
 
@@ -2303,18 +2302,18 @@ const handlers = {
       };
     }
 
-    const current = db.prepare('SELECT * FROM dishes WHERE id = ?').get(dishId);
-    const undoId = saveSnapshot('dish', dishId, 'delete', current);
+    const current = await db.prepare('SELECT * FROM dishes WHERE id = ?').get(dishId);
+    const undoId = await saveSnapshot('dish', dishId, 'delete', current);
 
-    db.prepare("UPDATE dishes SET deleted_at = datetime('now') WHERE id = ?").run(dishId);
+    await db.prepare("UPDATE dishes SET deleted_at = NOW() WHERE id = ?").run(dishId);
     if (opts.broadcast) opts.broadcast('dish_deleted', { id: dishId });
 
     return { success: true, message: `"${dishName}" deleted.`, entityType: 'dish', entityId: dishId, undoId };
   },
 
-  delete_menu(input, opts) {
-    const db = getDb();
-    const resolved = resolveMenu(db, input);
+  async delete_menu(input, opts) {
+    const db = await getDb();
+    const resolved = await resolveMenu(db, input);
     if (!resolved) return { description: 'Menu not found', message: 'Could not find that menu.' };
     const { menuId, menuName } = resolved;
 
@@ -2325,18 +2324,18 @@ const handlers = {
       };
     }
 
-    const current = db.prepare('SELECT * FROM menus WHERE id = ?').get(menuId);
-    const undoId = saveSnapshot('menu', menuId, 'delete', current);
+    const current = await db.prepare('SELECT * FROM menus WHERE id = ?').get(menuId);
+    const undoId = await saveSnapshot('menu', menuId, 'delete', current);
 
-    db.prepare("UPDATE menus SET deleted_at = datetime('now') WHERE id = ?").run(menuId);
+    await db.prepare("UPDATE menus SET deleted_at = NOW() WHERE id = ?").run(menuId);
     if (opts.broadcast) opts.broadcast('menu_deleted', { id: menuId });
 
     return { success: true, message: `Menu "${menuName}" deleted.`, entityType: 'menu', entityId: menuId, undoId };
   },
 
-  delete_task(input, opts) {
-    const db = getDb();
-    const task = db.prepare('SELECT * FROM tasks WHERE id = ?').get(input.task_id);
+  async delete_task(input, opts) {
+    const db = await getDb();
+    const task = await db.prepare('SELECT * FROM tasks WHERE id = ?').get(input.task_id);
     if (!task) return { description: 'Task not found', message: 'Could not find that task.' };
 
     if (opts.preview) {
@@ -2346,16 +2345,16 @@ const handlers = {
       };
     }
 
-    const undoId = saveSnapshot('task', input.task_id, 'delete', task);
-    db.prepare('DELETE FROM tasks WHERE id = ?').run(input.task_id);
+    const undoId = await saveSnapshot('task', input.task_id, 'delete', task);
+    await db.prepare('DELETE FROM tasks WHERE id = ?').run(input.task_id);
     if (opts.broadcast) opts.broadcast('task_deleted', { id: input.task_id });
 
     return { success: true, message: `Task "${task.title}" deleted.`, undoId };
   },
 
-  delete_service_note(input, opts) {
-    const db = getDb();
-    const note = db.prepare('SELECT * FROM service_notes WHERE id = ?').get(input.note_id);
+  async delete_service_note(input, opts) {
+    const db = await getDb();
+    const note = await db.prepare('SELECT * FROM service_notes WHERE id = ?').get(input.note_id);
     if (!note) return { description: 'Note not found', message: 'Could not find that service note.' };
 
     if (opts.preview) {
@@ -2365,18 +2364,18 @@ const handlers = {
       };
     }
 
-    const undoId = saveSnapshot('service_note', input.note_id, 'delete', note);
-    db.prepare('DELETE FROM service_notes WHERE id = ?').run(input.note_id);
+    const undoId = await saveSnapshot('service_note', input.note_id, 'delete', note);
+    await db.prepare('DELETE FROM service_notes WHERE id = ?').run(input.note_id);
     if (opts.broadcast) opts.broadcast('service_note_deleted', { id: input.note_id, date: note.date });
 
     return { success: true, message: `Service note "${note.title}" deleted.`, undoId };
   },
 
-  remove_dish_from_menu(input, opts) {
-    const db = getDb();
-    const menuResolved = resolveMenu(db, input);
+  async remove_dish_from_menu(input, opts) {
+    const db = await getDb();
+    const menuResolved = await resolveMenu(db, input);
     if (!menuResolved) return { description: 'Menu not found', message: 'Could not find that menu.' };
-    const dishResolved = resolveDish(db, input);
+    const dishResolved = await resolveDish(db, input);
     if (!dishResolved) return { description: 'Dish not found', message: 'Could not find that dish.' };
 
     if (opts.preview) {
@@ -2386,7 +2385,7 @@ const handlers = {
       };
     }
 
-    const result = db.prepare('DELETE FROM menu_dishes WHERE menu_id = ? AND dish_id = ?').run(
+    const result = await db.prepare('DELETE FROM menu_dishes WHERE menu_id = ? AND dish_id = ?').run(
       menuResolved.menuId, dishResolved.dishId
     );
     if (result.changes === 0) return { success: false, message: `"${dishResolved.dishName}" is not on "${menuResolved.menuName}".` };
@@ -2395,9 +2394,9 @@ const handlers = {
     return { success: true, message: `Removed "${dishResolved.dishName}" from "${menuResolved.menuName}".` };
   },
 
-  add_course_to_menu(input, opts) {
-    const db = getDb();
-    const menuResolved = resolveMenu(db, input);
+  async add_course_to_menu(input, opts) {
+    const db = await getDb();
+    const menuResolved = await resolveMenu(db, input);
     if (!menuResolved) return { description: 'Menu not found', message: 'Could not find that menu.' };
 
     if (opts.preview) {
@@ -2407,8 +2406,8 @@ const handlers = {
       };
     }
 
-    const maxOrder = db.prepare('SELECT COALESCE(MAX(sort_order), -1) + 1 as next FROM menu_courses WHERE menu_id = ?').get(menuResolved.menuId);
-    db.prepare('INSERT INTO menu_courses (menu_id, name, notes, sort_order) VALUES (?, ?, ?, ?)').run(
+    const maxOrder = await db.prepare('SELECT COALESCE(MAX(sort_order), -1) + 1 as next FROM menu_courses WHERE menu_id = ?').get(menuResolved.menuId);
+    await db.prepare('INSERT INTO menu_courses (menu_id, name, notes, sort_order) VALUES (?, ?, ?, ?)').run(
       menuResolved.menuId, input.name, input.notes || '', maxOrder.next
     );
 
@@ -2416,14 +2415,14 @@ const handlers = {
     return { success: true, message: `Added course "${input.name}" to "${menuResolved.menuName}".` };
   },
 
-  move_dish_to_course(input, opts) {
-    const db = getDb();
-    const menuResolved = resolveMenu(db, input);
+  async move_dish_to_course(input, opts) {
+    const db = await getDb();
+    const menuResolved = await resolveMenu(db, input);
     if (!menuResolved) return { description: 'Menu not found', message: 'Could not find that menu.' };
-    const dishResolved = resolveDish(db, input);
+    const dishResolved = await resolveDish(db, input);
     if (!dishResolved) return { description: 'Dish not found', message: 'Could not find that dish.' };
 
-    const course = db.prepare(
+    const course = await db.prepare(
       "SELECT id, name FROM menu_courses WHERE menu_id = ? AND name LIKE ? LIMIT 1"
     ).get(menuResolved.menuId, `%${input.course_name}%`);
 
@@ -2438,7 +2437,7 @@ const handlers = {
       };
     }
 
-    const result = db.prepare('UPDATE menu_dishes SET course_id = ? WHERE menu_id = ? AND dish_id = ?').run(
+    const result = await db.prepare('UPDATE menu_dishes SET course_id = ? WHERE menu_id = ? AND dish_id = ?').run(
       course.id, menuResolved.menuId, dishResolved.dishId
     );
     if (result.changes === 0) return { success: false, message: `"${dishResolved.dishName}" is not on "${menuResolved.menuName}".` };
@@ -2449,13 +2448,13 @@ const handlers = {
 
   // ─── Quick Action Handlers ────────────────────────────────────
 
-  toggle_favorite(input, opts) {
-    const db = getDb();
-    const resolved = resolveDish(db, input);
+  async toggle_favorite(input, opts) {
+    const db = await getDb();
+    const resolved = await resolveDish(db, input);
     if (!resolved) return { success: true, message: 'Dish not found.' };
     const { dishId, dishName } = resolved;
 
-    const dish = db.prepare('SELECT is_favorite FROM dishes WHERE id = ?').get(dishId);
+    const dish = await db.prepare('SELECT is_favorite FROM dishes WHERE id = ?').get(dishId);
     const newVal = dish.is_favorite ? 0 : 1;
 
     if (opts.preview) {
@@ -2465,15 +2464,15 @@ const handlers = {
       };
     }
 
-    db.prepare('UPDATE dishes SET is_favorite = ? WHERE id = ?').run(newVal, dishId);
+    await db.prepare('UPDATE dishes SET is_favorite = ? WHERE id = ?').run(newVal, dishId);
     if (opts.broadcast) opts.broadcast('dish_updated', { id: dishId });
 
     return { success: true, message: `"${dishName}" ${newVal ? 'added to' : 'removed from'} favorites.` };
   },
 
-  complete_task(input, opts) {
-    const db = getDb();
-    const task = db.prepare('SELECT * FROM tasks WHERE id = ?').get(input.task_id);
+  async complete_task(input, opts) {
+    const db = await getDb();
+    const task = await db.prepare('SELECT * FROM tasks WHERE id = ?').get(input.task_id);
     if (!task) return { success: true, message: 'Task not found.' };
 
     const completed = input.completed !== undefined ? input.completed : true;
@@ -2486,17 +2485,17 @@ const handlers = {
     }
 
     if (completed) {
-      db.prepare("UPDATE tasks SET completed = 1, completed_at = datetime('now'), updated_at = datetime('now') WHERE id = ?").run(input.task_id);
+      await db.prepare("UPDATE tasks SET completed = 1, completed_at = NOW(), updated_at = NOW() WHERE id = ?").run(input.task_id);
     } else {
-      db.prepare("UPDATE tasks SET completed = 0, completed_at = NULL, updated_at = datetime('now') WHERE id = ?").run(input.task_id);
+      await db.prepare("UPDATE tasks SET completed = 0, completed_at = NULL, updated_at = NOW() WHERE id = ?").run(input.task_id);
     }
     if (opts.broadcast) opts.broadcast('task_updated', { id: input.task_id });
 
     return { success: true, message: `"${task.title}" marked as ${completed ? 'complete' : 'incomplete'}.` };
   },
 
-  batch_complete_tasks(input, opts) {
-    const db = getDb();
+  async batch_complete_tasks(input, opts) {
+    const db = await getDb();
     const completed = input.completed !== undefined ? input.completed : true;
     const ids = input.task_ids || [];
 
@@ -2511,18 +2510,18 @@ const handlers = {
 
     const placeholders = ids.map(() => '?').join(',');
     if (completed) {
-      db.prepare(`UPDATE tasks SET completed = 1, completed_at = datetime('now'), updated_at = datetime('now') WHERE id IN (${placeholders})`).run(...ids);
+      await db.prepare(`UPDATE tasks SET completed = 1, completed_at = NOW(), updated_at = NOW() WHERE id IN (${placeholders})`).run(...ids);
     } else {
-      db.prepare(`UPDATE tasks SET completed = 0, completed_at = NULL, updated_at = datetime('now') WHERE id IN (${placeholders})`).run(...ids);
+      await db.prepare(`UPDATE tasks SET completed = 0, completed_at = NULL, updated_at = NOW() WHERE id IN (${placeholders})`).run(...ids);
     }
     if (opts.broadcast) opts.broadcast('tasks_batch_updated', { ids, completed });
 
     return { success: true, message: `${ids.length} task(s) marked as ${completed ? 'complete' : 'incomplete'}.` };
   },
 
-  duplicate_dish(input, opts) {
-    const db = getDb();
-    const resolved = resolveDish(db, input);
+  async duplicate_dish(input, opts) {
+    const db = await getDb();
+    const resolved = await resolveDish(db, input);
     if (!resolved) return { description: 'Dish not found', message: 'Could not find that dish.' };
     const { dishId, dishName } = resolved;
 
@@ -2533,50 +2532,50 @@ const handlers = {
       };
     }
 
-    const dish = db.prepare('SELECT * FROM dishes WHERE id = ?').get(dishId);
+    const dish = await db.prepare('SELECT * FROM dishes WHERE id = ?').get(dishId);
     const newName = `${dish.name} (Copy)`;
-    const result = db.prepare(
+    const result = await db.prepare(
       'INSERT INTO dishes (name, description, category, chefs_notes, suggested_price, batch_yield) VALUES (?, ?, ?, ?, ?, ?)'
     ).run(newName, dish.description, dish.category, dish.chefs_notes, dish.suggested_price, dish.batch_yield);
     const newId = result.lastInsertRowid;
 
     // Copy ingredients
-    const ingredients = db.prepare('SELECT * FROM dish_ingredients WHERE dish_id = ?').all(dishId);
+    const ingredients = await db.prepare('SELECT * FROM dish_ingredients WHERE dish_id = ?').all(dishId);
     for (const ing of ingredients) {
-      db.prepare('INSERT INTO dish_ingredients (dish_id, ingredient_id, quantity, unit, prep_note, sort_order) VALUES (?, ?, ?, ?, ?, ?)').run(
+      await db.prepare('INSERT INTO dish_ingredients (dish_id, ingredient_id, quantity, unit, prep_note, sort_order) VALUES (?, ?, ?, ?, ?, ?)').run(
         newId, ing.ingredient_id, ing.quantity, ing.unit, ing.prep_note, ing.sort_order
       );
     }
 
     // Copy section headers
-    const headers = db.prepare('SELECT * FROM dish_section_headers WHERE dish_id = ?').all(dishId);
+    const headers = await db.prepare('SELECT * FROM dish_section_headers WHERE dish_id = ?').all(dishId);
     for (const h of headers) {
-      db.prepare('INSERT INTO dish_section_headers (dish_id, label, sort_order) VALUES (?, ?, ?)').run(newId, h.label, h.sort_order);
+      await db.prepare('INSERT INTO dish_section_headers (dish_id, label, sort_order) VALUES (?, ?, ?)').run(newId, h.label, h.sort_order);
     }
 
     // Copy directions
-    const directions = db.prepare('SELECT * FROM dish_directions WHERE dish_id = ?').all(dishId);
+    const directions = await db.prepare('SELECT * FROM dish_directions WHERE dish_id = ?').all(dishId);
     for (const dir of directions) {
-      db.prepare('INSERT INTO dish_directions (dish_id, type, text, sort_order) VALUES (?, ?, ?, ?)').run(newId, dir.type, dir.text, dir.sort_order);
+      await db.prepare('INSERT INTO dish_directions (dish_id, type, text, sort_order) VALUES (?, ?, ?, ?)').run(newId, dir.type, dir.text, dir.sort_order);
     }
 
     // Run ingredient allergen detection for the new dish
     const { updateDishAllergens: detectAllergens } = require('../allergenDetector');
-    detectAllergens(newId);
+    await detectAllergens(newId);
 
     // Copy dish-level manual allergen overrides
-    const manualAllergens = db.prepare("SELECT allergen FROM dish_allergens WHERE dish_id = ? AND source = 'manual'").all(dishId);
+    const manualAllergens = await db.prepare("SELECT allergen FROM dish_allergens WHERE dish_id = ? AND source = 'manual'").all(dishId);
     for (const a of manualAllergens) {
-      db.prepare("INSERT OR IGNORE INTO dish_allergens (dish_id, allergen, source) VALUES (?, ?, 'manual')").run(newId, a.allergen);
+      await db.prepare("INSERT INTO dish_allergens (dish_id, allergen, source) VALUES (?, ?, 'manual') ON CONFLICT (dish_id, allergen) DO NOTHING").run(newId, a.allergen);
     }
 
     // Copy tags
-    const tags = db.prepare('SELECT * FROM dish_tags WHERE dish_id = ?').all(dishId);
+    const tags = await db.prepare('SELECT * FROM dish_tags WHERE dish_id = ?').all(dishId);
     for (const t of tags) {
-      db.prepare('INSERT INTO dish_tags (dish_id, tag_id) VALUES (?, ?)').run(newId, t.tag_id);
+      await db.prepare('INSERT INTO dish_tags (dish_id, tag_id) VALUES (?, ?)').run(newId, t.tag_id);
     }
 
-    const undoId = saveSnapshot('dish', newId, 'create', null);
+    const undoId = await saveSnapshot('dish', newId, 'create', null);
     if (opts.broadcast) opts.broadcast('dish_created', { id: newId });
 
     return {
@@ -2591,9 +2590,9 @@ const handlers = {
 
   // ─── Allergen Handlers ─────────────────────────────────────────
 
-  add_allergen(input, opts) {
-    const db = getDb();
-    const resolved = resolveDish(db, input);
+  async add_allergen(input, opts) {
+    const db = await getDb();
+    const resolved = await resolveDish(db, input);
     if (!resolved) return { success: true, message: 'Dish not found.' };
     const { dishId, dishName } = resolved;
 
@@ -2605,18 +2604,18 @@ const handlers = {
     }
 
     // Check if already exists
-    const existing = db.prepare('SELECT 1 FROM dish_allergens WHERE dish_id = ? AND allergen = ?').get(dishId, input.allergen);
+    const existing = await db.prepare('SELECT 1 FROM dish_allergens WHERE dish_id = ? AND allergen = ?').get(dishId, input.allergen);
     if (existing) return { success: true, message: `"${dishName}" already has ${input.allergen} flagged.` };
 
-    db.prepare("INSERT INTO dish_allergens (dish_id, allergen, source) VALUES (?, ?, 'manual')").run(dishId, input.allergen);
+    await db.prepare("INSERT INTO dish_allergens (dish_id, allergen, source) VALUES (?, ?, 'manual')").run(dishId, input.allergen);
     if (opts.broadcast) opts.broadcast('dish_updated', { id: dishId });
 
     return { success: true, message: `Added ${input.allergen} allergen to "${dishName}".` };
   },
 
-  remove_allergen(input, opts) {
-    const db = getDb();
-    const resolved = resolveDish(db, input);
+  async remove_allergen(input, opts) {
+    const db = await getDb();
+    const resolved = await resolveDish(db, input);
     if (!resolved) return { success: true, message: 'Dish not found.' };
     const { dishId, dishName } = resolved;
 
@@ -2627,7 +2626,7 @@ const handlers = {
       };
     }
 
-    const result = db.prepare('DELETE FROM dish_allergens WHERE dish_id = ? AND allergen = ?').run(dishId, input.allergen);
+    const result = await db.prepare('DELETE FROM dish_allergens WHERE dish_id = ? AND allergen = ?').run(dishId, input.allergen);
     if (result.changes === 0) return { success: true, message: `"${dishName}" didn't have ${input.allergen} flagged.` };
 
     if (opts.broadcast) opts.broadcast('dish_updated', { id: dishId });
@@ -2636,15 +2635,15 @@ const handlers = {
 
   // ─── Prep Task Generation Handler ─────────────────────────────
 
-  generate_prep_tasks(input, opts) {
-    const db = getDb();
-    const resolved = resolveMenu(db, input);
+  async generate_prep_tasks(input, opts) {
+    const db = await getDb();
+    const resolved = await resolveMenu(db, input);
     if (!resolved) return { description: 'Menu not found', message: 'Could not find that menu.' };
     const { menuId, menuName } = resolved;
 
-    const dishCount = db.prepare(
+    const dishCount = (await db.prepare(
       'SELECT COUNT(*) as cnt FROM menu_dishes md JOIN dishes d ON md.dish_id = d.id WHERE md.menu_id = ? AND d.deleted_at IS NULL'
-    ).get(menuId).cnt;
+    ).get(menuId)).cnt;
 
     if (opts.preview) {
       return {
@@ -2655,7 +2654,7 @@ const handlers = {
 
     // Use the task generator service
     const { generateAndPersistTasks } = require('../taskGenerator');
-    const result = generateAndPersistTasks(menuId);
+    const result = await generateAndPersistTasks(menuId);
 
     if (opts.broadcast) opts.broadcast('tasks_generated', { menu_id: menuId });
 
@@ -2669,14 +2668,14 @@ const handlers = {
 
   // ─── Advisory Tool Handlers (text-only, Haiku provides the advice) ──
 
-  suggest_dish_pairings(input, opts) {
-    const db = getDb();
+  async suggest_dish_pairings(input, opts) {
+    const db = await getDb();
     let dishInfo = '';
     if (input.dish_id || input.dish_name) {
-      const resolved = resolveDish(db, input);
+      const resolved = await resolveDish(db, input);
       if (resolved) {
-        const dish = db.prepare('SELECT name, category, description FROM dishes WHERE id = ?').get(resolved.dishId);
-        const ingredients = db.prepare(
+        const dish = await db.prepare('SELECT name, category, description FROM dishes WHERE id = ?').get(resolved.dishId);
+        const ingredients = await db.prepare(
           'SELECT i.name FROM dish_ingredients di JOIN ingredients i ON di.ingredient_id = i.id WHERE di.dish_id = ?'
         ).all(resolved.dishId);
         dishInfo = `Dish: "${dish.name}" (${dish.category || 'other'}). ${dish.description || ''}. Ingredients: ${ingredients.map(i => i.name).join(', ')}`;
@@ -2684,7 +2683,7 @@ const handlers = {
     }
 
     // Get available dishes for context
-    const available = db.prepare(
+    const available = await db.prepare(
       "SELECT name, category FROM dishes WHERE deleted_at IS NULL ORDER BY name LIMIT 30"
     ).all();
 
@@ -2702,24 +2701,24 @@ const handlers = {
     return { success: true, message: 'Pairing suggestions provided.', dishInfo, availableDishes: available };
   },
 
-  dietary_analysis(input, opts) {
-    const db = getDb();
-    const resolved = resolveMenu(db, input);
+  async dietary_analysis(input, opts) {
+    const db = await getDb();
+    const resolved = await resolveMenu(db, input);
     if (!resolved) return { success: true, message: 'Menu not found.' };
     const { menuId, menuName } = resolved;
 
     // Gather full menu data for Haiku
-    const dishes = db.prepare(
+    const dishes = await db.prepare(
       `SELECT d.id, d.name, d.category FROM menu_dishes md
        JOIN dishes d ON md.dish_id = d.id WHERE md.menu_id = ? AND d.deleted_at IS NULL`
     ).all(menuId);
 
     const menuData = [];
     for (const d of dishes) {
-      const ingredients = db.prepare(
+      const ingredients = await db.prepare(
         'SELECT i.name FROM dish_ingredients di JOIN ingredients i ON di.ingredient_id = i.id WHERE di.dish_id = ?'
       ).all(d.id);
-      const allergens = getDishAllergens(d.id);
+      const allergens = await getDishAllergens(d.id);
       menuData.push({
         name: d.name,
         category: d.category,
@@ -2752,14 +2751,14 @@ const handlers = {
     return { success: true, message: 'Substitution suggestions provided.' };
   },
 
-  suggest_price(input, opts) {
-    const db = getDb();
-    const resolved = resolveDish(db, input);
+  async suggest_price(input, opts) {
+    const db = await getDb();
+    const resolved = await resolveDish(db, input);
     if (!resolved) return { success: true, message: 'Dish not found.' };
     const { dishId, dishName } = resolved;
 
-    const dish = db.prepare('SELECT batch_yield, suggested_price FROM dishes WHERE id = ?').get(dishId);
-    const ingredients = db.prepare(
+    const dish = await db.prepare('SELECT batch_yield, suggested_price FROM dishes WHERE id = ?').get(dishId);
+    const ingredients = await db.prepare(
       `SELECT di.quantity, i.unit_cost, i.name
        FROM dish_ingredients di JOIN ingredients i ON di.ingredient_id = i.id WHERE di.dish_id = ?`
     ).all(dishId);
@@ -2795,14 +2794,14 @@ const handlers = {
 
   // ─── Recipe Building Handlers ──────────────────────────────────
 
-  add_ingredient_to_dish(input, opts) {
-    const db = getDb();
-    const resolved = resolveDish(db, input);
+  async add_ingredient_to_dish(input, opts) {
+    const db = await getDb();
+    const resolved = await resolveDish(db, input);
     if (!resolved) return { description: 'Dish not found', message: 'Could not find that dish.' };
     const { dishId, dishName } = resolved;
 
     // Find or create the ingredient
-    let ingredient = db.prepare('SELECT id, name FROM ingredients WHERE name LIKE ? LIMIT 1').get(`%${input.ingredient_name}%`);
+    let ingredient = await db.prepare('SELECT id, name FROM ingredients WHERE name LIKE ? LIMIT 1').get(`%${input.ingredient_name}%`);
 
     if (opts.preview) {
       const qty = input.quantity ? `${input.quantity} ${input.unit || ''}` : '';
@@ -2816,27 +2815,27 @@ const handlers = {
 
     // Create ingredient if it doesn't exist
     if (!ingredient) {
-      db.prepare('INSERT INTO ingredients (name) VALUES (?)').run(input.ingredient_name);
-      ingredient = db.prepare('SELECT id, name FROM ingredients WHERE name = ? COLLATE NOCASE').get(input.ingredient_name);
+      await db.prepare('INSERT INTO ingredients (name) VALUES (?)').run(input.ingredient_name);
+      ingredient = await db.prepare('SELECT id, name FROM ingredients WHERE name = ?').get(input.ingredient_name);
       if (opts.broadcast) opts.broadcast('ingredient_created', { id: ingredient.id });
     }
 
     // Check if already on this dish (UNIQUE constraint)
-    const existing = db.prepare('SELECT 1 FROM dish_ingredients WHERE dish_id = ? AND ingredient_id = ?').get(dishId, ingredient.id);
+    const existing = await db.prepare('SELECT 1 FROM dish_ingredients WHERE dish_id = ? AND ingredient_id = ?').get(dishId, ingredient.id);
     if (existing) {
       return { success: false, message: `"${ingredient.name}" is already on "${dishName}". Update the quantity in the dish form instead.` };
     }
 
     // Get next sort_order
-    const maxSort = db.prepare('SELECT COALESCE(MAX(sort_order), -1) as mx FROM dish_ingredients WHERE dish_id = ?').get(dishId).mx;
+    const maxSort = (await db.prepare('SELECT COALESCE(MAX(sort_order), -1) as mx FROM dish_ingredients WHERE dish_id = ?').get(dishId)).mx;
 
-    db.prepare(
+    await db.prepare(
       'INSERT INTO dish_ingredients (dish_id, ingredient_id, quantity, unit, prep_note, sort_order) VALUES (?, ?, ?, ?, ?, ?)'
     ).run(dishId, ingredient.id, input.quantity || null, input.unit || null, input.prep_note || null, maxSort + 1);
 
     // Re-run allergen detection
     const { updateDishAllergens } = require('../allergenDetector');
-    updateDishAllergens(dishId);
+    await updateDishAllergens(dishId);
 
     if (opts.broadcast) opts.broadcast('dish_updated', { id: dishId });
 
@@ -2849,9 +2848,9 @@ const handlers = {
     };
   },
 
-  remove_ingredient_from_dish(input, opts) {
-    const db = getDb();
-    const resolved = resolveDish(db, input);
+  async remove_ingredient_from_dish(input, opts) {
+    const db = await getDb();
+    const resolved = await resolveDish(db, input);
     if (!resolved) return { success: true, message: 'Dish not found.' };
     const { dishId, dishName } = resolved;
 
@@ -2859,7 +2858,7 @@ const handlers = {
     let ingredientId = input.ingredient_id;
     let ingredientName = input.ingredient_name;
     if (!ingredientId && ingredientName) {
-      const ing = db.prepare(
+      const ing = await db.prepare(
         'SELECT di.ingredient_id, i.name FROM dish_ingredients di JOIN ingredients i ON di.ingredient_id = i.id WHERE di.dish_id = ? AND i.name LIKE ? LIMIT 1'
       ).get(dishId, `%${ingredientName}%`);
       if (ing) { ingredientId = ing.ingredient_id; ingredientName = ing.name; }
@@ -2876,23 +2875,23 @@ const handlers = {
       };
     }
 
-    const result = db.prepare('DELETE FROM dish_ingredients WHERE dish_id = ? AND ingredient_id = ?').run(dishId, ingredientId);
+    const result = await db.prepare('DELETE FROM dish_ingredients WHERE dish_id = ? AND ingredient_id = ?').run(dishId, ingredientId);
     if (result.changes === 0) {
       return { success: false, message: `"${ingredientName}" is not on "${dishName}".` };
     }
 
     // Re-run allergen detection
     const { updateDishAllergens } = require('../allergenDetector');
-    updateDishAllergens(dishId);
+    await updateDishAllergens(dishId);
 
     if (opts.broadcast) opts.broadcast('dish_updated', { id: dishId });
 
     return { success: true, message: `Removed "${ingredientName}" from "${dishName}".`, entityType: 'dish', entityId: dishId };
   },
 
-  add_direction_to_dish(input, opts) {
-    const db = getDb();
-    const resolved = resolveDish(db, input);
+  async add_direction_to_dish(input, opts) {
+    const db = await getDb();
+    const resolved = await resolveDish(db, input);
     if (!resolved) return { success: true, message: 'Dish not found.' };
     const { dishId, dishName } = resolved;
 
@@ -2907,19 +2906,19 @@ const handlers = {
     }
 
     // Get existing directions to figure out sort_order
-    const existing = db.prepare('SELECT sort_order FROM dish_directions WHERE dish_id = ? ORDER BY sort_order DESC LIMIT 1').get(dishId);
+    const existing = await db.prepare('SELECT sort_order FROM dish_directions WHERE dish_id = ? ORDER BY sort_order DESC LIMIT 1').get(dishId);
     const nextSort = existing ? existing.sort_order + 1 : 0;
 
     if (input.position !== undefined && input.position !== null) {
       // Shift existing directions to make room
-      db.prepare('UPDATE dish_directions SET sort_order = sort_order + 1 WHERE dish_id = ? AND sort_order >= ?').run(dishId, input.position);
-      db.prepare('INSERT INTO dish_directions (dish_id, type, text, sort_order) VALUES (?, ?, ?, ?)').run(dishId, dirType, input.text, input.position);
+      await db.prepare('UPDATE dish_directions SET sort_order = sort_order + 1 WHERE dish_id = ? AND sort_order >= ?').run(dishId, input.position);
+      await db.prepare('INSERT INTO dish_directions (dish_id, type, text, sort_order) VALUES (?, ?, ?, ?)').run(dishId, dirType, input.text, input.position);
     } else {
-      db.prepare('INSERT INTO dish_directions (dish_id, type, text, sort_order) VALUES (?, ?, ?, ?)').run(dishId, dirType, input.text, nextSort);
+      await db.prepare('INSERT INTO dish_directions (dish_id, type, text, sort_order) VALUES (?, ?, ?, ?)').run(dishId, dirType, input.text, nextSort);
     }
 
     // Clear legacy chefs_notes since we now have structured directions
-    db.prepare('UPDATE dishes SET chefs_notes = ? WHERE id = ?').run('', dishId);
+    await db.prepare('UPDATE dishes SET chefs_notes = ? WHERE id = ?').run('', dishId);
 
     if (opts.broadcast) opts.broadcast('dish_updated', { id: dishId });
 
@@ -2927,9 +2926,9 @@ const handlers = {
     return { success: true, message: `Added ${label} to "${dishName}": "${input.text}".`, entityType: 'dish', entityId: dishId };
   },
 
-  add_tag(input, opts) {
-    const db = getDb();
-    const resolved = resolveDish(db, input);
+  async add_tag(input, opts) {
+    const db = await getDb();
+    const resolved = await resolveDish(db, input);
     if (!resolved) return { success: true, message: 'Dish not found.' };
     const { dishId, dishName } = resolved;
 
@@ -2942,28 +2941,28 @@ const handlers = {
       };
     }
 
-    // Find or create the tag
-    let tag = db.prepare('SELECT id FROM tags WHERE name = ? COLLATE NOCASE').get(tagName);
+    // Find or create the tag (citext handles case-insensitive matching)
+    let tag = await db.prepare('SELECT id FROM tags WHERE name = ?').get(tagName);
     if (!tag) {
-      db.prepare('INSERT INTO tags (name) VALUES (?)').run(tagName);
-      tag = db.prepare('SELECT id FROM tags WHERE name = ? COLLATE NOCASE').get(tagName);
+      await db.prepare('INSERT INTO tags (name) VALUES (?)').run(tagName);
+      tag = await db.prepare('SELECT id FROM tags WHERE name = ?').get(tagName);
     }
 
     // Check if already tagged
-    const existing = db.prepare('SELECT 1 FROM dish_tags WHERE dish_id = ? AND tag_id = ?').get(dishId, tag.id);
+    const existing = await db.prepare('SELECT 1 FROM dish_tags WHERE dish_id = ? AND tag_id = ?').get(dishId, tag.id);
     if (existing) {
       return { success: true, message: `"${dishName}" is already tagged with "${tagName}".` };
     }
 
-    db.prepare('INSERT INTO dish_tags (dish_id, tag_id) VALUES (?, ?)').run(dishId, tag.id);
+    await db.prepare('INSERT INTO dish_tags (dish_id, tag_id) VALUES (?, ?)').run(dishId, tag.id);
     if (opts.broadcast) opts.broadcast('dish_updated', { id: dishId });
 
     return { success: true, message: `Tagged "${dishName}" with "${tagName}".` };
   },
 
-  remove_tag(input, opts) {
-    const db = getDb();
-    const resolved = resolveDish(db, input);
+  async remove_tag(input, opts) {
+    const db = await getDb();
+    const resolved = await resolveDish(db, input);
     if (!resolved) return { success: true, message: 'Dish not found.' };
     const { dishId, dishName } = resolved;
 
@@ -2976,12 +2975,12 @@ const handlers = {
       };
     }
 
-    const tag = db.prepare('SELECT id FROM tags WHERE name = ? COLLATE NOCASE').get(tagName);
+    const tag = await db.prepare('SELECT id FROM tags WHERE name = ?').get(tagName);
     if (!tag) {
       return { success: true, message: `Tag "${tagName}" doesn't exist.` };
     }
 
-    const result = db.prepare('DELETE FROM dish_tags WHERE dish_id = ? AND tag_id = ?').run(dishId, tag.id);
+    const result = await db.prepare('DELETE FROM dish_tags WHERE dish_id = ? AND tag_id = ?').run(dishId, tag.id);
     if (result.changes === 0) {
       return { success: true, message: `"${dishName}" doesn't have the "${tagName}" tag.` };
     }
@@ -2992,7 +2991,7 @@ const handlers = {
 
   // ─── Database Query Handler ────────────────────────────────────
 
-  query_database(input, opts) {
+  async query_database(input, opts) {
     const sql = (input.sql || '').trim();
 
     // Validate: must be a SELECT (read-only)
@@ -3014,9 +3013,9 @@ const handlers = {
       };
     }
 
-    const db = getDb();
+    const db = await getDb();
     try {
-      const rows = db.prepare(sql).all();
+      const rows = await db.prepare(sql).all();
 
       // Cap output to avoid flooding the context
       const maxRows = 50;
@@ -3058,15 +3057,15 @@ const handlers = {
 
   // ─── Ingredient Management Handlers ────────────────────────────
 
-  find_duplicate_ingredients(input, _opts) {
-    const db = getDb();
-    const all = db.prepare('SELECT id, name, unit_cost, base_unit, category FROM ingredients ORDER BY name COLLATE NOCASE').all();
+  async find_duplicate_ingredients(input, _opts) {
+    const db = await getDb();
+    const all = await db.prepare('SELECT id, name, unit_cost, base_unit, category FROM ingredients ORDER BY name').all();
 
     if (!all.length) return { success: true, message: 'No ingredients in the database.' };
 
     // Build usage counts
     const usageMap = {};
-    const usageRows = db.prepare('SELECT ingredient_id, COUNT(*) as cnt FROM dish_ingredients GROUP BY ingredient_id').all();
+    const usageRows = await db.prepare('SELECT ingredient_id, COUNT(*) as cnt FROM dish_ingredients GROUP BY ingredient_id').all();
     for (const row of usageRows) usageMap[row.ingredient_id] = row.cnt;
 
     // Normalize name for comparison
@@ -3142,16 +3141,16 @@ const handlers = {
     };
   },
 
-  merge_ingredients(input, opts) {
-    const db = getDb();
+  async merge_ingredients(input, opts) {
+    const db = await getDb();
 
     // Resolve ingredient by name: exact match first, then LIKE fallback (prefer shorter names)
-    function resolveByName(name) {
-      // Exact case-insensitive match first
-      let ing = db.prepare("SELECT id, name FROM ingredients WHERE LOWER(name) = LOWER(?)").get(name);
+    async function resolveByName(name) {
+      // Exact case-insensitive match first (citext handles this)
+      let ing = await db.prepare("SELECT id, name FROM ingredients WHERE name = ?").get(name);
       if (ing) return ing;
       // LIKE fallback — prefer shorter names (more likely the canonical one)
-      ing = db.prepare("SELECT id, name FROM ingredients WHERE name LIKE ? ORDER BY LENGTH(name) ASC LIMIT 1").get(`%${name}%`);
+      ing = await db.prepare("SELECT id, name FROM ingredients WHERE name LIKE ? ORDER BY LENGTH(name) ASC LIMIT 1").get(`%${name}%`);
       return ing || null;
     }
 
@@ -3159,11 +3158,11 @@ const handlers = {
     let sourceId = input.source_id;
     let sourceName = input.source_name;
     if (!sourceId && sourceName) {
-      const ing = resolveByName(sourceName);
+      const ing = await resolveByName(sourceName);
       if (ing) { sourceId = ing.id; sourceName = ing.name; }
     }
     if (sourceId && !sourceName) {
-      const ing = db.prepare('SELECT name FROM ingredients WHERE id = ?').get(sourceId);
+      const ing = await db.prepare('SELECT name FROM ingredients WHERE id = ?').get(sourceId);
       if (ing) sourceName = ing.name;
     }
     if (!sourceId) return { success: false, description: 'Source ingredient not found', message: `Could not find source ingredient "${sourceName || input.source_id}". It may have already been merged or deleted. Skip this pair and continue with the next one.` };
@@ -3173,14 +3172,14 @@ const handlers = {
     let targetName = input.target_name;
     if (!targetId && targetName) {
       // Exact match first, excluding source
-      let ing = db.prepare("SELECT id, name FROM ingredients WHERE LOWER(name) = LOWER(?) AND id != ?").get(targetName, sourceId);
+      let ing = await db.prepare("SELECT id, name FROM ingredients WHERE name = ? AND id != ?").get(targetName, sourceId);
       if (!ing) {
-        ing = db.prepare("SELECT id, name FROM ingredients WHERE name LIKE ? AND id != ? ORDER BY LENGTH(name) ASC LIMIT 1").get(`%${targetName}%`, sourceId);
+        ing = await db.prepare("SELECT id, name FROM ingredients WHERE name LIKE ? AND id != ? ORDER BY LENGTH(name) ASC LIMIT 1").get(`%${targetName}%`, sourceId);
       }
       if (ing) { targetId = ing.id; targetName = ing.name; }
     }
     if (targetId && !targetName) {
-      const ing = db.prepare('SELECT name FROM ingredients WHERE id = ?').get(targetId);
+      const ing = await db.prepare('SELECT name FROM ingredients WHERE id = ?').get(targetId);
       if (ing) targetName = ing.name;
     }
     if (!targetId) return { success: false, description: 'Target ingredient not found', message: `Could not find target ingredient "${targetName || input.target_id}". It may have already been merged or deleted. Skip this pair and continue with the next one.` };
@@ -3188,7 +3187,7 @@ const handlers = {
     if (sourceId === targetId) return { success: false, description: 'Same ingredient', message: `Source and target resolved to the same ingredient (ID ${sourceId}: "${sourceName}"). Skip this pair and continue with the next one.` };
 
     // Count affected recipes
-    const affectedDishes = db.prepare('SELECT COUNT(*) as cnt FROM dish_ingredients WHERE ingredient_id = ?').get(sourceId).cnt;
+    const affectedDishes = (await db.prepare('SELECT COUNT(*) as cnt FROM dish_ingredients WHERE ingredient_id = ?').get(sourceId)).cnt;
 
     if (opts.preview) {
       return {
@@ -3198,9 +3197,9 @@ const handlers = {
     }
 
     // Save snapshot for undo
-    const sourceData = db.prepare('SELECT * FROM ingredients WHERE id = ?').get(sourceId);
-    const affectedRows = db.prepare('SELECT * FROM dish_ingredients WHERE ingredient_id = ?').all(sourceId);
-    const undoId = saveSnapshot('ingredient', sourceId, 'delete', {
+    const sourceData = await db.prepare('SELECT * FROM ingredients WHERE id = ?').get(sourceId);
+    const affectedRows = await db.prepare('SELECT * FROM dish_ingredients WHERE ingredient_id = ?').all(sourceId);
+    const undoId = await saveSnapshot('ingredient', sourceId, 'delete', {
       ingredient: sourceData,
       dish_ingredients: affectedRows,
     });
@@ -3208,21 +3207,21 @@ const handlers = {
     // Reassign dish_ingredients from source to target
     // Handle UNIQUE constraint: if a dish already has the target ingredient, keep the existing one and remove the source entry
     const dishesWithTarget = new Set(
-      db.prepare('SELECT dish_id FROM dish_ingredients WHERE ingredient_id = ?').all(targetId).map(r => r.dish_id)
+      (await db.prepare('SELECT dish_id FROM dish_ingredients WHERE ingredient_id = ?').all(targetId)).map(r => r.dish_id)
     );
 
     for (const row of affectedRows) {
       if (dishesWithTarget.has(row.dish_id)) {
         // Dish already has target ingredient — just remove the source entry
-        db.prepare('DELETE FROM dish_ingredients WHERE dish_id = ? AND ingredient_id = ?').run(row.dish_id, sourceId);
+        await db.prepare('DELETE FROM dish_ingredients WHERE dish_id = ? AND ingredient_id = ?').run(row.dish_id, sourceId);
       } else {
         // Update to point to target
-        db.prepare('UPDATE dish_ingredients SET ingredient_id = ? WHERE dish_id = ? AND ingredient_id = ?').run(targetId, row.dish_id, sourceId);
+        await db.prepare('UPDATE dish_ingredients SET ingredient_id = ? WHERE dish_id = ? AND ingredient_id = ?').run(targetId, row.dish_id, sourceId);
       }
     }
 
     // Delete the source ingredient
-    db.prepare('DELETE FROM ingredients WHERE id = ?').run(sourceId);
+    await db.prepare('DELETE FROM ingredients WHERE id = ?').run(sourceId);
 
     if (opts.broadcast) {
       opts.broadcast('ingredient_updated', { id: targetId });
@@ -3237,13 +3236,13 @@ const handlers = {
     };
   },
 
-  delete_ingredient(input, opts) {
-    const db = getDb();
-    const resolved = resolveIngredient(db, input);
+  async delete_ingredient(input, opts) {
+    const db = await getDb();
+    const resolved = await resolveIngredient(db, input);
     if (!resolved) return { success: false, description: 'Ingredient not found', message: 'Could not find that ingredient. It may have already been deleted. Skip and continue.' };
     const { ingredientId, ingredientName } = resolved;
 
-    const usage = db.prepare('SELECT COUNT(*) as cnt FROM dish_ingredients WHERE ingredient_id = ?').get(ingredientId).cnt;
+    const usage = (await db.prepare('SELECT COUNT(*) as cnt FROM dish_ingredients WHERE ingredient_id = ?').get(ingredientId)).cnt;
 
     if (usage > 0) {
       return {
@@ -3259,10 +3258,10 @@ const handlers = {
       };
     }
 
-    const current = db.prepare('SELECT * FROM ingredients WHERE id = ?').get(ingredientId);
-    const undoId = saveSnapshot('ingredient', ingredientId, 'delete', current);
+    const current = await db.prepare('SELECT * FROM ingredients WHERE id = ?').get(ingredientId);
+    const undoId = await saveSnapshot('ingredient', ingredientId, 'delete', current);
 
-    db.prepare('DELETE FROM ingredients WHERE id = ?').run(ingredientId);
+    await db.prepare('DELETE FROM ingredients WHERE id = ?').run(ingredientId);
 
     return {
       success: true,
@@ -3276,45 +3275,45 @@ const handlers = {
 
 // ─── Helper Functions ─────────────────────────────────────────────
 
-function resolveDish(db, input) {
+async function resolveDish(db, input) {
   let dishId = input.dish_id;
   let dishName = input.dish_name;
   if (!dishId && dishName) {
-    const dish = db.prepare("SELECT id, name FROM dishes WHERE name LIKE ? AND deleted_at IS NULL LIMIT 1").get(`%${dishName}%`);
+    const dish = await db.prepare("SELECT id, name FROM dishes WHERE name LIKE ? AND deleted_at IS NULL LIMIT 1").get(`%${dishName}%`);
     if (dish) { dishId = dish.id; dishName = dish.name; }
   }
   if (dishId && !dishName) {
-    const dish = db.prepare('SELECT name FROM dishes WHERE id = ? AND deleted_at IS NULL').get(dishId);
+    const dish = await db.prepare('SELECT name FROM dishes WHERE id = ? AND deleted_at IS NULL').get(dishId);
     if (dish) dishName = dish.name;
   }
   if (!dishId) return null;
   return { dishId, dishName };
 }
 
-function resolveMenu(db, input) {
+async function resolveMenu(db, input) {
   let menuId = input.menu_id;
   let menuName = input.menu_name;
   if (!menuId && menuName) {
-    const menu = db.prepare("SELECT id, name FROM menus WHERE name LIKE ? AND deleted_at IS NULL LIMIT 1").get(`%${menuName}%`);
+    const menu = await db.prepare("SELECT id, name FROM menus WHERE name LIKE ? AND deleted_at IS NULL LIMIT 1").get(`%${menuName}%`);
     if (menu) { menuId = menu.id; menuName = menu.name; }
   }
   if (menuId && !menuName) {
-    const menu = db.prepare('SELECT name FROM menus WHERE id = ? AND deleted_at IS NULL').get(menuId);
+    const menu = await db.prepare('SELECT name FROM menus WHERE id = ? AND deleted_at IS NULL').get(menuId);
     if (menu) menuName = menu.name;
   }
   if (!menuId) return null;
   return { menuId, menuName };
 }
 
-function resolveIngredient(db, input) {
+async function resolveIngredient(db, input) {
   let ingredientId = input.ingredient_id;
   let ingredientName = input.ingredient_name;
   if (!ingredientId && ingredientName) {
-    const ing = db.prepare("SELECT id, name FROM ingredients WHERE name LIKE ? LIMIT 1").get(`%${ingredientName}%`);
+    const ing = await db.prepare("SELECT id, name FROM ingredients WHERE name LIKE ? LIMIT 1").get(`%${ingredientName}%`);
     if (ing) { ingredientId = ing.id; ingredientName = ing.name; }
   }
   if (ingredientId && !ingredientName) {
-    const ing = db.prepare('SELECT name FROM ingredients WHERE id = ?').get(ingredientId);
+    const ing = await db.prepare('SELECT name FROM ingredients WHERE id = ?').get(ingredientId);
     if (ing) ingredientName = ing.name;
   }
   if (!ingredientId) return null;
@@ -3341,12 +3340,12 @@ function getWeekEnd(weekStart) {
  * @param {Object} input - tool input parameters
  * @param {Object} opts - { preview: bool, pageContext?, broadcast? }
  */
-function executeToolHandler(toolName, input, opts) {
+async function executeToolHandler(toolName, input, opts) {
   const handler = handlers[toolName];
   if (!handler) {
     return { description: `Unknown tool: ${toolName}`, message: `I don't know how to do that yet.` };
   }
-  return handler(input, opts || {});
+  return await handler(input, opts || {});
 }
 
 module.exports = {

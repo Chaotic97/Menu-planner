@@ -39,51 +39,6 @@ beforeAll(async () => {
   broadcasts = ctx.broadcasts;
   cleanup = ctx.cleanup;
 
-  // Create ai_history and ai_usage tables (in case test app doesn't have them yet)
-  try {
-    db.exec(`CREATE TABLE IF NOT EXISTS ai_history (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      entity_type TEXT NOT NULL,
-      entity_id INTEGER NOT NULL,
-      action_type TEXT NOT NULL,
-      previous_data TEXT,
-      created_at TEXT DEFAULT (datetime('now'))
-    )`);
-  } catch {}
-  try {
-    db.exec(`CREATE TABLE IF NOT EXISTS ai_usage (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      tokens_in INTEGER NOT NULL DEFAULT 0,
-      tokens_out INTEGER NOT NULL DEFAULT 0,
-      model TEXT NOT NULL,
-      tool_used TEXT,
-      created_at TEXT DEFAULT (datetime('now'))
-    )`);
-  } catch {}
-  try {
-    db.exec('CREATE INDEX IF NOT EXISTS idx_ai_usage_created_at ON ai_usage(created_at)');
-  } catch {}
-  try {
-    db.exec(`CREATE TABLE IF NOT EXISTS ai_conversations (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      title TEXT DEFAULT '',
-      created_at TEXT DEFAULT (datetime('now')),
-      updated_at TEXT DEFAULT (datetime('now'))
-    )`);
-  } catch {}
-  try {
-    db.exec(`CREATE TABLE IF NOT EXISTS ai_messages (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      conversation_id INTEGER NOT NULL REFERENCES ai_conversations(id) ON DELETE CASCADE,
-      role TEXT NOT NULL,
-      content TEXT NOT NULL,
-      created_at TEXT DEFAULT (datetime('now'))
-    )`);
-  } catch {}
-  try {
-    db.exec('CREATE INDEX IF NOT EXISTS idx_ai_messages_conversation_id ON ai_messages(conversation_id)');
-  } catch {}
-
   // Mount AI routes on the test app (before the error handler)
   const aiRoutes = require('../../routes/ai');
   app.use('/api/ai', aiRoutes);
@@ -96,7 +51,7 @@ beforeAll(async () => {
   agent = await loginAgent(app);
 });
 
-afterAll(() => cleanup());
+afterAll(async () => await cleanup());
 
 beforeEach(() => {
   broadcasts.length = 0;
@@ -105,32 +60,32 @@ beforeEach(() => {
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
-function setApiKey(key = 'sk-ant-test-key-12345') {
-  const existing = db.prepare('SELECT 1 FROM settings WHERE key = ?').get('ai_api_key');
+async function setApiKey(key = 'sk-ant-test-key-12345') {
+  const existing = await db.prepare('SELECT 1 FROM settings WHERE key = ?').get('ai_api_key');
   if (existing) {
-    db.prepare('UPDATE settings SET value = ? WHERE key = ?').run(key, 'ai_api_key');
+    await db.prepare('UPDATE settings SET value = ? WHERE key = ?').run(key, 'ai_api_key');
   } else {
-    db.prepare('INSERT INTO settings (key, value) VALUES (?, ?)').run('ai_api_key', key);
+    await db.prepare('INSERT INTO settings (key, value) VALUES (?, ?)').run('ai_api_key', key);
   }
 }
 
-function clearApiKey() {
-  db.prepare("DELETE FROM settings WHERE key = 'ai_api_key'").run();
+async function clearApiKey() {
+  await db.prepare("DELETE FROM settings WHERE key = 'ai_api_key'").run();
 }
 
-function createTestDish(name = 'Test Dish') {
-  const result = db.prepare('INSERT INTO dishes (name, description, category) VALUES (?, ?, ?)').run(name, 'A test dish', 'main');
+async function createTestDish(name = 'Test Dish') {
+  const result = await db.prepare('INSERT INTO dishes (name, description, category) VALUES (?, ?, ?)').run(name, 'A test dish', 'main');
   return result.lastInsertRowid;
 }
 
-function createTestMenu(name = 'Test Menu') {
-  const result = db.prepare('INSERT INTO menus (name, description) VALUES (?, ?)').run(name, 'A test menu');
+async function createTestMenu(name = 'Test Menu') {
+  const result = await db.prepare('INSERT INTO menus (name, description) VALUES (?, ?)').run(name, 'A test menu');
   return result.lastInsertRowid;
 }
 
-function addDirections(dishId, steps) {
+async function addDirections(dishId, steps) {
   for (let i = 0; i < steps.length; i++) {
-    db.prepare('INSERT INTO dish_directions (dish_id, type, text, sort_order) VALUES (?, ?, ?, ?)').run(
+    await db.prepare('INSERT INTO dish_directions (dish_id, type, text, sort_order) VALUES (?, ?, ?, ?)').run(
       dishId, steps[i].type || 'step', steps[i].text, i
     );
   }
@@ -148,7 +103,7 @@ function mockFollowUpText(text = 'Done.') {
 
 describe('GET /api/ai/settings', () => {
   test('returns default settings when no API key is configured', async () => {
-    clearApiKey();
+    await clearApiKey();
     const res = await agent.get('/api/ai/settings').expect(200);
 
     expect(res.body.hasApiKey).toBe(false);
@@ -159,7 +114,7 @@ describe('GET /api/ai/settings', () => {
   });
 
   test('returns masked API key when configured', async () => {
-    setApiKey('sk-ant-api03-very-long-key-here-1234');
+    await setApiKey('sk-ant-api03-very-long-key-here-1234');
     const res = await agent.get('/api/ai/settings').expect(200);
 
     expect(res.body.hasApiKey).toBe(true);
@@ -194,7 +149,7 @@ describe('POST /api/ai/settings', () => {
   });
 
   test('clears API key when empty string is sent', async () => {
-    setApiKey();
+    await setApiKey();
     const res = await agent
       .post('/api/ai/settings')
       .send({ apiKey: '' })
@@ -257,7 +212,7 @@ describe('GET /api/ai/usage', () => {
 
 describe('POST /api/ai/command', () => {
   test('returns needsSetup when no API key', async () => {
-    clearApiKey();
+    await clearApiKey();
     const res = await agent
       .post('/api/ai/command')
       .send({ message: 'hello', context: { page: '#/dishes' } })
@@ -268,7 +223,7 @@ describe('POST /api/ai/command', () => {
   });
 
   test('rejects empty message', async () => {
-    setApiKey();
+    await setApiKey();
     const res = await agent
       .post('/api/ai/command')
       .send({ message: '', context: { page: '#/dishes' } })
@@ -278,7 +233,7 @@ describe('POST /api/ai/command', () => {
   });
 
   test('rejects missing message', async () => {
-    setApiKey();
+    await setApiKey();
     const res = await agent
       .post('/api/ai/command')
       .send({ context: { page: '#/dishes' } })
@@ -288,7 +243,7 @@ describe('POST /api/ai/command', () => {
   });
 
   test('returns text response for non-tool AI reply', async () => {
-    setApiKey();
+    await setApiKey();
     mockMessagesCreate.mockResolvedValueOnce({
       content: [{ type: 'text', text: 'Hello! How can I help?' }],
       usage: { input_tokens: 50, output_tokens: 20 },
@@ -304,7 +259,7 @@ describe('POST /api/ai/command', () => {
   });
 
   test('returns confirmation for tool call', async () => {
-    setApiKey();
+    await setApiKey();
     mockMessagesCreate.mockResolvedValueOnce({
       content: [
         { type: 'text', text: 'I\'ll create that menu for you.' },
@@ -324,15 +279,15 @@ describe('POST /api/ai/command', () => {
   });
 
   test('returns rate limited response when daily limit exceeded', async () => {
-    setApiKey();
+    await setApiKey();
 
     // Set a very low daily limit
-    db.prepare("DELETE FROM settings WHERE key = 'ai_daily_limit'").run();
-    db.prepare("INSERT INTO settings (key, value) VALUES ('ai_daily_limit', '1')").run();
+    await db.prepare("DELETE FROM settings WHERE key = 'ai_daily_limit'").run();
+    await db.prepare("INSERT INTO settings (key, value) VALUES ('ai_daily_limit', '1')").run();
 
     // Insert a usage record for today
-    db.prepare(
-      "INSERT INTO ai_usage (tokens_in, tokens_out, model, created_at) VALUES (100, 50, 'claude-haiku-4-5-20251001', datetime('now'))"
+    await db.prepare(
+      "INSERT INTO ai_usage (tokens_in, tokens_out, model, created_at) VALUES (100, 50, 'claude-haiku-4-5-20251001', NOW())"
     ).run();
 
     const res = await agent
@@ -343,7 +298,7 @@ describe('POST /api/ai/command', () => {
     expect(res.body.rateLimited).toBe(true);
 
     // Cleanup
-    db.prepare("DELETE FROM settings WHERE key = 'ai_daily_limit'").run();
+    await db.prepare("DELETE FROM settings WHERE key = 'ai_daily_limit'").run();
   });
 });
 
@@ -359,7 +314,7 @@ describe('POST /api/ai/confirm/:id', () => {
   });
 
   test('executes create_menu tool on confirm', async () => {
-    setApiKey();
+    await setApiKey();
     mockMessagesCreate.mockResolvedValueOnce({
       content: [
         { type: 'tool_use', id: 'call_2', name: 'create_menu', input: { name: 'Saturday Brunch' } },
@@ -388,7 +343,7 @@ describe('POST /api/ai/confirm/:id', () => {
     expect(confirmRes.body.undoId).toBeDefined();
 
     // Verify menu was created in DB
-    const menu = db.prepare('SELECT * FROM menus WHERE id = ?').get(confirmRes.body.entityId);
+    const menu = await db.prepare('SELECT * FROM menus WHERE id = ?').get(confirmRes.body.entityId);
     expect(menu).toBeDefined();
     expect(menu.name).toBe('Saturday Brunch');
 
@@ -397,7 +352,7 @@ describe('POST /api/ai/confirm/:id', () => {
   });
 
   test('executes create_dish tool on confirm', async () => {
-    setApiKey();
+    await setApiKey();
     mockMessagesCreate.mockResolvedValueOnce({
       content: [
         { type: 'tool_use', id: 'call_3', name: 'create_dish', input: { name: 'Grilled Salmon', category: 'main' } },
@@ -415,13 +370,13 @@ describe('POST /api/ai/confirm/:id', () => {
       .expect(200);
 
     expect(confirmRes.body.success).toBe(true);
-    const dish = db.prepare('SELECT * FROM dishes WHERE id = ?').get(confirmRes.body.entityId);
+    const dish = await db.prepare('SELECT * FROM dishes WHERE id = ?').get(confirmRes.body.entityId);
     expect(dish.name).toBe('Grilled Salmon');
     expect(dish.category).toBe('main');
   });
 
   test('executes create_task tool (auto-approved)', async () => {
-    setApiKey();
+    await setApiKey();
     mockMessagesCreate.mockResolvedValueOnce({
       content: [
         { type: 'tool_use', id: 'call_4', name: 'create_task', input: { title: 'Call fish supplier', priority: 'high' } },
@@ -439,13 +394,13 @@ describe('POST /api/ai/confirm/:id', () => {
     expect(res.body.response).toContain('Call fish supplier');
 
     // Task was created in DB
-    const tasks = db.prepare("SELECT * FROM tasks WHERE title = 'Call fish supplier'").all();
+    const tasks = await db.prepare("SELECT * FROM tasks WHERE title = 'Call fish supplier'").all();
     expect(tasks.length).toBeGreaterThan(0);
     expect(tasks[0].priority).toBe('high');
   });
 
   test('executes add_service_note tool (auto-approved)', async () => {
-    setApiKey();
+    await setApiKey();
     mockMessagesCreate.mockResolvedValueOnce({
       content: [
         {
@@ -464,13 +419,13 @@ describe('POST /api/ai/confirm/:id', () => {
 
     expect(res.body.autoExecuted).toBe(true);
 
-    const notes = db.prepare("SELECT * FROM service_notes WHERE title = 'VIP table tonight'").all();
+    const notes = await db.prepare("SELECT * FROM service_notes WHERE title = 'VIP table tonight'").all();
     expect(notes.length).toBeGreaterThan(0);
     expect(notes[0].shift).toBe('pm');
   });
 
   test('confirmation ID cannot be reused', async () => {
-    setApiKey();
+    await setApiKey();
     mockMessagesCreate.mockResolvedValueOnce({
       content: [
         { type: 'tool_use', id: 'call_6', name: 'create_menu', input: { name: 'Reuse Test' } },
@@ -505,7 +460,7 @@ describe('POST /api/ai/undo/:id', () => {
   });
 
   test('undoes a menu creation (soft-deletes it)', async () => {
-    setApiKey();
+    await setApiKey();
     mockMessagesCreate.mockResolvedValueOnce({
       content: [
         { type: 'tool_use', id: 'call_7', name: 'create_menu', input: { name: 'Undo Test Menu' } },
@@ -526,7 +481,7 @@ describe('POST /api/ai/undo/:id', () => {
     const undoId = confirmRes.body.undoId;
 
     // Menu exists
-    let menu = db.prepare('SELECT * FROM menus WHERE id = ? AND deleted_at IS NULL').get(menuId);
+    let menu = await db.prepare('SELECT * FROM menus WHERE id = ? AND deleted_at IS NULL').get(menuId);
     expect(menu).toBeDefined();
 
     // Undo
@@ -538,7 +493,7 @@ describe('POST /api/ai/undo/:id', () => {
     expect(undoRes.body.success).toBe(true);
 
     // Menu is now soft-deleted
-    menu = db.prepare('SELECT * FROM menus WHERE id = ? AND deleted_at IS NULL').get(menuId);
+    menu = await db.prepare('SELECT * FROM menus WHERE id = ? AND deleted_at IS NULL').get(menuId);
     expect(menu).toBeUndefined();
 
     // Broadcast fired
@@ -546,7 +501,7 @@ describe('POST /api/ai/undo/:id', () => {
   });
 
   test('undoes a dish creation', async () => {
-    setApiKey();
+    await setApiKey();
     mockMessagesCreate.mockResolvedValueOnce({
       content: [
         { type: 'tool_use', id: 'call_8', name: 'create_dish', input: { name: 'Undo Dish' } },
@@ -567,12 +522,12 @@ describe('POST /api/ai/undo/:id', () => {
 
     await agent.post(`/api/ai/undo/${confirmRes.body.undoId}`).expect(200);
 
-    const dish = db.prepare('SELECT * FROM dishes WHERE id = ? AND deleted_at IS NULL').get(dishId);
+    const dish = await db.prepare('SELECT * FROM dishes WHERE id = ? AND deleted_at IS NULL').get(dishId);
     expect(dish).toBeUndefined();
   });
 
   test('undoes a task creation (hard-deletes it)', async () => {
-    setApiKey();
+    await setApiKey();
     mockMessagesCreate.mockResolvedValueOnce({
       content: [
         { type: 'tool_use', id: 'call_9', name: 'create_task', input: { title: 'Undo Task' } },
@@ -592,13 +547,13 @@ describe('POST /api/ai/undo/:id', () => {
     expect(undoId).toBeDefined();
 
     // Find the task
-    const tasks = db.prepare("SELECT * FROM tasks WHERE title = 'Undo Task'").all();
+    const tasks = await db.prepare("SELECT * FROM tasks WHERE title = 'Undo Task'").all();
     expect(tasks.length).toBeGreaterThan(0);
     const taskId = tasks[0].id;
 
     await agent.post(`/api/ai/undo/${undoId}`).expect(200);
 
-    const task = db.prepare('SELECT * FROM tasks WHERE id = ?').get(taskId);
+    const task = await db.prepare('SELECT * FROM tasks WHERE id = ?').get(taskId);
     expect(task).toBeUndefined();
   });
 });
@@ -607,30 +562,30 @@ describe('POST /api/ai/undo/:id', () => {
 
 describe('POST /api/ai/cleanup-recipe/:dishId', () => {
   test('returns 400 for invalid dish ID', async () => {
-    setApiKey();
+    await setApiKey();
     await agent.post('/api/ai/cleanup-recipe/abc').expect(400);
   });
 
   test('returns 400 when no API key', async () => {
-    clearApiKey();
+    await clearApiKey();
     await agent.post('/api/ai/cleanup-recipe/1').expect(400);
   });
 
   test('returns 404 for nonexistent dish', async () => {
-    setApiKey();
+    await setApiKey();
     await agent.post('/api/ai/cleanup-recipe/99999').expect(404);
   });
 
   test('returns 400 when dish has no directions', async () => {
-    setApiKey();
-    const dishId = createTestDish('No Directions Dish');
+    await setApiKey();
+    const dishId = await createTestDish('No Directions Dish');
     await agent.post(`/api/ai/cleanup-recipe/${dishId}`).expect(400);
   });
 
   test('returns before/after diff and confirmationId', async () => {
-    setApiKey();
-    const dishId = createTestDish('Cleanup Test Dish');
-    addDirections(dishId, [
+    await setApiKey();
+    const dishId = await createTestDish('Cleanup Test Dish');
+    await addDirections(dishId, [
       { type: 'step', text: 'chop the onions real fine' },
       { type: 'step', text: 'put in pan with oil' },
     ]);
@@ -659,7 +614,7 @@ describe('POST /api/ai/cleanup-recipe/:dishId', () => {
 
 describe('POST /api/ai/match-ingredients', () => {
   test('returns 400 for empty ingredients array', async () => {
-    setApiKey();
+    await setApiKey();
     await agent
       .post('/api/ai/match-ingredients')
       .send({ ingredients: [] })
@@ -667,7 +622,7 @@ describe('POST /api/ai/match-ingredients', () => {
   });
 
   test('returns 400 for missing ingredients', async () => {
-    setApiKey();
+    await setApiKey();
     await agent
       .post('/api/ai/match-ingredients')
       .send({})
@@ -675,7 +630,7 @@ describe('POST /api/ai/match-ingredients', () => {
   });
 
   test('returns 400 when no API key', async () => {
-    clearApiKey();
+    await clearApiKey();
     await agent
       .post('/api/ai/match-ingredients')
       .send({ ingredients: [{ name: 'butter' }] })
@@ -683,10 +638,10 @@ describe('POST /api/ai/match-ingredients', () => {
   });
 
   test('returns matches from AI', async () => {
-    setApiKey();
+    await setApiKey();
 
     // Create an ingredient in DB to match against
-    db.prepare('INSERT OR IGNORE INTO ingredients (name, unit_cost, base_unit) VALUES (?, ?, ?)').run('Butter', 0.5, 'kg');
+    await db.prepare('INSERT INTO ingredients (name, unit_cost, base_unit) VALUES (?, ?, ?) ON CONFLICT (name) DO NOTHING').run('Butter', 0.5, 'kg');
 
     mockMessagesCreate.mockResolvedValueOnce({
       content: [{ type: 'text', text: JSON.stringify([
@@ -710,8 +665,8 @@ describe('POST /api/ai/match-ingredients', () => {
 
 describe('search_dishes tool (via command)', () => {
   test('returns matching dishes (auto-executed)', async () => {
-    setApiKey();
-    createTestDish('Pasta Carbonara');
+    await setApiKey();
+    await createTestDish('Pasta Carbonara');
 
     mockMessagesCreate.mockResolvedValueOnce({
       content: [
@@ -735,9 +690,9 @@ describe('search_dishes tool (via command)', () => {
 
 describe('add_dish_to_menu tool (via command + confirm)', () => {
   test('adds a dish to a menu with fuzzy matching', async () => {
-    setApiKey();
-    const dishId = createTestDish('Truffle Risotto');
-    const menuId = createTestMenu('Evening Service');
+    await setApiKey();
+    const dishId = await createTestDish('Truffle Risotto');
+    const menuId = await createTestMenu('Evening Service');
 
     mockMessagesCreate.mockResolvedValueOnce({
       content: [
@@ -766,7 +721,7 @@ describe('add_dish_to_menu tool (via command + confirm)', () => {
     expect(confirmRes.body.success).toBe(true);
 
     // Verify in DB
-    const link = db.prepare('SELECT * FROM menu_dishes WHERE menu_id = ? AND dish_id = ?').get(menuId, dishId);
+    const link = await db.prepare('SELECT * FROM menu_dishes WHERE menu_id = ? AND dish_id = ?').get(menuId, dishId);
     expect(link).toBeDefined();
     expect(link.servings).toBe(2);
   });
@@ -776,8 +731,8 @@ describe('add_dish_to_menu tool (via command + confirm)', () => {
 
 describe('auto-approved read-only tools (via command)', () => {
   test('lookup_dish returns dish details without confirmation', async () => {
-    setApiKey();
-    const dishId = createTestDish('Lookup Test Dish');
+    await setApiKey();
+    const dishId = await createTestDish('Lookup Test Dish');
 
     mockMessagesCreate.mockResolvedValueOnce({
       content: [
@@ -797,8 +752,8 @@ describe('auto-approved read-only tools (via command)', () => {
   });
 
   test('lookup_menu returns menu details without confirmation', async () => {
-    setApiKey();
-    const menuId = createTestMenu('Lookup Test Menu');
+    await setApiKey();
+    const menuId = await createTestMenu('Lookup Test Menu');
 
     mockMessagesCreate.mockResolvedValueOnce({
       content: [
@@ -818,8 +773,8 @@ describe('auto-approved read-only tools (via command)', () => {
   });
 
   test('search_ingredients returns matches without confirmation', async () => {
-    setApiKey();
-    db.prepare('INSERT OR IGNORE INTO ingredients (name, unit_cost, base_unit) VALUES (?, ?, ?)').run('Olive Oil', 1.50, 'L');
+    await setApiKey();
+    await db.prepare('INSERT INTO ingredients (name, unit_cost, base_unit) VALUES (?, ?, ?) ON CONFLICT (name) DO NOTHING').run('Olive Oil', 1.50, 'L');
 
     mockMessagesCreate.mockResolvedValueOnce({
       content: [
@@ -839,8 +794,8 @@ describe('auto-approved read-only tools (via command)', () => {
   });
 
   test('search_tasks returns matches without confirmation', async () => {
-    setApiKey();
-    db.prepare('INSERT INTO tasks (title, type, priority, source) VALUES (?, ?, ?, ?)').run('Prep garlic', 'prep', 'medium', 'manual');
+    await setApiKey();
+    await db.prepare('INSERT INTO tasks (title, type, priority, source) VALUES (?, ?, ?, ?)').run('Prep garlic', 'prep', 'medium', 'manual');
 
     mockMessagesCreate.mockResolvedValueOnce({
       content: [
@@ -860,7 +815,7 @@ describe('auto-approved read-only tools (via command)', () => {
   });
 
   test('get_system_summary returns stats without confirmation', async () => {
-    setApiKey();
+    await setApiKey();
     mockMessagesCreate.mockResolvedValueOnce({
       content: [
         { type: 'tool_use', id: 'call_24', name: 'get_system_summary', input: {} },
@@ -879,13 +834,13 @@ describe('auto-approved read-only tools (via command)', () => {
   });
 
   test('get_shopping_list returns list without confirmation', async () => {
-    setApiKey();
-    const menuId = createTestMenu('Shopping List Menu');
-    const dishId = createTestDish('SL Test Dish');
-    db.prepare('INSERT OR IGNORE INTO ingredients (name, unit_cost, base_unit) VALUES (?, ?, ?)').run('Flour', 0.80, 'kg');
-    const ing = db.prepare("SELECT id FROM ingredients WHERE name = 'Flour'").get();
-    db.prepare('INSERT INTO dish_ingredients (dish_id, ingredient_id, quantity, unit, sort_order) VALUES (?, ?, ?, ?, ?)').run(dishId, ing.id, 2, 'kg', 0);
-    db.prepare('INSERT INTO menu_dishes (menu_id, dish_id, servings, sort_order) VALUES (?, ?, ?, ?)').run(menuId, dishId, 1, 0);
+    await setApiKey();
+    const menuId = await createTestMenu('Shopping List Menu');
+    const dishId = await createTestDish('SL Test Dish');
+    await db.prepare('INSERT INTO ingredients (name, unit_cost, base_unit) VALUES (?, ?, ?) ON CONFLICT (name) DO NOTHING').run('Flour', 0.80, 'kg');
+    const ing = await db.prepare("SELECT id FROM ingredients WHERE name = 'Flour'").get();
+    await db.prepare('INSERT INTO dish_ingredients (dish_id, ingredient_id, quantity, unit, sort_order) VALUES (?, ?, ?, ?, ?)').run(dishId, ing.id, 2, 'kg', 0);
+    await db.prepare('INSERT INTO menu_dishes (menu_id, dish_id, servings, sort_order) VALUES (?, ?, ?, ?)').run(menuId, dishId, 1, 0);
 
     mockMessagesCreate.mockResolvedValueOnce({
       content: [
@@ -905,9 +860,9 @@ describe('auto-approved read-only tools (via command)', () => {
   });
 
   test('search_service_notes returns notes without confirmation', async () => {
-    setApiKey();
+    await setApiKey();
     const today = new Date().toISOString().slice(0, 10);
-    db.prepare('INSERT INTO service_notes (date, shift, title, content) VALUES (?, ?, ?, ?)').run(today, 'am', 'AM briefing', 'Staff meeting at 8am');
+    await db.prepare('INSERT INTO service_notes (date, shift, title, content) VALUES (?, ?, ?, ?)').run(today, 'am', 'AM briefing', 'Staff meeting at 8am');
 
     mockMessagesCreate.mockResolvedValueOnce({
       content: [
@@ -931,7 +886,7 @@ describe('auto-approved read-only tools (via command)', () => {
 
 describe('non-auto-approved tools require confirmation', () => {
   test('create_menu requires confirmation', async () => {
-    setApiKey();
+    await setApiKey();
     mockMessagesCreate.mockResolvedValueOnce({
       content: [
         { type: 'tool_use', id: 'call_30', name: 'create_menu', input: { name: 'Confirm Test' } },
@@ -949,7 +904,7 @@ describe('non-auto-approved tools require confirmation', () => {
   });
 
   test('create_dish requires confirmation', async () => {
-    setApiKey();
+    await setApiKey();
     mockMessagesCreate.mockResolvedValueOnce({
       content: [
         { type: 'tool_use', id: 'call_31', name: 'create_dish', input: { name: 'Confirm Dish', category: 'starter' } },
@@ -971,10 +926,10 @@ describe('non-auto-approved tools require confirmation', () => {
 
 describe('multi-step tool chaining', () => {
   test('chains two auto-approved tools and returns final answer', async () => {
-    setApiKey();
-    const menuId = createTestMenu('Chain Test Menu');
-    const dishId = createTestDish('Chain Test Dish');
-    db.prepare('INSERT INTO menu_dishes (menu_id, dish_id, servings, sort_order) VALUES (?, ?, ?, ?)').run(menuId, dishId, 1, 0);
+    await setApiKey();
+    const menuId = await createTestMenu('Chain Test Menu');
+    const dishId = await createTestDish('Chain Test Dish');
+    await db.prepare('INSERT INTO menu_dishes (menu_id, dish_id, servings, sort_order) VALUES (?, ?, ?, ?)').run(menuId, dishId, 1, 0);
 
     // Round 1: Haiku calls lookup_menu
     mockMessagesCreate.mockResolvedValueOnce({
@@ -1005,7 +960,7 @@ describe('multi-step tool chaining', () => {
   });
 
   test('stops chaining when non-auto-approved tool is called (needs confirmation)', async () => {
-    setApiKey();
+    await setApiKey();
 
     // Round 1: Haiku calls search_dishes (auto-approved) — executed immediately
     mockMessagesCreate.mockResolvedValueOnce({
@@ -1156,28 +1111,28 @@ describe('chat conversations CRUD', () => {
 
 describe('POST /api/ai/generate-tasks/:menuId', () => {
   test('returns 400 when no API key', async () => {
-    clearApiKey();
-    const menuId = createTestMenu('No Key Menu');
+    await clearApiKey();
+    const menuId = await createTestMenu('No Key Menu');
     await agent.post(`/api/ai/generate-tasks/${menuId}`).expect(400);
   });
 
   test('returns 404 for non-existent menu', async () => {
-    setApiKey();
+    await setApiKey();
     await agent.post('/api/ai/generate-tasks/99999').expect(404);
   });
 
   test('returns 400 for empty menu', async () => {
-    setApiKey();
-    const menuId = createTestMenu('Empty AI Menu');
+    await setApiKey();
+    const menuId = await createTestMenu('Empty AI Menu');
     await agent.post(`/api/ai/generate-tasks/${menuId}`).expect(400);
   });
 
   test('generates AI-powered tasks from a menu', async () => {
-    setApiKey();
-    const menuId = createTestMenu('AI Task Menu');
-    const dishId = createTestDish('Beurre Blanc Fish');
-    db.prepare('INSERT INTO menu_dishes (menu_id, dish_id, servings, sort_order) VALUES (?, ?, ?, ?)').run(menuId, dishId, 2, 0);
-    addDirections(dishId, [
+    await setApiKey();
+    const menuId = await createTestMenu('AI Task Menu');
+    const dishId = await createTestDish('Beurre Blanc Fish');
+    await db.prepare('INSERT INTO menu_dishes (menu_id, dish_id, servings, sort_order) VALUES (?, ?, ?, ?)').run(menuId, dishId, 2, 0);
+    await addDirections(dishId, [
       { type: 'step', text: 'Make beurre blanc sauce' },
       { type: 'step', text: 'Season and portion fish' },
     ]);
@@ -1201,7 +1156,7 @@ describe('POST /api/ai/generate-tasks/:menuId', () => {
     expect(res.body.total).toBe(2);
 
     // Verify tasks in DB
-    const tasks = db.prepare('SELECT * FROM tasks WHERE menu_id = ? ORDER BY sort_order').all(menuId);
+    const tasks = await db.prepare('SELECT * FROM tasks WHERE menu_id = ? ORDER BY sort_order').all(menuId);
     expect(tasks).toHaveLength(2);
     expect(tasks[0].title).toBe('Make beurre blanc (2L)');
     expect(tasks[0].source).toBe('auto');
@@ -1211,15 +1166,15 @@ describe('POST /api/ai/generate-tasks/:menuId', () => {
   });
 
   test('replaces auto tasks but preserves manual tasks', async () => {
-    setApiKey();
-    const menuId = createTestMenu('Replace Test Menu');
-    const dishId = createTestDish('Replace Dish');
-    db.prepare('INSERT INTO menu_dishes (menu_id, dish_id, servings, sort_order) VALUES (?, ?, ?, ?)').run(menuId, dishId, 1, 0);
+    await setApiKey();
+    const menuId = await createTestMenu('Replace Test Menu');
+    const dishId = await createTestDish('Replace Dish');
+    await db.prepare('INSERT INTO menu_dishes (menu_id, dish_id, servings, sort_order) VALUES (?, ?, ?, ?)').run(menuId, dishId, 1, 0);
 
     // Create a manual task
-    db.prepare("INSERT INTO tasks (menu_id, title, type, priority, source) VALUES (?, ?, ?, ?, 'manual')").run(menuId, 'Custom task', 'custom', 'medium');
+    await db.prepare("INSERT INTO tasks (menu_id, title, type, priority, source) VALUES (?, ?, ?, ?, 'manual')").run(menuId, 'Custom task', 'custom', 'medium');
     // Create an auto task that should be replaced
-    db.prepare("INSERT INTO tasks (menu_id, title, type, priority, source) VALUES (?, ?, ?, ?, 'auto')").run(menuId, 'Old auto task', 'prep', 'medium');
+    await db.prepare("INSERT INTO tasks (menu_id, title, type, priority, source) VALUES (?, ?, ?, ?, 'auto')").run(menuId, 'Old auto task', 'prep', 'medium');
 
     mockMessagesCreate.mockResolvedValueOnce({
       content: [{
@@ -1233,17 +1188,17 @@ describe('POST /api/ai/generate-tasks/:menuId', () => {
 
     await agent.post(`/api/ai/generate-tasks/${menuId}`).expect(201);
 
-    const tasks = db.prepare('SELECT * FROM tasks WHERE menu_id = ?').all(menuId);
+    const tasks = await db.prepare('SELECT * FROM tasks WHERE menu_id = ?').all(menuId);
     expect(tasks.find(t => t.title === 'Custom task')).toBeDefined();
     expect(tasks.find(t => t.title === 'Old auto task')).toBeUndefined();
     expect(tasks.find(t => t.title === 'New AI task')).toBeDefined();
   });
 
   test('broadcasts tasks_generated event', async () => {
-    setApiKey();
-    const menuId = createTestMenu('Broadcast Test Menu');
-    const dishId = createTestDish('Broadcast Dish');
-    db.prepare('INSERT INTO menu_dishes (menu_id, dish_id, servings, sort_order) VALUES (?, ?, ?, ?)').run(menuId, dishId, 1, 0);
+    await setApiKey();
+    const menuId = await createTestMenu('Broadcast Test Menu');
+    const dishId = await createTestDish('Broadcast Dish');
+    await db.prepare('INSERT INTO menu_dishes (menu_id, dish_id, servings, sort_order) VALUES (?, ?, ?, ?)').run(menuId, dishId, 1, 0);
 
     mockMessagesCreate.mockResolvedValueOnce({
       content: [{

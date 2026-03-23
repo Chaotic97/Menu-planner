@@ -31,7 +31,7 @@ router.post('/upload', uploadRateLimit, upload.single('photo'), asyncHandler(asy
     return res.status(400).json({ error: 'No photo uploaded' });
   }
 
-  const db = getDb();
+  const db = await getDb();
   const sheetDate = req.body.date || new Date().toISOString().slice(0, 10);
 
   // Process and save photo
@@ -39,7 +39,7 @@ router.post('/upload', uploadRateLimit, upload.single('photo'), asyncHandler(asy
   const photoPath = `/uploads/${filename}`;
 
   // Create chefsheet record
-  const result = db.prepare(
+  const result = await db.prepare(
     'INSERT INTO chefsheets (photo_path, sheet_date, status) VALUES (?, ?, ?)'
   ).run(photoPath, sheetDate, 'pending');
   const chefsheetId = result.lastInsertRowid;
@@ -49,26 +49,26 @@ router.post('/upload', uploadRateLimit, upload.single('photo'), asyncHandler(asy
     const parseResult = await parseSheet(filename);
 
     // Update record with parse results
-    db.prepare(
+    await db.prepare(
       'UPDATE chefsheets SET status = ?, raw_parse = ?, model = ?, tokens_in = ?, tokens_out = ? WHERE id = ?'
     ).run('parsed', JSON.stringify(parseResult.actions), parseResult.model, parseResult.tokensIn, parseResult.tokensOut, chefsheetId);
 
-    const chefsheet = db.prepare('SELECT * FROM chefsheets WHERE id = ?').get(chefsheetId);
+    const chefsheet = await db.prepare('SELECT * FROM chefsheets WHERE id = ?').get(chefsheetId);
     chefsheet.raw_parse = JSON.parse(chefsheet.raw_parse);
 
     req.broadcast('chefsheet_parsed', chefsheet);
     res.status(201).json(chefsheet);
   } catch (err) {
-    db.prepare('UPDATE chefsheets SET status = ? WHERE id = ?').run('failed', chefsheetId);
+    await db.prepare('UPDATE chefsheets SET status = ? WHERE id = ?').run('failed', chefsheetId);
     console.error('ChefSheet parse error:', err);
     res.status(500).json({ error: err.message || 'Failed to parse ChefSheet' });
   }
 }));
 
 // GET /:id — get chefsheet with parsed/confirmed actions
-router.get('/:id', (req, res) => {
-  const db = getDb();
-  const sheet = db.prepare('SELECT * FROM chefsheets WHERE id = ?').get(req.params.id);
+router.get('/:id', asyncHandler(async (req, res) => {
+  const db = await getDb();
+  const sheet = await db.prepare('SELECT * FROM chefsheets WHERE id = ?').get(req.params.id);
   if (!sheet) return res.status(404).json({ error: 'ChefSheet not found' });
 
   if (sheet.raw_parse) sheet.raw_parse = JSON.parse(sheet.raw_parse);
@@ -76,53 +76,53 @@ router.get('/:id', (req, res) => {
   if (sheet.execution_log) sheet.execution_log = JSON.parse(sheet.execution_log);
 
   res.json(sheet);
-});
+}));
 
 // PUT /:id/actions — save user-edited actions
-router.put('/:id/actions', (req, res) => {
-  const db = getDb();
-  const sheet = db.prepare('SELECT * FROM chefsheets WHERE id = ?').get(req.params.id);
+router.put('/:id/actions', asyncHandler(async (req, res) => {
+  const db = await getDb();
+  const sheet = await db.prepare('SELECT * FROM chefsheets WHERE id = ?').get(req.params.id);
   if (!sheet) return res.status(404).json({ error: 'ChefSheet not found' });
   if (sheet.status !== 'parsed') return res.status(400).json({ error: 'ChefSheet is not in parsed state' });
 
   const { actions } = req.body;
   if (!Array.isArray(actions)) return res.status(400).json({ error: 'actions must be an array' });
 
-  db.prepare('UPDATE chefsheets SET raw_parse = ? WHERE id = ?').run(JSON.stringify(actions), req.params.id);
+  await db.prepare('UPDATE chefsheets SET raw_parse = ? WHERE id = ?').run(JSON.stringify(actions), req.params.id);
   res.json({ ok: true });
-});
+}));
 
 // POST /:id/confirm — execute confirmed actions
-router.post('/:id/confirm', (req, res) => {
-  const db = getDb();
-  const sheet = db.prepare('SELECT * FROM chefsheets WHERE id = ?').get(req.params.id);
+router.post('/:id/confirm', asyncHandler(async (req, res) => {
+  const db = await getDb();
+  const sheet = await db.prepare('SELECT * FROM chefsheets WHERE id = ?').get(req.params.id);
   if (!sheet) return res.status(404).json({ error: 'ChefSheet not found' });
   if (sheet.status !== 'parsed') return res.status(400).json({ error: 'ChefSheet is not in parsed state' });
 
   const actions = JSON.parse(sheet.raw_parse || '[]');
   const broadcastFn = (type, payload) => req.broadcast(type, payload, req.headers['x-client-id']);
-  const { results, summary } = executeActions(sheet.id, actions, broadcastFn);
+  const { results, summary } = await executeActions(sheet.id, actions, broadcastFn);
 
-  db.prepare(
+  await db.prepare(
     'UPDATE chefsheets SET status = ?, confirmed_actions = ?, execution_log = ? WHERE id = ?'
   ).run('confirmed', sheet.raw_parse, JSON.stringify(results), sheet.id);
 
   req.broadcast('chefsheet_confirmed', { id: sheet.id, summary }, req.headers['x-client-id']);
 
   res.json({ results, summary });
-});
+}));
 
 // GET / (history) — list recent chefsheets
-router.get('/', (req, res) => {
-  const db = getDb();
-  const sheets = db.prepare('SELECT id, photo_path, sheet_date, status, tokens_in, tokens_out, created_at FROM chefsheets ORDER BY created_at DESC LIMIT 20').all();
+router.get('/', asyncHandler(async (req, res) => {
+  const db = await getDb();
+  const sheets = await db.prepare('SELECT id, photo_path, sheet_date, status, tokens_in, tokens_out, created_at FROM chefsheets ORDER BY created_at DESC LIMIT 20').all();
   res.json(sheets);
-});
+}));
 
 // DELETE /:id — delete chefsheet + photo file
-router.delete('/:id', (req, res) => {
-  const db = getDb();
-  const sheet = db.prepare('SELECT * FROM chefsheets WHERE id = ?').get(req.params.id);
+router.delete('/:id', asyncHandler(async (req, res) => {
+  const db = await getDb();
+  const sheet = await db.prepare('SELECT * FROM chefsheets WHERE id = ?').get(req.params.id);
   if (!sheet) return res.status(404).json({ error: 'ChefSheet not found' });
 
   // Delete photo file
@@ -131,8 +131,8 @@ router.delete('/:id', (req, res) => {
     try { fs.unlinkSync(filePath); } catch {}
   }
 
-  db.prepare('DELETE FROM chefsheets WHERE id = ?').run(req.params.id);
+  await db.prepare('DELETE FROM chefsheets WHERE id = ?').run(req.params.id);
   res.json({ ok: true });
-});
+}));
 
 module.exports = router;

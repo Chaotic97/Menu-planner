@@ -15,18 +15,18 @@ const UPLOADS_DIR = process.env.UPLOADS_PATH || path.join(__dirname, '..', 'uplo
 /**
  * Get the API key from settings table (shared with aiService)
  */
-function getApiKey() {
-  const db = getDb();
-  const row = db.prepare('SELECT value FROM settings WHERE key = ?').get('ai_api_key');
+async function getApiKey() {
+  const db = await getDb();
+  const row = await db.prepare('SELECT value FROM settings WHERE key = ?').get('ai_api_key');
   return row ? row.value : null;
 }
 
 /**
  * Track usage in the ai_usage table
  */
-function trackUsage(tokensIn, tokensOut) {
-  const db = getDb();
-  db.prepare(
+async function trackUsage(tokensIn, tokensOut) {
+  const db = await getDb();
+  await db.prepare(
     'INSERT INTO ai_usage (tokens_in, tokens_out, model, tool_used) VALUES (?, ?, ?, ?)'
   ).run(tokensIn, tokensOut, MODEL, 'chefsheet_parse');
 }
@@ -49,12 +49,12 @@ async function processPhoto(buffer) {
 /**
  * Build the system prompt with current DB context for fuzzy matching.
  */
-function buildSystemPrompt() {
-  const db = getDb();
+async function buildSystemPrompt() {
+  const db = await getDb();
 
-  const dishes = db.prepare('SELECT name FROM dishes WHERE deleted_at IS NULL AND is_temporary = 0 ORDER BY name').all();
-  const ingredients = db.prepare('SELECT name FROM ingredients ORDER BY name').all();
-  const menus = db.prepare('SELECT id, name FROM menus WHERE deleted_at IS NULL ORDER BY name').all();
+  const dishes = await db.prepare('SELECT name FROM dishes WHERE deleted_at IS NULL AND is_temporary = 0 ORDER BY name').all();
+  const ingredients = await db.prepare('SELECT name FROM ingredients ORDER BY name').all();
+  const menus = await db.prepare('SELECT id, name FROM menus WHERE deleted_at IS NULL ORDER BY name').all();
 
   const dishNames = dishes.map(d => d.name).join(', ');
   const ingredientNames = ingredients.map(i => i.name).join(', ');
@@ -96,7 +96,7 @@ RULES:
  * Returns the parsed actions array.
  */
 async function parseSheet(imagePath) {
-  const apiKey = getApiKey();
+  const apiKey = await getApiKey();
   if (!apiKey) {
     throw new Error('No API key configured. Set up your Anthropic API key in Settings.');
   }
@@ -107,7 +107,7 @@ async function parseSheet(imagePath) {
   const mediaType = 'image/jpeg';
 
   const client = new Anthropic({ apiKey, timeout: 120 * 1000 });
-  const systemPrompt = buildSystemPrompt();
+  const systemPrompt = await buildSystemPrompt();
 
   const response = await client.messages.create({
     model: MODEL,
@@ -179,7 +179,7 @@ async function parseSheet(imagePath) {
 
   const tokensIn = response.usage?.input_tokens || 0;
   const tokensOut = response.usage?.output_tokens || 0;
-  trackUsage(tokensIn, tokensOut);
+  await trackUsage(tokensIn, tokensOut);
 
   // Extract JSON from response
   let parsed;
@@ -206,8 +206,8 @@ async function parseSheet(imagePath) {
  * Execute confirmed actions — creates entities in the database.
  * Returns execution results and summary.
  */
-function executeActions(chefsheetId, actions, broadcastFn) {
-  const db = getDb();
+async function executeActions(chefsheetId, actions, broadcastFn) {
+  const db = await getDb();
   const results = [];
   const summary = { tasks: 0, service_notes: 0, menu_changes: 0, orders: 0, recipe_notes: 0 };
 
@@ -221,10 +221,10 @@ function executeActions(chefsheetId, actions, broadcastFn) {
         const date = action.parsed.date || new Date().toISOString().slice(0, 10);
         const priority = action.parsed.priority || 'medium';
         const timingBucket = action.parsed.timing_bucket || 'during_service';
-        const result = db.prepare(
+        const result = await db.prepare(
           'INSERT INTO tasks (title, type, source, priority, due_date, timing_bucket) VALUES (?, ?, ?, ?, ?, ?)'
         ).run(title, 'custom', 'manual', priority, date, timingBucket);
-        const task = db.prepare('SELECT * FROM tasks WHERE id = ?').get(result.lastInsertRowid);
+        const task = await db.prepare('SELECT * FROM tasks WHERE id = ?').get(result.lastInsertRowid);
         results.push({ type: 'task', id: result.lastInsertRowid, title });
         summary.tasks++;
         if (broadcastFn) broadcastFn('task_created', task);
@@ -237,10 +237,10 @@ function executeActions(chefsheetId, actions, broadcastFn) {
         const shift = action.parsed.shift || 'all';
         const validShifts = ['all', 'am', 'lunch', 'pm', 'prep'];
         const safeShift = validShifts.includes(shift) ? shift : 'all';
-        const result = db.prepare(
+        const result = await db.prepare(
           'INSERT INTO service_notes (title, content, date, shift) VALUES (?, ?, ?, ?)'
         ).run(title, content, date, safeShift);
-        const note = db.prepare('SELECT * FROM service_notes WHERE id = ?').get(result.lastInsertRowid);
+        const note = await db.prepare('SELECT * FROM service_notes WHERE id = ?').get(result.lastInsertRowid);
         results.push({ type: 'service_note', id: result.lastInsertRowid, title: title || content.slice(0, 40) });
         summary.service_notes++;
         if (broadcastFn) broadcastFn('service_note_created', note);
@@ -256,8 +256,8 @@ function executeActions(chefsheetId, actions, broadcastFn) {
           break;
         }
 
-        const menu = db.prepare('SELECT id FROM menus WHERE name LIKE ? AND deleted_at IS NULL').get(`%${menuName}%`);
-        const dish = db.prepare('SELECT id FROM dishes WHERE name LIKE ? AND deleted_at IS NULL').get(`%${dishName}%`);
+        const menu = await db.prepare('SELECT id FROM menus WHERE name LIKE ? AND deleted_at IS NULL').get(`%${menuName}%`);
+        const dish = await db.prepare('SELECT id FROM dishes WHERE name LIKE ? AND deleted_at IS NULL').get(`%${dishName}%`);
 
         if (!menu || !dish) {
           results.push({ type: 'menu_change', error: `Could not find ${!menu ? 'menu' : 'dish'}`, raw: action.raw_text });
@@ -265,14 +265,14 @@ function executeActions(chefsheetId, actions, broadcastFn) {
         }
 
         if (changeAction === 'remove' || changeAction === '86') {
-          db.prepare('DELETE FROM menu_dishes WHERE menu_id = ? AND dish_id = ?').run(menu.id, dish.id);
+          await db.prepare('DELETE FROM menu_dishes WHERE menu_id = ? AND dish_id = ?').run(menu.id, dish.id);
           results.push({ type: 'menu_change', action: 'removed', menuId: menu.id, dishId: dish.id });
           if (broadcastFn) broadcastFn('menu_updated', { id: menu.id });
         } else {
-          const existing = db.prepare('SELECT 1 FROM menu_dishes WHERE menu_id = ? AND dish_id = ?').get(menu.id, dish.id);
+          const existing = await db.prepare('SELECT 1 FROM menu_dishes WHERE menu_id = ? AND dish_id = ?').get(menu.id, dish.id);
           if (!existing) {
-            const maxSort = db.prepare('SELECT COALESCE(MAX(sort_order), 0) as max FROM menu_dishes WHERE menu_id = ?').get(menu.id);
-            db.prepare('INSERT INTO menu_dishes (menu_id, dish_id, sort_order, servings) VALUES (?, ?, ?, 1)').run(menu.id, dish.id, maxSort.max + 1);
+            const maxSort = await db.prepare('SELECT COALESCE(MAX(sort_order), 0) as max FROM menu_dishes WHERE menu_id = ?').get(menu.id);
+            await db.prepare('INSERT INTO menu_dishes (menu_id, dish_id, sort_order, servings) VALUES (?, ?, ?, 1)').run(menu.id, dish.id, maxSort.max + 1);
           }
           results.push({ type: 'menu_change', action: 'added', menuId: menu.id, dishId: dish.id });
           if (broadcastFn) broadcastFn('menu_updated', { id: menu.id });
@@ -283,10 +283,10 @@ function executeActions(chefsheetId, actions, broadcastFn) {
       case 'order': {
         const title = `[ORDER] ${action.parsed.title || action.raw_text}`;
         const date = action.parsed.date || new Date().toISOString().slice(0, 10);
-        const result = db.prepare(
+        const result = await db.prepare(
           'INSERT INTO tasks (title, type, source, priority, due_date) VALUES (?, ?, ?, ?, ?)'
         ).run(title, 'custom', 'manual', 'high', date);
-        const task = db.prepare('SELECT * FROM tasks WHERE id = ?').get(result.lastInsertRowid);
+        const task = await db.prepare('SELECT * FROM tasks WHERE id = ?').get(result.lastInsertRowid);
         results.push({ type: 'order', id: result.lastInsertRowid, title });
         summary.orders++;
         if (broadcastFn) broadcastFn('task_created', task);
@@ -301,7 +301,7 @@ function executeActions(chefsheetId, actions, broadcastFn) {
           break;
         }
 
-        const dish = db.prepare('SELECT id, chefs_notes FROM dishes WHERE name LIKE ? AND deleted_at IS NULL').get(`%${dishName}%`);
+        const dish = await db.prepare('SELECT id, chefs_notes FROM dishes WHERE name LIKE ? AND deleted_at IS NULL').get(`%${dishName}%`);
         if (!dish) {
           results.push({ type: 'recipe_note', error: `Dish not found: ${dishName}`, raw: action.raw_text });
           break;
@@ -311,7 +311,7 @@ function executeActions(chefsheetId, actions, broadcastFn) {
         const separator = existingNotes ? '\n\n' : '';
         const dateStamp = new Date().toISOString().slice(0, 10);
         const updatedNotes = `${existingNotes}${separator}[${dateStamp}] ${note}`;
-        db.prepare('UPDATE dishes SET chefs_notes = ? WHERE id = ?').run(updatedNotes, dish.id);
+        await db.prepare('UPDATE dishes SET chefs_notes = ? WHERE id = ?').run(updatedNotes, dish.id);
         results.push({ type: 'recipe_note', dishId: dish.id, note });
         summary.recipe_notes++;
         if (broadcastFn) broadcastFn('dish_updated', { id: dish.id });

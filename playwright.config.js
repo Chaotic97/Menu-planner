@@ -23,12 +23,12 @@ module.exports = defineConfig({
     },
   ],
   webServer: {
-    command: 'DB_PATH=./test-e2e.db node server.js',
+    command: 'node server.js',
     port: 3001,
     env: {
       PORT: '3001',
       SESSION_SECRET: 'e2e-test-secret',
-      DB_PATH: './test-e2e.db',
+      DATABASE_URL: process.env.TEST_DATABASE_URL || 'postgresql://localhost:5432/platestack_test_e2e',
     },
     reuseExistingServer: false,
   },

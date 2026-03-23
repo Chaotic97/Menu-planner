@@ -112,7 +112,7 @@ const DISHES = [
 async function main() {
   const db = await getDb();
 
-  const existing = db.prepare('SELECT COUNT(*) as count FROM dishes WHERE deleted_at IS NULL').get();
+  const existing = await db.prepare('SELECT COUNT(*) as count FROM dishes WHERE deleted_at IS NULL').get();
   if (existing && existing.count > 0) {
     console.log(`Database already has ${existing.count} dish(es). Skipping sample seed.`);
     process.exit(0);
@@ -122,7 +122,7 @@ async function main() {
 
   for (const dish of DISHES) {
     // Insert dish
-    const result = db.prepare(
+    const result = await db.prepare(
       `INSERT INTO dishes (name, category, description, suggested_price, chefs_notes)
        VALUES (?, ?, ?, ?, ?)`
     ).run(dish.name, dish.category, dish.description, dish.suggested_price, dish.chefs_notes);
@@ -135,21 +135,21 @@ async function main() {
 
     // Insert allergens
     for (const allergen of dish.allergens) {
-      db.prepare(
-        `INSERT OR IGNORE INTO dish_allergens (dish_id, allergen, source) VALUES (?, ?, 'manual')`
+      await db.prepare(
+        `INSERT INTO dish_allergens (dish_id, allergen, source) VALUES (?, ?, 'manual') ON CONFLICT (dish_id, allergen) DO NOTHING`
       ).run(dishId, allergen);
     }
 
     // Insert ingredients
     for (const ing of dish.ingredients) {
-      let ingRow = db.prepare('SELECT id FROM ingredients WHERE LOWER(name) = LOWER(?)').get(ing.name);
+      let ingRow = await db.prepare('SELECT id FROM ingredients WHERE name = ?').get(ing.name);
       if (!ingRow) {
-        const ingResult = db.prepare('INSERT INTO ingredients (name) VALUES (?)').run(ing.name);
+        const ingResult = await db.prepare('INSERT INTO ingredients (name) VALUES (?)').run(ing.name);
         ingRow = { id: ingResult.lastInsertRowid };
       }
-      db.prepare(
-        `INSERT OR IGNORE INTO dish_ingredients (dish_id, ingredient_id, quantity, unit, prep_note)
-         VALUES (?, ?, ?, ?, ?)`
+      await db.prepare(
+        `INSERT INTO dish_ingredients (dish_id, ingredient_id, quantity, unit, prep_note)
+         VALUES (?, ?, ?, ?, ?) ON CONFLICT (dish_id, ingredient_id) DO NOTHING`
       ).run(dishId, ingRow.id, ing.qty, ing.unit, ing.prep || '');
     }
 

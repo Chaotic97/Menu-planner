@@ -24,7 +24,7 @@ const { getDb } = require('../db/database');
  * @returns {Promise<Buffer>}  .docx file bytes
  */
 async function exportSpecialsDocx(weekStart) {
-  const db = getDb();
+  const db = await getDb();
 
   // Compute week end (Sunday)
   const startDate = new Date(weekStart + 'T00:00:00');
@@ -33,7 +33,7 @@ async function exportSpecialsDocx(weekStart) {
   const weekEnd = endDate.toISOString().split('T')[0];
 
   // Fetch active specials for this week
-  const specials = db.prepare(`
+  const specials = await db.prepare(`
     SELECT ws.*, d.name AS dish_name, d.description AS dish_description,
            d.category, d.suggested_price, d.service_notes
     FROM weekly_specials ws
@@ -47,20 +47,17 @@ async function exportSpecialsDocx(weekStart) {
   }
 
   // For each special, fetch allergens and ingredients
-  const allergenStmt = db.prepare('SELECT allergen FROM dish_allergens WHERE dish_id = ?');
-  const ingredientStmt = db.prepare(`
-    SELECT i.name
-    FROM dish_ingredients di
-    JOIN ingredients i ON i.id = di.ingredient_id
-    WHERE di.dish_id = ?
-    ORDER BY di.sort_order, di.id
-  `);
-
   const sections = [];
 
   for (const s of specials) {
-    s.allergens = allergenStmt.all(s.dish_id).map(a => a.allergen);
-    s.ingredients = ingredientStmt.all(s.dish_id).map(r => r.name);
+    s.allergens = (await db.prepare('SELECT allergen FROM dish_allergens WHERE dish_id = ?').all(s.dish_id)).map(a => a.allergen);
+    s.ingredients = (await db.prepare(`
+      SELECT i.name
+      FROM dish_ingredients di
+      JOIN ingredients i ON i.id = di.ingredient_id
+      WHERE di.dish_id = ?
+      ORDER BY di.sort_order, di.id
+    `).all(s.dish_id)).map(r => r.name);
 
     const children = [];
 

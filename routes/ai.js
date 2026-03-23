@@ -43,18 +43,18 @@ setInterval(() => {
  * Returns the parsed cleaned directions array.
  */
 async function fetchCleanedDirections(dishId) {
-  const apiKey = getApiKey();
+  const apiKey = await getApiKey();
   if (!apiKey) throw new Error('API key not configured');
 
-  const db = getDb();
-  const dish = db.prepare('SELECT id, name, chefs_notes FROM dishes WHERE id = ? AND deleted_at IS NULL').get(dishId);
+  const db = await getDb();
+  const dish = await db.prepare('SELECT id, name, chefs_notes FROM dishes WHERE id = ? AND deleted_at IS NULL').get(dishId);
   if (!dish) throw new Error('Dish not found');
 
-  const directions = db.prepare(
+  const directions = await db.prepare(
     'SELECT id, type, text, sort_order FROM dish_directions WHERE dish_id = ? ORDER BY sort_order'
   ).all(dishId);
 
-  const ingredients = db.prepare(
+  const ingredients = await db.prepare(
     `SELECT di.quantity, di.unit, i.name, di.prep_note
      FROM dish_ingredients di JOIN ingredients i ON di.ingredient_id = i.id
      WHERE di.dish_id = ? ORDER BY di.sort_order`
@@ -105,7 +105,7 @@ ONLY output the JSON array, nothing else.`,
   // Track usage
   const tokensIn = response.usage?.input_tokens || 0;
   const tokensOut = response.usage?.output_tokens || 0;
-  db.prepare(
+  await db.prepare(
     'INSERT INTO ai_usage (tokens_in, tokens_out, model, tool_used) VALUES (?, ?, ?, ?)'
   ).run(tokensIn, tokensOut, 'claude-haiku-4-5-20251001', 'cleanup_recipe');
 
@@ -324,7 +324,7 @@ router.post('/undo/:id', asyncHandler(async (req, res) => {
     return res.status(400).json({ error: 'Invalid undo ID' });
   }
 
-  const result = restoreSnapshot(historyId, req.broadcast);
+  const result = await restoreSnapshot(historyId, req.broadcast);
 
   if (!result.success) {
     return res.status(404).json({ error: result.message });
@@ -344,23 +344,23 @@ router.post('/cleanup-recipe/:dishId', aiRateLimit, asyncHandler(async (req, res
     return res.status(400).json({ error: 'Invalid dish ID' });
   }
 
-  const apiKey = getApiKey();
+  const apiKey = await getApiKey();
   if (!apiKey) {
     return res.status(400).json({ error: 'Please set up your Anthropic API key in Settings.' });
   }
 
-  const limitCheck = checkUsageLimits();
+  const limitCheck = await checkUsageLimits();
   if (!limitCheck.allowed) {
     return res.status(429).json({ error: limitCheck.reason });
   }
 
-  const db = getDb();
-  const dish = db.prepare('SELECT id, name, chefs_notes FROM dishes WHERE id = ? AND deleted_at IS NULL').get(dishId);
+  const db = await getDb();
+  const dish = await db.prepare('SELECT id, name, chefs_notes FROM dishes WHERE id = ? AND deleted_at IS NULL').get(dishId);
   if (!dish) {
     return res.status(404).json({ error: 'Dish not found' });
   }
 
-  const directions = db.prepare(
+  const directions = await db.prepare(
     'SELECT id, type, text, sort_order FROM dish_directions WHERE dish_id = ? ORDER BY sort_order'
   ).all(dishId);
 
@@ -415,20 +415,20 @@ router.post('/match-ingredients', aiRateLimit, asyncHandler(async (req, res) => 
     return res.status(400).json({ error: 'Ingredients array is required' });
   }
 
-  const apiKey = getApiKey();
+  const apiKey = await getApiKey();
   if (!apiKey) {
     return res.status(400).json({ error: 'AI features require an API key.' });
   }
 
-  const limitCheck = checkUsageLimits();
+  const limitCheck = await checkUsageLimits();
   if (!limitCheck.allowed) {
     return res.status(429).json({ error: limitCheck.reason });
   }
 
-  const db = getDb();
+  const db = await getDb();
 
   // Get existing ingredients for matching
-  const existing = db.prepare('SELECT id, name, base_unit, category FROM ingredients').all();
+  const existing = await db.prepare('SELECT id, name, base_unit, category FROM ingredients').all();
   const existingNames = existing.map(i => `"${i.name}" (ID:${i.id})`).join(', ');
 
   const inputNames = ingredients.map(i => i.name).join('\n');
@@ -463,7 +463,7 @@ Rules:
 
     const tokensIn = response.usage?.input_tokens || 0;
     const tokensOut = response.usage?.output_tokens || 0;
-    db.prepare(
+    await db.prepare(
       'INSERT INTO ai_usage (tokens_in, tokens_out, model, tool_used) VALUES (?, ?, ?, ?)'
     ).run(tokensIn, tokensOut, 'claude-haiku-4-5-20251001', 'match_ingredients');
 
@@ -486,30 +486,30 @@ Rules:
 /**
  * GET /api/ai/usage — Usage stats
  */
-router.get('/usage', (req, res) => {
-  const stats = getUsageStats();
+router.get('/usage', asyncHandler(async (req, res) => {
+  const stats = await getUsageStats();
   res.json(stats);
-});
+}));
 
 /**
  * GET /api/ai/suggestions — Dynamic command bar hints based on current data
  */
-router.get('/suggestions', (req, res) => {
+router.get('/suggestions', asyncHandler(async (req, res) => {
   const { buildSuggestionHints } = require('../services/ai/aiContext');
   const page = req.query.page || '';
-  const hints = buildSuggestionHints(page);
+  const hints = await buildSuggestionHints(page);
   res.json({ suggestions: hints });
-});
+}));
 
 /**
  * GET /api/ai/settings — Get AI config (key masked)
  */
-router.get('/settings', (req, res) => {
-  const db = getDb();
-  const settings = getAiSettings();
+router.get('/settings', asyncHandler(async (req, res) => {
+  const db = await getDb();
+  const settings = await getAiSettings();
 
   // Mask the API key for display
-  const keyRow = db.prepare('SELECT value FROM settings WHERE key = ?').get('ai_api_key');
+  const keyRow = await db.prepare('SELECT value FROM settings WHERE key = ?').get('ai_api_key');
   let maskedKey = '';
   if (keyRow && keyRow.value) {
     const key = keyRow.value;
@@ -523,62 +523,42 @@ router.get('/settings', (req, res) => {
     dailyLimit: settings.dailyLimit,
     monthlyLimit: settings.monthlyLimit,
   });
-});
+}));
 
 /**
  * POST /api/ai/settings — Save AI config
  * Body: { apiKey?, features?, dailyLimit?, monthlyLimit? }
  */
 router.post('/settings', asyncHandler(async (req, res) => {
-  const db = getDb();
+  const db = await getDb();
   const { apiKey, features, dailyLimit, monthlyLimit } = req.body;
 
   if (apiKey !== undefined) {
     if (apiKey === '') {
       // Clear the key
-      db.prepare("DELETE FROM settings WHERE key = 'ai_api_key'").run();
+      await db.prepare("DELETE FROM settings WHERE key = 'ai_api_key'").run();
     } else {
       // Validate key format
       if (typeof apiKey !== 'string' || !apiKey.startsWith('sk-')) {
         return res.status(400).json({ error: 'Invalid API key format. Key should start with "sk-".' });
       }
-      const existing = db.prepare('SELECT 1 FROM settings WHERE key = ?').get('ai_api_key');
-      if (existing) {
-        db.prepare('UPDATE settings SET value = ? WHERE key = ?').run(apiKey, 'ai_api_key');
-      } else {
-        db.prepare('INSERT INTO settings (key, value) VALUES (?, ?)').run('ai_api_key', apiKey);
-      }
+      await db.prepare('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value').run('ai_api_key', apiKey);
     }
   }
 
   if (features !== undefined) {
     const featJson = JSON.stringify(features);
-    const existing = db.prepare('SELECT 1 FROM settings WHERE key = ?').get('ai_features');
-    if (existing) {
-      db.prepare('UPDATE settings SET value = ? WHERE key = ?').run(featJson, 'ai_features');
-    } else {
-      db.prepare('INSERT INTO settings (key, value) VALUES (?, ?)').run('ai_features', featJson);
-    }
+    await db.prepare('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value').run('ai_features', featJson);
   }
 
   if (dailyLimit !== undefined) {
     const val = String(Math.max(0, parseInt(dailyLimit) || 0));
-    const existing = db.prepare('SELECT 1 FROM settings WHERE key = ?').get('ai_daily_limit');
-    if (existing) {
-      db.prepare('UPDATE settings SET value = ? WHERE key = ?').run(val, 'ai_daily_limit');
-    } else {
-      db.prepare('INSERT INTO settings (key, value) VALUES (?, ?)').run('ai_daily_limit', val);
-    }
+    await db.prepare('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value').run('ai_daily_limit', val);
   }
 
   if (monthlyLimit !== undefined) {
     const val = String(Math.max(0, parseInt(monthlyLimit) || 0));
-    const existing = db.prepare('SELECT 1 FROM settings WHERE key = ?').get('ai_monthly_limit');
-    if (existing) {
-      db.prepare('UPDATE settings SET value = ? WHERE key = ?').run(val, 'ai_monthly_limit');
-    } else {
-      db.prepare('INSERT INTO settings (key, value) VALUES (?, ?)').run('ai_monthly_limit', val);
-    }
+    await db.prepare('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value').run('ai_monthly_limit', val);
   }
 
   res.json({ success: true });
@@ -603,12 +583,12 @@ router.post('/extract-text', upload.single('file'), asyncHandler(async (req, res
 
     // For images, use Haiku vision to extract text
     if (result.type === 'image') {
-      const apiKey = getApiKey();
+      const apiKey = await getApiKey();
       if (!apiKey) {
         return res.status(400).json({ error: 'AI features require an API key to process images.' });
       }
 
-      const limitCheck = checkUsageLimits();
+      const limitCheck = await checkUsageLimits();
       if (!limitCheck.allowed) {
         return res.status(429).json({ error: limitCheck.reason });
       }
@@ -634,8 +614,8 @@ router.post('/extract-text', upload.single('file'), asyncHandler(async (req, res
         }],
       });
 
-      const db = getDb();
-      db.prepare(
+      const db = await getDb();
+      await db.prepare(
         'INSERT INTO ai_usage (tokens_in, tokens_out, model, tool_used) VALUES (?, ?, ?, ?)'
       ).run(
         response.usage?.input_tokens || 0,
@@ -664,44 +644,44 @@ router.post('/extract-text', upload.single('file'), asyncHandler(async (req, res
 /**
  * GET /api/ai/conversations — list all conversations (newest first)
  */
-router.get('/conversations', (req, res) => {
-  const db = getDb();
-  const conversations = db.prepare(
+router.get('/conversations', asyncHandler(async (req, res) => {
+  const db = await getDb();
+  const conversations = await db.prepare(
     'SELECT id, title, created_at, updated_at FROM ai_conversations ORDER BY updated_at DESC'
   ).all();
   res.json(conversations);
-});
+}));
 
 /**
  * POST /api/ai/conversations — create a new conversation
  */
-router.post('/conversations', (req, res) => {
-  const db = getDb();
+router.post('/conversations', asyncHandler(async (req, res) => {
+  const db = await getDb();
   const { title } = req.body || {};
-  const result = db.prepare('INSERT INTO ai_conversations (title) VALUES (?)').run(title || '');
+  const result = await db.prepare('INSERT INTO ai_conversations (title) VALUES (?)').run(title || '');
   res.status(201).json({ id: result.lastInsertRowid });
-});
+}));
 
 /**
  * GET /api/ai/conversations/:id/messages — get messages for a conversation
  */
-router.get('/conversations/:id/messages', (req, res) => {
-  const db = getDb();
-  const conv = db.prepare('SELECT id FROM ai_conversations WHERE id = ?').get(req.params.id);
+router.get('/conversations/:id/messages', asyncHandler(async (req, res) => {
+  const db = await getDb();
+  const conv = await db.prepare('SELECT id FROM ai_conversations WHERE id = ?').get(req.params.id);
   if (!conv) return res.status(404).json({ error: 'Conversation not found' });
 
-  const messages = db.prepare(
+  const messages = await db.prepare(
     'SELECT id, role, content, created_at FROM ai_messages WHERE conversation_id = ? ORDER BY created_at ASC'
   ).all(req.params.id);
   res.json(messages);
-});
+}));
 
 /**
  * POST /api/ai/conversations/:id/messages — add a message to a conversation
  */
-router.post('/conversations/:id/messages', (req, res) => {
-  const db = getDb();
-  const conv = db.prepare('SELECT id FROM ai_conversations WHERE id = ?').get(req.params.id);
+router.post('/conversations/:id/messages', asyncHandler(async (req, res) => {
+  const db = await getDb();
+  const conv = await db.prepare('SELECT id FROM ai_conversations WHERE id = ?').get(req.params.id);
   if (!conv) return res.status(404).json({ error: 'Conversation not found' });
 
   const { role, content } = req.body;
@@ -709,32 +689,32 @@ router.post('/conversations/:id/messages', (req, res) => {
     return res.status(400).json({ error: 'role and content are required' });
   }
 
-  const result = db.prepare(
+  const result = await db.prepare(
     'INSERT INTO ai_messages (conversation_id, role, content) VALUES (?, ?, ?)'
   ).run(req.params.id, role, content);
 
   // Update conversation timestamp and auto-title from first user message
-  db.prepare("UPDATE ai_conversations SET updated_at = datetime('now') WHERE id = ?").run(req.params.id);
+  await db.prepare("UPDATE ai_conversations SET updated_at = NOW() WHERE id = ?").run(req.params.id);
   if (role === 'user') {
-    const existing = db.prepare('SELECT title FROM ai_conversations WHERE id = ?').get(req.params.id);
+    const existing = await db.prepare('SELECT title FROM ai_conversations WHERE id = ?').get(req.params.id);
     if (!existing.title) {
       const shortTitle = content.slice(0, 60) + (content.length > 60 ? '...' : '');
-      db.prepare('UPDATE ai_conversations SET title = ? WHERE id = ?').run(shortTitle, req.params.id);
+      await db.prepare('UPDATE ai_conversations SET title = ? WHERE id = ?').run(shortTitle, req.params.id);
     }
   }
 
   res.status(201).json({ id: result.lastInsertRowid });
-});
+}));
 
 /**
  * DELETE /api/ai/conversations/:id — delete a conversation
  */
-router.delete('/conversations/:id', (req, res) => {
-  const db = getDb();
-  const result = db.prepare('DELETE FROM ai_conversations WHERE id = ?').run(req.params.id);
+router.delete('/conversations/:id', asyncHandler(async (req, res) => {
+  const db = await getDb();
+  const result = await db.prepare('DELETE FROM ai_conversations WHERE id = ?').run(req.params.id);
   if (result.changes === 0) return res.status(404).json({ error: 'Conversation not found' });
   res.json({ success: true });
-});
+}));
 
 // ─── AI Task Generation ─────────────────────────────────────────
 
@@ -749,24 +729,24 @@ router.post('/generate-tasks/:menuId', aiRateLimit, asyncHandler(async (req, res
     return res.status(400).json({ error: 'Invalid menu ID' });
   }
 
-  const apiKey = getApiKey();
+  const apiKey = await getApiKey();
   if (!apiKey) {
     return res.status(400).json({ error: 'AI features require an API key.' });
   }
 
-  const limitCheck = checkUsageLimits();
+  const limitCheck = await checkUsageLimits();
   if (!limitCheck.allowed) {
     return res.status(429).json({ error: limitCheck.reason });
   }
 
-  const db = getDb();
-  const menu = db.prepare('SELECT id, name FROM menus WHERE id = ? AND deleted_at IS NULL').get(menuId);
+  const db = await getDb();
+  const menu = await db.prepare('SELECT id, name FROM menus WHERE id = ? AND deleted_at IS NULL').get(menuId);
   if (!menu) {
     return res.status(404).json({ error: 'Menu not found' });
   }
 
   // Gather all dish data for the menu
-  const dishes = db.prepare(`
+  const dishes = await db.prepare(`
     SELECT d.id, d.name, d.category, d.chefs_notes, d.batch_yield, md.servings
     FROM menu_dishes md
     JOIN dishes d ON d.id = md.dish_id
@@ -779,18 +759,19 @@ router.post('/generate-tasks/:menuId', aiRateLimit, asyncHandler(async (req, res
   }
 
   // For each dish, get ingredients and directions
-  const dishDetails = dishes.map(dish => {
-    const ingredients = db.prepare(
+  const dishDetails = [];
+  for (const dish of dishes) {
+    const ingredients = await db.prepare(
       `SELECT di.quantity, di.unit, i.name, di.prep_note
        FROM dish_ingredients di JOIN ingredients i ON di.ingredient_id = i.id
        WHERE di.dish_id = ? ORDER BY di.sort_order`
     ).all(dish.id);
 
-    const directions = db.prepare(
+    const directions = await db.prepare(
       'SELECT type, text FROM dish_directions WHERE dish_id = ? ORDER BY sort_order'
     ).all(dish.id);
 
-    return {
+    dishDetails.push({
       name: dish.name,
       category: dish.category,
       servings: dish.servings,
@@ -801,8 +782,8 @@ router.post('/generate-tasks/:menuId', aiRateLimit, asyncHandler(async (req, res
       }),
       directions: directions.map(d => d.type === 'section' ? `[${d.text}]` : d.text),
       chefs_notes: dish.chefs_notes || '',
-    };
-  });
+    });
+  }
 
   const menuSummary = dishDetails.map(d => {
     let detail = `## ${d.name} (${d.category || 'other'}, ${d.servings} batch${d.servings !== 1 ? 'es' : ''})`;
@@ -845,7 +826,7 @@ ONLY output the JSON array, nothing else.`,
 
     const tokensIn = response.usage?.input_tokens || 0;
     const tokensOut = response.usage?.output_tokens || 0;
-    db.prepare(
+    await db.prepare(
       'INSERT INTO ai_usage (tokens_in, tokens_out, model, tool_used) VALUES (?, ?, ?, ?)'
     ).run(tokensIn, tokensOut, 'claude-haiku-4-5-20251001', 'generate_tasks');
 
@@ -873,14 +854,12 @@ ONLY output the JSON array, nothing else.`,
     }
 
     // Delete existing auto-generated tasks for this menu
-    db.prepare('DELETE FROM tasks WHERE menu_id = ? AND source = ?').run(menuId, 'auto');
+    await db.prepare('DELETE FROM tasks WHERE menu_id = ? AND source = ?').run(menuId, 'auto');
 
     // Insert AI-generated tasks
     const VALID_PRIORITIES = ['high', 'medium', 'low'];
-    const insertStmt = db.prepare(
-      'INSERT INTO tasks (menu_id, source_dish_id, type, title, priority, source, sort_order) VALUES (?, ?, ?, ?, ?, ?, ?)'
-    );
 
+    let inserted = 0;
     for (let i = 0; i < aiTasks.length; i++) {
       const t = aiTasks[i];
       if (!t.title || typeof t.title !== 'string') continue;
@@ -891,10 +870,11 @@ ONLY output the JSON array, nothing else.`,
         dishId = dishIdMap.get(t.dish.toLowerCase()) || null;
       }
 
-      insertStmt.run(menuId, dishId, 'prep', t.title.trim(), priority, 'auto', i);
+      await db.prepare(
+        'INSERT INTO tasks (menu_id, source_dish_id, type, title, priority, source, sort_order) VALUES (?, ?, ?, ?, ?, ?, ?)'
+      ).run(menuId, dishId, 'prep', t.title.trim(), priority, 'auto', i);
+      inserted++;
     }
-
-    const inserted = aiTasks.filter(t => t.title && typeof t.title === 'string').length;
 
     req.broadcast('tasks_generated', { menu_id: menuId, total: inserted }, req.headers['x-client-id']);
     res.status(201).json({ menu_id: menuId, prep_count: inserted, total: inserted, ai_generated: true });
@@ -909,6 +889,6 @@ ONLY output the JSON array, nothing else.`,
 }));
 
 // Clean up old snapshots on startup
-try { cleanupOldSnapshots(); } catch {}
+cleanupOldSnapshots().catch(() => {});
 
 module.exports = router;

@@ -37,15 +37,15 @@ async function processAndSavePhoto(buffer) {
 }
 
 // GET /api/dishes/tags/all — list all tags (BEFORE /:id)
-router.get('/tags/all', (req, res) => {
-  const db = getDb();
-  const tags = db.prepare('SELECT * FROM tags ORDER BY name').all();
+router.get('/tags/all', asyncHandler(async (req, res) => {
+  const db = await getDb();
+  const tags = await db.prepare('SELECT * FROM tags ORDER BY name').all();
   res.json(tags);
-});
+}));
 
 // GET /api/dishes - List all dishes
-router.get('/', (req, res) => {
-  const db = getDb();
+router.get('/', asyncHandler(async (req, res) => {
+  const db = await getDb();
   const { category, search, favorite, tag } = req.query;
 
   let sql = 'SELECT * FROM dishes';
@@ -67,14 +67,14 @@ router.get('/', (req, res) => {
   sql += ' WHERE ' + conditions.join(' AND ');
   sql += ' ORDER BY name';
 
-  let dishes = db.prepare(sql).all(...params);
+  let dishes = await db.prepare(sql).all(...params);
 
   // Filter by tag if specified
   if (tag) {
-    const tagRow = db.prepare('SELECT id FROM tags WHERE name = ? COLLATE NOCASE').get(tag);
+    const tagRow = await db.prepare('SELECT id FROM tags WHERE name = ?').get(tag);
     if (tagRow) {
       const taggedIds = new Set(
-        db.prepare('SELECT dish_id FROM dish_tags WHERE tag_id = ?').all(tagRow.id).map(r => r.dish_id)
+        (await db.prepare('SELECT dish_id FROM dish_tags WHERE tag_id = ?').all(tagRow.id)).map(r => r.dish_id)
       );
       dishes = dishes.filter(d => taggedIds.has(d.id));
     } else {
@@ -88,10 +88,10 @@ router.get('/', (req, res) => {
     const placeholders = dishIds.map(() => '?').join(',');
 
     // Batch fetch allergens (aggregated from ingredient_allergens + dish manual)
-    const allergenMap = getDishAllergensBatch(dishIds);
+    const allergenMap = await getDishAllergensBatch(dishIds);
 
     // Batch fetch tags
-    const tagRows = db.prepare(
+    const tagRows = await db.prepare(
       `SELECT dt.dish_id, t.name FROM dish_tags dt JOIN tags t ON t.id = dt.tag_id WHERE dt.dish_id IN (${placeholders})`
     ).all(...dishIds);
     const tagMap = {};
@@ -107,16 +107,16 @@ router.get('/', (req, res) => {
   }
 
   res.json(dishes);
-});
+}));
 
 // GET /api/dishes/:id - Get single dish with full details
-router.get('/:id', (req, res) => {
-  const db = getDb();
-  const dish = db.prepare('SELECT * FROM dishes WHERE id = ? AND deleted_at IS NULL').get(req.params.id);
+router.get('/:id', asyncHandler(async (req, res) => {
+  const db = await getDb();
+  const dish = await db.prepare('SELECT * FROM dishes WHERE id = ? AND deleted_at IS NULL').get(req.params.id);
   if (!dish) return res.status(404).json({ error: 'Dish not found' });
 
   // Get ingredients (ordered by sort_order)
-  const ingRows = db.prepare(`
+  const ingRows = await db.prepare(`
     SELECT di.*, i.name AS ingredient_name, i.unit_cost, i.base_unit, i.category AS ingredient_category, i.g_per_ml
     FROM dish_ingredients di
     JOIN ingredients i ON i.id = di.ingredient_id
@@ -125,7 +125,7 @@ router.get('/:id', (req, res) => {
   `).all(dish.id);
 
   // Get section headers
-  const sectionRows = db.prepare(
+  const sectionRows = await db.prepare(
     'SELECT id, label, sort_order FROM dish_section_headers WHERE dish_id = ? ORDER BY sort_order'
   ).all(dish.id);
 
@@ -134,7 +134,7 @@ router.get('/:id', (req, res) => {
   const ingAllergenMap = {};
   if (ingredientIds.length) {
     const iph = ingredientIds.map(() => '?').join(',');
-    const iaRows = db.prepare(
+    const iaRows = await db.prepare(
       `SELECT ingredient_id, allergen, source FROM ingredient_allergens WHERE ingredient_id IN (${iph})`
     ).all(...ingredientIds);
     for (const r of iaRows) {
@@ -150,28 +150,28 @@ router.get('/:id', (req, res) => {
   ].sort((a, b) => a.sort_order - b.sort_order || a.id - b.id);
 
   // Get allergens (aggregated from ingredient_allergens + dish-level manual)
-  dish.allergens = getDishAllergens(dish.id);
+  dish.allergens = await getDishAllergens(dish.id);
 
   // Get tags
-  dish.tags = db.prepare(`
+  dish.tags = (await db.prepare(`
     SELECT t.name FROM dish_tags dt JOIN tags t ON t.id = dt.tag_id WHERE dt.dish_id = ?
-  `).all(dish.id).map(t => t.name);
+  `).all(dish.id)).map(t => t.name);
 
   // Get substitutions
-  dish.substitutions = db.prepare('SELECT * FROM dish_substitutions WHERE dish_id = ? ORDER BY allergen, id').all(dish.id);
+  dish.substitutions = await db.prepare('SELECT * FROM dish_substitutions WHERE dish_id = ? ORDER BY allergen, id').all(dish.id);
 
   // Get service components
-  dish.components = db.prepare(
+  dish.components = await db.prepare(
     'SELECT id, name, sort_order FROM dish_components WHERE dish_id = ? ORDER BY sort_order, id'
   ).all(dish.id);
 
   // Get directions (structured steps + section headers)
-  dish.directions = db.prepare(
+  dish.directions = await db.prepare(
     'SELECT id, type, text, sort_order FROM dish_directions WHERE dish_id = ? ORDER BY sort_order, id'
   ).all(dish.id);
 
   // Get service directions (plating/assembly steps)
-  dish.service_directions = db.prepare(
+  dish.service_directions = await db.prepare(
     'SELECT id, type, text, sort_order FROM dish_service_directions WHERE dish_id = ? ORDER BY sort_order, id'
   ).all(dish.id);
 
@@ -194,11 +194,11 @@ router.get('/:id', (req, res) => {
   dish.suggested_price_calc = suggestPrice(costPerPortion);
 
   res.json(dish);
-});
+}));
 
 // POST /api/dishes - Create dish
-router.post('/', (req, res) => {
-  const db = getDb();
+router.post('/', asyncHandler(async (req, res) => {
+  const db = await getDb();
   const { name, description, category, chefs_notes, service_notes, suggested_price, ingredients, tags, substitutions, manual_costs, components, directions, service_directions, batch_yield, is_temporary } = req.body;
 
   if (!name) return res.status(400).json({ error: 'Name is required' });
@@ -208,10 +208,8 @@ router.post('/', (req, res) => {
     }
   }
 
-  try {
-    db.exec('BEGIN');
-
-    const result = db.prepare(`
+  await db.transaction(async (tx) => {
+    const result = await tx.prepare(`
       INSERT INTO dishes (name, description, category, chefs_notes, service_notes, suggested_price, manual_costs, batch_yield, is_temporary)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(name, description || '', category || 'main', chefs_notes || '', service_notes || '', suggested_price || 0, manual_costs ? JSON.stringify(manual_costs) : '[]', batch_yield || 1, is_temporary ? 1 : 0);
@@ -219,45 +217,39 @@ router.post('/', (req, res) => {
     const dishId = result.lastInsertRowid;
 
     // Add ingredients
-    saveIngredients(db, dishId, ingredients);
+    await saveIngredients(tx, dishId, ingredients);
 
     // Save tags
-    saveDishTags(db, dishId, tags);
+    await saveDishTags(tx, dishId, tags);
 
     // Save substitutions
-    saveDishSubstitutions(db, dishId, substitutions);
+    await saveDishSubstitutions(tx, dishId, substitutions);
 
     // Save service components
-    saveDishComponents(db, dishId, components);
+    await saveDishComponents(tx, dishId, components);
 
     // Save directions
-    saveDishDirections(db, dishId, directions);
+    await saveDishDirections(tx, dishId, directions);
 
     // Save service directions
-    saveDishServiceDirections(db, dishId, service_directions);
+    await saveDishServiceDirections(tx, dishId, service_directions);
 
     // Detect allergens
-    updateDishAllergens(dishId);
-
-    db.exec('COMMIT');
+    await updateDishAllergens(dishId);
 
     req.broadcast('dish_created', { id: dishId }, req.headers['x-client-id']);
     res.status(201).json({ id: dishId });
-  } catch (err) {
-    db.exec('ROLLBACK');
-    throw err;
-  }
-});
+  });
+}));
 
 // POST /api/dishes/:id/duplicate - Duplicate a dish
-router.post('/:id/duplicate', (req, res) => {
-  const db = getDb();
-  const source = db.prepare('SELECT * FROM dishes WHERE id = ? AND deleted_at IS NULL').get(req.params.id);
+router.post('/:id/duplicate', asyncHandler(async (req, res) => {
+  const db = await getDb();
+  const source = await db.prepare('SELECT * FROM dishes WHERE id = ? AND deleted_at IS NULL').get(req.params.id);
   if (!source) return res.status(404).json({ error: 'Dish not found' });
 
-  db.exec('BEGIN');
-  try {
-    const result = db.prepare(`
+  await db.transaction(async (tx) => {
+    const result = await tx.prepare(`
       INSERT INTO dishes (name, description, category, chefs_notes, service_notes, suggested_price, manual_costs, batch_yield)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
@@ -274,97 +266,84 @@ router.post('/:id/duplicate', (req, res) => {
     const newId = result.lastInsertRowid;
 
     // Copy all dish_ingredients (including sort_order)
-    const ingredients = db.prepare(`
+    const ingredients = await tx.prepare(`
       SELECT ingredient_id, quantity, unit, prep_note, sort_order
       FROM dish_ingredients WHERE dish_id = ?
       ORDER BY sort_order, id
     `).all(req.params.id);
 
-    const insertDI = db.prepare(`
-      INSERT INTO dish_ingredients (dish_id, ingredient_id, quantity, unit, prep_note, sort_order)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `);
-
     for (const ing of ingredients) {
-      insertDI.run(newId, ing.ingredient_id, ing.quantity, ing.unit, ing.prep_note, ing.sort_order || 0);
+      await tx.prepare(`
+        INSERT INTO dish_ingredients (dish_id, ingredient_id, quantity, unit, prep_note, sort_order)
+        VALUES (?, ?, ?, ?, ?, ?)
+      `).run(newId, ing.ingredient_id, ing.quantity, ing.unit, ing.prep_note, ing.sort_order || 0);
     }
 
     // Copy section headers
-    const sectionHeaders = db.prepare(
+    const sectionHeaders = await tx.prepare(
       'SELECT label, sort_order FROM dish_section_headers WHERE dish_id = ? ORDER BY sort_order'
     ).all(req.params.id);
-    const insertHeader = db.prepare(
-      'INSERT INTO dish_section_headers (dish_id, label, sort_order) VALUES (?, ?, ?)'
-    );
     for (const h of sectionHeaders) {
-      insertHeader.run(newId, h.label, h.sort_order);
+      await tx.prepare(
+        'INSERT INTO dish_section_headers (dish_id, label, sort_order) VALUES (?, ?, ?)'
+      ).run(newId, h.label, h.sort_order);
     }
 
     // Copy substitutions
-    const subs = db.prepare('SELECT * FROM dish_substitutions WHERE dish_id = ?').all(req.params.id);
-    const insertSub = db.prepare(`
-      INSERT INTO dish_substitutions (dish_id, allergen, original_ingredient, substitute_ingredient, substitute_quantity, substitute_unit, notes)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `);
+    const subs = await tx.prepare('SELECT * FROM dish_substitutions WHERE dish_id = ?').all(req.params.id);
     for (const s of subs) {
-      insertSub.run(newId, s.allergen, s.original_ingredient, s.substitute_ingredient, s.substitute_quantity, s.substitute_unit, s.notes);
+      await tx.prepare(`
+        INSERT INTO dish_substitutions (dish_id, allergen, original_ingredient, substitute_ingredient, substitute_quantity, substitute_unit, notes)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `).run(newId, s.allergen, s.original_ingredient, s.substitute_ingredient, s.substitute_quantity, s.substitute_unit, s.notes);
     }
 
     // Copy tags
-    const tagIds = db.prepare('SELECT tag_id FROM dish_tags WHERE dish_id = ?').all(req.params.id);
-    const insertTag = db.prepare('INSERT OR IGNORE INTO dish_tags (dish_id, tag_id) VALUES (?, ?)');
+    const tagIds = await tx.prepare('SELECT tag_id FROM dish_tags WHERE dish_id = ?').all(req.params.id);
     for (const t of tagIds) {
-      insertTag.run(newId, t.tag_id);
+      await tx.prepare('INSERT INTO dish_tags (dish_id, tag_id) VALUES (?, ?) ON CONFLICT (dish_id, tag_id) DO NOTHING').run(newId, t.tag_id);
     }
 
     // Copy service components
-    const comps = db.prepare(
+    const comps = await tx.prepare(
       'SELECT name, sort_order FROM dish_components WHERE dish_id = ? ORDER BY sort_order, id'
     ).all(req.params.id);
-    const insertComp = db.prepare('INSERT INTO dish_components (dish_id, name, sort_order) VALUES (?, ?, ?)');
     for (const c of comps) {
-      insertComp.run(newId, c.name, c.sort_order);
+      await tx.prepare('INSERT INTO dish_components (dish_id, name, sort_order) VALUES (?, ?, ?)').run(newId, c.name, c.sort_order);
     }
 
     // Copy directions
-    const dirs = db.prepare(
+    const dirs = await tx.prepare(
       'SELECT type, text, sort_order FROM dish_directions WHERE dish_id = ? ORDER BY sort_order, id'
     ).all(req.params.id);
-    const insertDir = db.prepare('INSERT INTO dish_directions (dish_id, type, text, sort_order) VALUES (?, ?, ?, ?)');
     for (const d of dirs) {
-      insertDir.run(newId, d.type, d.text, d.sort_order);
+      await tx.prepare('INSERT INTO dish_directions (dish_id, type, text, sort_order) VALUES (?, ?, ?, ?)').run(newId, d.type, d.text, d.sort_order);
     }
 
     // Copy service directions
-    const svcDirs = db.prepare(
+    const svcDirs = await tx.prepare(
       'SELECT type, text, sort_order FROM dish_service_directions WHERE dish_id = ? ORDER BY sort_order, id'
     ).all(req.params.id);
-    const insertSvcDir = db.prepare('INSERT INTO dish_service_directions (dish_id, type, text, sort_order) VALUES (?, ?, ?, ?)');
     for (const d of svcDirs) {
-      insertSvcDir.run(newId, d.type, d.text, d.sort_order);
+      await tx.prepare('INSERT INTO dish_service_directions (dish_id, type, text, sort_order) VALUES (?, ?, ?, ?)').run(newId, d.type, d.text, d.sort_order);
     }
 
-    updateDishAllergens(newId);
+    await updateDishAllergens(newId);
 
     // Copy dish-level manual allergen overrides
-    const manualAllergens = db.prepare(
+    const manualAllergens = await tx.prepare(
       "SELECT allergen FROM dish_allergens WHERE dish_id = ? AND source = 'manual'"
     ).all(req.params.id);
-    const insertAllergen = db.prepare(
-      "INSERT OR IGNORE INTO dish_allergens (dish_id, allergen, source) VALUES (?, ?, 'manual')"
-    );
     for (const a of manualAllergens) {
-      insertAllergen.run(newId, a.allergen);
+      await tx.prepare(
+        "INSERT INTO dish_allergens (dish_id, allergen, source) VALUES (?, ?, 'manual') ON CONFLICT (dish_id, allergen) DO NOTHING"
+      ).run(newId, a.allergen);
     }
 
-    db.exec('COMMIT');
     req.broadcast('dish_created', { id: newId }, req.headers['x-client-id']);
     res.status(201).json({ id: newId });
-  } catch (err) {
-    db.exec('ROLLBACK');
-    throw err;
-  }
-});
+  });
+}));
 
 // POST /api/dishes/import-url - Import recipe from URL
 router.post('/import-url', asyncHandler(async (req, res) => {
@@ -408,7 +387,7 @@ router.post('/bulk-import-docx', docxUpload.array('files', 50), asyncHandler(asy
     return res.status(400).json({ error: 'At least one .docx file is required.' });
   }
 
-  const db = getDb();
+  const db = await getDb();
   const created = [];
   const errors = [];
 
@@ -418,7 +397,7 @@ router.post('/bulk-import-docx', docxUpload.array('files', 50), asyncHandler(asy
       const recipe = await importDocx(file.buffer);
 
       // Create the dish using the parsed recipe data
-      const result = db.prepare(`
+      const result = await db.prepare(`
         INSERT INTO dishes (name, description, category, chefs_notes, suggested_price)
         VALUES (?, ?, ?, ?, ?)
       `).run(
@@ -431,18 +410,18 @@ router.post('/bulk-import-docx', docxUpload.array('files', 50), asyncHandler(asy
       const dishId = result.lastInsertRowid;
 
       // Save ingredients
-      saveIngredients(db, dishId, recipe.ingredients);
+      await saveIngredients(db, dishId, recipe.ingredients);
 
       // Save directions
-      saveDishDirections(db, dishId, recipe.directions);
+      await saveDishDirections(db, dishId, recipe.directions);
 
       // If directions were saved, clear chefs_notes (same behavior as dish form)
       if (recipe.directions && recipe.directions.length) {
-        db.prepare('UPDATE dishes SET chefs_notes = ? WHERE id = ?').run('', dishId);
+        await db.prepare('UPDATE dishes SET chefs_notes = ? WHERE id = ?').run('', dishId);
       }
 
       // Detect allergens
-      updateDishAllergens(dishId);
+      await updateDishAllergens(dishId);
 
       req.broadcast('dish_created', { id: dishId }, req.headers['x-client-id']);
       created.push({ id: dishId, name: recipe.name, filename });
@@ -456,31 +435,31 @@ router.post('/bulk-import-docx', docxUpload.array('files', 50), asyncHandler(asy
 }));
 
 // POST /api/dishes/:id/favorite - Toggle favorite
-router.post('/:id/favorite', (req, res) => {
-  const db = getDb();
-  const dish = db.prepare('SELECT is_favorite FROM dishes WHERE id = ? AND deleted_at IS NULL').get(req.params.id);
+router.post('/:id/favorite', asyncHandler(async (req, res) => {
+  const db = await getDb();
+  const dish = await db.prepare('SELECT is_favorite FROM dishes WHERE id = ? AND deleted_at IS NULL').get(req.params.id);
   if (!dish) return res.status(404).json({ error: 'Dish not found' });
 
   const newVal = dish.is_favorite ? 0 : 1;
-  db.prepare('UPDATE dishes SET is_favorite = ? WHERE id = ?').run(newVal, req.params.id);
+  await db.prepare('UPDATE dishes SET is_favorite = ? WHERE id = ?').run(newVal, req.params.id);
 
   req.broadcast('dish_updated', { id: parseInt(req.params.id) }, req.headers['x-client-id']);
   res.json({ is_favorite: newVal });
-});
+}));
 
 // POST /api/dishes/:id/restore - Restore soft-deleted dish
-router.post('/:id/restore', (req, res) => {
-  const db = getDb();
-  const result = db.prepare("UPDATE dishes SET deleted_at = NULL WHERE id = ?").run(req.params.id);
+router.post('/:id/restore', asyncHandler(async (req, res) => {
+  const db = await getDb();
+  const result = await db.prepare("UPDATE dishes SET deleted_at = NULL WHERE id = ?").run(req.params.id);
   if (result.changes === 0) return res.status(404).json({ error: 'Dish not found' });
   req.broadcast('dish_created', { id: parseInt(req.params.id) }, req.headers['x-client-id']);
   res.json({ success: true });
-});
+}));
 
 // PUT /api/dishes/:id - Update dish
-router.put('/:id', (req, res) => {
-  const db = getDb();
-  const dish = db.prepare('SELECT * FROM dishes WHERE id = ? AND deleted_at IS NULL').get(req.params.id);
+router.put('/:id', asyncHandler(async (req, res) => {
+  const db = await getDb();
+  const dish = await db.prepare('SELECT * FROM dishes WHERE id = ? AND deleted_at IS NULL').get(req.params.id);
   if (!dish) return res.status(404).json({ error: 'Dish not found' });
 
   const { name, description, category, chefs_notes, service_notes, suggested_price, ingredients, tags, substitutions, manual_costs, components, directions, service_directions, batch_yield } = req.body;
@@ -491,11 +470,9 @@ router.put('/:id', (req, res) => {
     }
   }
 
-  try {
-    db.exec('BEGIN');
-
-    db.prepare(`
-      UPDATE dishes SET name = ?, description = ?, category = ?, chefs_notes = ?, service_notes = ?, suggested_price = ?, manual_costs = ?, batch_yield = ?, updated_at = datetime('now')
+  await db.transaction(async (tx) => {
+    await tx.prepare(`
+      UPDATE dishes SET name = ?, description = ?, category = ?, chefs_notes = ?, service_notes = ?, suggested_price = ?, manual_costs = ?, batch_yield = ?, updated_at = NOW()
       WHERE id = ?
     `).run(
       name || dish.name,
@@ -511,79 +488,74 @@ router.put('/:id', (req, res) => {
 
     // Replace ingredients if provided
     if (ingredients) {
-      db.prepare('DELETE FROM dish_ingredients WHERE dish_id = ?').run(req.params.id);
-      db.prepare('DELETE FROM dish_section_headers WHERE dish_id = ?').run(req.params.id);
-      saveIngredients(db, req.params.id, ingredients);
+      await tx.prepare('DELETE FROM dish_ingredients WHERE dish_id = ?').run(req.params.id);
+      await tx.prepare('DELETE FROM dish_section_headers WHERE dish_id = ?').run(req.params.id);
+      await saveIngredients(tx, req.params.id, ingredients);
 
       // Re-detect allergens
-      updateDishAllergens(req.params.id);
+      await updateDishAllergens(req.params.id);
     }
 
     // Update tags if provided
     if (tags !== undefined) {
-      saveDishTags(db, req.params.id, tags);
+      await saveDishTags(tx, req.params.id, tags);
     }
 
     // Update substitutions if provided
     if (substitutions !== undefined) {
-      saveDishSubstitutions(db, req.params.id, substitutions);
+      await saveDishSubstitutions(tx, req.params.id, substitutions);
     }
 
     // Update service components if provided
     if (components !== undefined) {
-      saveDishComponents(db, req.params.id, components);
+      await saveDishComponents(tx, req.params.id, components);
     }
 
     // Update directions if provided
     if (directions !== undefined) {
-      saveDishDirections(db, req.params.id, directions);
+      await saveDishDirections(tx, req.params.id, directions);
     }
 
     // Update service directions if provided
     if (service_directions !== undefined) {
-      saveDishServiceDirections(db, req.params.id, service_directions);
+      await saveDishServiceDirections(tx, req.params.id, service_directions);
     }
-
-    db.exec('COMMIT');
-  } catch (err) {
-    db.exec('ROLLBACK');
-    throw err;
-  }
+  });
 
   req.broadcast('dish_updated', { id: parseInt(req.params.id) }, req.headers['x-client-id']);
   res.json({ success: true });
-});
+}));
 
 // DELETE /api/dishes/:id - Soft delete
-router.delete('/:id', (req, res) => {
-  const db = getDb();
-  const dish = db.prepare('SELECT id FROM dishes WHERE id = ? AND deleted_at IS NULL').get(req.params.id);
+router.delete('/:id', asyncHandler(async (req, res) => {
+  const db = await getDb();
+  const dish = await db.prepare('SELECT id FROM dishes WHERE id = ? AND deleted_at IS NULL').get(req.params.id);
   if (!dish) return res.status(404).json({ error: 'Dish not found' });
 
-  db.prepare("UPDATE dishes SET deleted_at = datetime('now') WHERE id = ?").run(req.params.id);
+  await db.prepare("UPDATE dishes SET deleted_at = NOW() WHERE id = ?").run(req.params.id);
   req.broadcast('dish_deleted', { id: parseInt(req.params.id) }, req.headers['x-client-id']);
   res.json({ success: true });
-});
+}));
 
 // POST /api/dishes/:id/photo - Upload photo
 router.post('/:id/photo', upload.single('photo'), asyncHandler(async (req, res) => {
-  const db = getDb();
+  const db = await getDb();
   if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
 
-  const dish = db.prepare('SELECT id FROM dishes WHERE id = ? AND deleted_at IS NULL').get(req.params.id);
+  const dish = await db.prepare('SELECT id FROM dishes WHERE id = ? AND deleted_at IS NULL').get(req.params.id);
   if (!dish) return res.status(404).json({ error: 'Dish not found' });
 
   const filename = await processAndSavePhoto(req.file.buffer);
   const photoPath = `/uploads/${filename}`;
-  db.prepare('UPDATE dishes SET photo_path = ?, updated_at = datetime(\'now\') WHERE id = ?').run(photoPath, req.params.id);
+  await db.prepare('UPDATE dishes SET photo_path = ?, updated_at = NOW() WHERE id = ?').run(photoPath, req.params.id);
   req.broadcast('dish_updated', { id: parseInt(req.params.id) }, req.headers['x-client-id']);
   res.json({ photo_path: photoPath });
 }));
 
 // DELETE /api/dishes/:id/photo - Remove photo
 router.delete('/:id/photo', asyncHandler(async (req, res) => {
-  const db = getDb();
-  const dish = db.prepare('SELECT photo_path FROM dishes WHERE id = ? AND deleted_at IS NULL').get(req.params.id);
+  const db = await getDb();
+  const dish = await db.prepare('SELECT photo_path FROM dishes WHERE id = ? AND deleted_at IS NULL').get(req.params.id);
   if (!dish) return res.status(404).json({ error: 'Dish not found' });
 
   if (dish.photo_path) {
@@ -592,16 +564,16 @@ router.delete('/:id/photo', asyncHandler(async (req, res) => {
     try { fs.unlinkSync(filePath); } catch {}
   }
 
-  db.prepare('UPDATE dishes SET photo_path = NULL, updated_at = datetime(\'now\') WHERE id = ?').run(req.params.id);
+  await db.prepare('UPDATE dishes SET photo_path = NULL, updated_at = NOW() WHERE id = ?').run(req.params.id);
   req.broadcast('dish_updated', { id: parseInt(req.params.id) }, req.headers['x-client-id']);
   res.json({ success: true });
 }));
 
 // POST /api/dishes/:id/allergens - Manual allergen override
-router.post('/:id/allergens', (req, res) => {
-  const db = getDb();
+router.post('/:id/allergens', asyncHandler(async (req, res) => {
+  const db = await getDb();
 
-  const dish = db.prepare('SELECT id FROM dishes WHERE id = ? AND deleted_at IS NULL').get(req.params.id);
+  const dish = await db.prepare('SELECT id FROM dishes WHERE id = ? AND deleted_at IS NULL').get(req.params.id);
   if (!dish) return res.status(404).json({ error: 'Dish not found' });
 
   const { allergen, action } = req.body;
@@ -616,21 +588,21 @@ router.post('/:id/allergens', (req, res) => {
   }
 
   if (action === 'add') {
-    db.prepare('INSERT OR REPLACE INTO dish_allergens (dish_id, allergen, source) VALUES (?, ?, ?)').run(req.params.id, allergen, 'manual');
+    await db.prepare('INSERT INTO dish_allergens (dish_id, allergen, source) VALUES (?, ?, ?) ON CONFLICT (dish_id, allergen) DO UPDATE SET source = EXCLUDED.source').run(req.params.id, allergen, 'manual');
   } else {
-    db.prepare('DELETE FROM dish_allergens WHERE dish_id = ? AND allergen = ?').run(req.params.id, allergen);
+    await db.prepare('DELETE FROM dish_allergens WHERE dish_id = ? AND allergen = ?').run(req.params.id, allergen);
   }
 
   req.broadcast('dish_updated', { id: parseInt(req.params.id) }, req.headers['x-client-id']);
   res.json({ success: true });
-});
+}));
 
 // Allergen keywords management
-router.get('/allergen-keywords/all', (req, res) => {
-  res.json(getAllergenKeywords());
-});
+router.get('/allergen-keywords/all', asyncHandler(async (req, res) => {
+  res.json(await getAllergenKeywords());
+}));
 
-router.post('/allergen-keywords', (req, res) => {
+router.post('/allergen-keywords', asyncHandler(async (req, res) => {
   const { keyword, allergen } = req.body;
   if (!keyword || typeof keyword !== 'string' || !keyword.trim()) {
     return res.status(400).json({ error: 'keyword is required' });
@@ -638,19 +610,19 @@ router.post('/allergen-keywords', (req, res) => {
   if (!allergen || typeof allergen !== 'string' || !allergen.trim()) {
     return res.status(400).json({ error: 'allergen is required' });
   }
-  addAllergenKeyword(keyword.trim(), allergen.trim());
+  await addAllergenKeyword(keyword.trim(), allergen.trim());
   res.status(201).json({ success: true });
-});
+}));
 
-router.delete('/allergen-keywords/:id', (req, res) => {
-  const result = deleteAllergenKeyword(req.params.id);
+router.delete('/allergen-keywords/:id', asyncHandler(async (req, res) => {
+  const result = await deleteAllergenKeyword(req.params.id);
   if (result.changes === 0) return res.status(404).json({ error: 'Keyword not found' });
   res.json({ success: true });
-});
+}));
 
 // --- Helper functions ---
 
-function saveIngredients(db, dishId, ingredients) {
+async function saveIngredients(db, dishId, ingredients) {
   if (!ingredients || !ingredients.length) return;
 
   // Split into section headers and real ingredients, preserving DOM order (sort_order = index)
@@ -670,11 +642,10 @@ function saveIngredients(db, dishId, ingredients) {
 
   // Save section headers
   if (headerItems.length) {
-    const insertHeader = db.prepare(
-      'INSERT INTO dish_section_headers (dish_id, label, sort_order) VALUES (?, ?, ?)'
-    );
     for (const h of headerItems) {
-      insertHeader.run(dishId, h.label, h.sort_order);
+      await db.prepare(
+        'INSERT INTO dish_section_headers (dish_id, label, sort_order) VALUES (?, ?, ?)'
+      ).run(dishId, h.label, h.sort_order);
     }
   }
 
@@ -694,35 +665,29 @@ function saveIngredients(db, dishId, ingredients) {
     }
   }
 
-  const insertIngredient = db.prepare('INSERT OR IGNORE INTO ingredients (name) VALUES (?)');
-  const getIngredient = db.prepare('SELECT id FROM ingredients WHERE name = ? COLLATE NOCASE');
-  const insertDishIngredient = db.prepare(`
-    INSERT INTO dish_ingredients (dish_id, ingredient_id, quantity, unit, prep_note, sort_order)
-    VALUES (?, ?, ?, ?, ?, ?)
-  `);
-  const updateIngredientCost = db.prepare(
-    'UPDATE ingredients SET unit_cost = ?, base_unit = ? WHERE id = ?'
-  );
-  const updateIngredientDensity = db.prepare(
-    'UPDATE ingredients SET g_per_ml = ? WHERE id = ?'
-  );
-
   for (const ing of seen.values()) {
-    insertIngredient.run(ing.name);
-    const row = getIngredient.get(ing.name);
+    await db.prepare('INSERT INTO ingredients (name) VALUES (?) ON CONFLICT DO NOTHING').run(ing.name);
+    const row = await db.prepare('SELECT id FROM ingredients WHERE name = ?').get(ing.name);
     if (row) {
-      insertDishIngredient.run(
+      await db.prepare(`
+        INSERT INTO dish_ingredients (dish_id, ingredient_id, quantity, unit, prep_note, sort_order)
+        VALUES (?, ?, ?, ?, ?, ?)
+      `).run(
         dishId, row.id, ing.quantity || 0, ing.unit || 'each', ing.prep_note || '', ing.sort_order || 0
       );
       if (ing.unit_cost !== undefined) {
-        updateIngredientCost.run(
+        await db.prepare(
+          'UPDATE ingredients SET unit_cost = ?, base_unit = ? WHERE id = ?'
+        ).run(
           ing.unit_cost !== null ? parseFloat(ing.unit_cost) : null,
           ing.base_unit || ing.unit || 'g',
           row.id
         );
       }
       if (ing.g_per_ml !== undefined) {
-        updateIngredientDensity.run(
+        await db.prepare(
+          'UPDATE ingredients SET g_per_ml = ? WHERE id = ?'
+        ).run(
           ing.g_per_ml !== null && ing.g_per_ml > 0 ? parseFloat(ing.g_per_ml) : null,
           row.id
         );
@@ -731,78 +696,73 @@ function saveIngredients(db, dishId, ingredients) {
   }
 }
 
-function saveDishTags(db, dishId, tags) {
+async function saveDishTags(db, dishId, tags) {
   if (!tags || !Array.isArray(tags)) return;
 
-  db.prepare('DELETE FROM dish_tags WHERE dish_id = ?').run(dishId);
+  await db.prepare('DELETE FROM dish_tags WHERE dish_id = ?').run(dishId);
 
   for (const tagName of tags) {
     const name = tagName.trim();
     if (!name) continue;
-    db.prepare('INSERT OR IGNORE INTO tags (name) VALUES (?)').run(name);
-    const tag = db.prepare('SELECT id FROM tags WHERE name = ? COLLATE NOCASE').get(name);
+    await db.prepare('INSERT INTO tags (name) VALUES (?) ON CONFLICT DO NOTHING').run(name);
+    const tag = await db.prepare('SELECT id FROM tags WHERE name = ?').get(name);
     if (tag) {
-      db.prepare('INSERT OR IGNORE INTO dish_tags (dish_id, tag_id) VALUES (?, ?)').run(dishId, tag.id);
+      await db.prepare('INSERT INTO dish_tags (dish_id, tag_id) VALUES (?, ?) ON CONFLICT (dish_id, tag_id) DO NOTHING').run(dishId, tag.id);
     }
   }
 }
 
-function saveDishComponents(db, dishId, components) {
+async function saveDishComponents(db, dishId, components) {
   if (!components || !Array.isArray(components)) return;
 
-  db.prepare('DELETE FROM dish_components WHERE dish_id = ?').run(dishId);
+  await db.prepare('DELETE FROM dish_components WHERE dish_id = ?').run(dishId);
 
-  const insert = db.prepare('INSERT INTO dish_components (dish_id, name, sort_order) VALUES (?, ?, ?)');
   for (let i = 0; i < components.length; i++) {
     const name = (components[i].name || '').trim();
     if (!name) continue;
-    insert.run(dishId, name, components[i].sort_order !== undefined ? components[i].sort_order : i);
+    await db.prepare('INSERT INTO dish_components (dish_id, name, sort_order) VALUES (?, ?, ?)').run(dishId, name, components[i].sort_order !== undefined ? components[i].sort_order : i);
   }
 }
 
-function saveDishDirections(db, dishId, directions) {
+async function saveDishDirections(db, dishId, directions) {
   if (!directions || !Array.isArray(directions)) return;
 
-  db.prepare('DELETE FROM dish_directions WHERE dish_id = ?').run(dishId);
+  await db.prepare('DELETE FROM dish_directions WHERE dish_id = ?').run(dishId);
 
-  const insert = db.prepare('INSERT INTO dish_directions (dish_id, type, text, sort_order) VALUES (?, ?, ?, ?)');
   for (let i = 0; i < directions.length; i++) {
     const d = directions[i];
     const type = d.type === 'section' ? 'section' : 'step';
     const text = (d.text || '').trim();
     if (!text) continue;
-    insert.run(dishId, type, text, d.sort_order !== undefined ? d.sort_order : i);
+    await db.prepare('INSERT INTO dish_directions (dish_id, type, text, sort_order) VALUES (?, ?, ?, ?)').run(dishId, type, text, d.sort_order !== undefined ? d.sort_order : i);
   }
 }
 
-function saveDishServiceDirections(db, dishId, serviceDirections) {
+async function saveDishServiceDirections(db, dishId, serviceDirections) {
   if (!serviceDirections || !Array.isArray(serviceDirections)) return;
 
-  db.prepare('DELETE FROM dish_service_directions WHERE dish_id = ?').run(dishId);
+  await db.prepare('DELETE FROM dish_service_directions WHERE dish_id = ?').run(dishId);
 
-  const insert = db.prepare('INSERT INTO dish_service_directions (dish_id, type, text, sort_order) VALUES (?, ?, ?, ?)');
   for (let i = 0; i < serviceDirections.length; i++) {
     const d = serviceDirections[i];
     const type = d.type === 'section' ? 'section' : 'step';
     const text = (d.text || '').trim();
     if (!text) continue;
-    insert.run(dishId, type, text, d.sort_order !== undefined ? d.sort_order : i);
+    await db.prepare('INSERT INTO dish_service_directions (dish_id, type, text, sort_order) VALUES (?, ?, ?, ?)').run(dishId, type, text, d.sort_order !== undefined ? d.sort_order : i);
   }
 }
 
-function saveDishSubstitutions(db, dishId, substitutions) {
+async function saveDishSubstitutions(db, dishId, substitutions) {
   if (!substitutions || !Array.isArray(substitutions)) return;
 
-  db.prepare('DELETE FROM dish_substitutions WHERE dish_id = ?').run(dishId);
-
-  const insertSub = db.prepare(`
-    INSERT INTO dish_substitutions (dish_id, allergen, original_ingredient, substitute_ingredient, substitute_quantity, substitute_unit, notes)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
-  `);
+  await db.prepare('DELETE FROM dish_substitutions WHERE dish_id = ?').run(dishId);
 
   for (const sub of substitutions) {
     if (!sub.allergen || !sub.original_ingredient || !sub.substitute_ingredient) continue;
-    insertSub.run(
+    await db.prepare(`
+      INSERT INTO dish_substitutions (dish_id, allergen, original_ingredient, substitute_ingredient, substitute_quantity, substitute_unit, notes)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).run(
       dishId,
       sub.allergen,
       sub.original_ingredient,

@@ -8,9 +8,9 @@ function escapeRegex(str) {
  * Detect allergens from a list of ingredient names using keyword matching.
  * Returns sorted array of allergen strings.
  */
-function detectAllergens(ingredientNames) {
-  const db = getDb();
-  const keywords = db.prepare('SELECT keyword, allergen FROM allergen_keywords').all();
+async function detectAllergens(ingredientNames) {
+  const db = await getDb();
+  const keywords = await db.prepare('SELECT keyword, allergen FROM allergen_keywords').all();
   const detected = new Set();
 
   for (const name of ingredientNames) {
@@ -30,9 +30,9 @@ function detectAllergens(ingredientNames) {
  * Detect allergens for a single ingredient name.
  * Returns array of matched allergen strings.
  */
-function detectAllergensForName(ingredientName) {
-  const db = getDb();
-  const keywords = db.prepare('SELECT keyword, allergen FROM allergen_keywords').all();
+async function detectAllergensForName(ingredientName) {
+  const db = await getDb();
+  const keywords = await db.prepare('SELECT keyword, allergen FROM allergen_keywords').all();
   const detected = new Set();
   const normalized = ingredientName.toLowerCase().trim();
 
@@ -51,21 +51,20 @@ function detectAllergensForName(ingredientName) {
  * Clears previous auto entries and re-detects from ingredient name.
  * Preserves manual overrides.
  */
-function updateIngredientAllergens(ingredientId) {
-  const db = getDb();
+async function updateIngredientAllergens(ingredientId) {
+  const db = await getDb();
 
-  const ingredient = db.prepare('SELECT name FROM ingredients WHERE id = ?').get(ingredientId);
+  const ingredient = await db.prepare('SELECT name FROM ingredients WHERE id = ?').get(ingredientId);
   if (!ingredient) return [];
 
-  const detected = detectAllergensForName(ingredient.name);
+  const detected = await detectAllergensForName(ingredient.name);
 
   // Remove old auto-detected allergens (keep manual overrides)
-  db.prepare("DELETE FROM ingredient_allergens WHERE ingredient_id = ? AND source = 'auto'").run(ingredientId);
+  await db.prepare("DELETE FROM ingredient_allergens WHERE ingredient_id = ? AND source = 'auto'").run(ingredientId);
 
   // Insert new auto-detected allergens
-  const insert = db.prepare('INSERT OR IGNORE INTO ingredient_allergens (ingredient_id, allergen, source) VALUES (?, ?, ?)');
   for (const allergen of detected) {
-    insert.run(ingredientId, allergen, 'auto');
+    await db.prepare('INSERT INTO ingredient_allergens (ingredient_id, allergen, source) VALUES (?, ?, ?) ON CONFLICT DO NOTHING').run(ingredientId, allergen, 'auto');
   }
 
   return detected;
@@ -76,11 +75,11 @@ function updateIngredientAllergens(ingredientId) {
  * Called when a dish is created/updated with new ingredients.
  * Also maintains backward-compat dish_allergens (auto) entries.
  */
-function updateDishAllergens(dishId) {
-  const db = getDb();
+async function updateDishAllergens(dishId) {
+  const db = await getDb();
 
   // Get all ingredients for this dish
-  const ingredients = db.prepare(`
+  const ingredients = await db.prepare(`
     SELECT i.id, i.name FROM dish_ingredients di
     JOIN ingredients i ON i.id = di.ingredient_id
     WHERE di.dish_id = ?
@@ -88,25 +87,24 @@ function updateDishAllergens(dishId) {
 
   // Update ingredient_allergens for each ingredient
   for (const ing of ingredients) {
-    updateIngredientAllergens(ing.id);
+    await updateIngredientAllergens(ing.id);
   }
 
   // Also update dish_allergens auto entries for backward compat
   const allDetected = new Set();
   for (const ing of ingredients) {
-    const allergens = db.prepare('SELECT allergen FROM ingredient_allergens WHERE ingredient_id = ?').all(ing.id);
+    const allergens = await db.prepare('SELECT allergen FROM ingredient_allergens WHERE ingredient_id = ?').all(ing.id);
     for (const a of allergens) {
       allDetected.add(a.allergen);
     }
   }
 
   // Remove old auto-detected dish allergens (keep manual overrides)
-  db.prepare("DELETE FROM dish_allergens WHERE dish_id = ? AND source = 'auto'").run(dishId);
+  await db.prepare("DELETE FROM dish_allergens WHERE dish_id = ? AND source = 'auto'").run(dishId);
 
   // Insert new auto-detected dish allergens
-  const insert = db.prepare('INSERT OR IGNORE INTO dish_allergens (dish_id, allergen, source) VALUES (?, ?, ?)');
   for (const allergen of allDetected) {
-    insert.run(dishId, allergen, 'auto');
+    await db.prepare('INSERT INTO dish_allergens (dish_id, allergen, source) VALUES (?, ?, ?) ON CONFLICT DO NOTHING').run(dishId, allergen, 'auto');
   }
 
   return Array.from(allDetected).sort();
@@ -117,11 +115,11 @@ function updateDishAllergens(dishId) {
  * with dish-level manual overrides from dish_allergens.
  * Returns array of { allergen, source, ingredient_name? } objects.
  */
-function getDishAllergens(dishId) {
-  const db = getDb();
+async function getDishAllergens(dishId) {
+  const db = await getDb();
 
   // Get allergens from ingredients in this dish
-  const ingredientAllergens = db.prepare(`
+  const ingredientAllergens = await db.prepare(`
     SELECT DISTINCT ia.allergen, ia.source, i.name AS ingredient_name
     FROM dish_ingredients di
     JOIN ingredient_allergens ia ON ia.ingredient_id = di.ingredient_id
@@ -131,7 +129,7 @@ function getDishAllergens(dishId) {
   `).all(dishId);
 
   // Get dish-level manual overrides
-  const dishManual = db.prepare(
+  const dishManual = await db.prepare(
     "SELECT allergen, source FROM dish_allergens WHERE dish_id = ? AND source = 'manual'"
   ).all(dishId);
 
@@ -159,14 +157,14 @@ function getDishAllergens(dishId) {
 /**
  * Batch get allergens for multiple dishes. Returns map of dishId -> allergen array.
  */
-function getDishAllergensBatch(dishIds) {
+async function getDishAllergensBatch(dishIds) {
   if (!dishIds.length) return {};
 
-  const db = getDb();
+  const db = await getDb();
   const ph = dishIds.map(() => '?').join(',');
 
   // Get allergens from ingredients
-  const ingredientAllergens = db.prepare(`
+  const ingredientAllergens = await db.prepare(`
     SELECT di.dish_id, ia.allergen, ia.source, i.name AS ingredient_name
     FROM dish_ingredients di
     JOIN ingredient_allergens ia ON ia.ingredient_id = di.ingredient_id
@@ -176,7 +174,7 @@ function getDishAllergensBatch(dishIds) {
   `).all(...dishIds);
 
   // Get dish-level manual overrides
-  const dishManual = db.prepare(
+  const dishManual = await db.prepare(
     `SELECT dish_id, allergen, source FROM dish_allergens WHERE dish_id IN (${ph}) AND source = 'manual'`
   ).all(...dishIds);
 
@@ -217,19 +215,19 @@ function getDishAllergensBatch(dishIds) {
   return result;
 }
 
-function getAllergenKeywords() {
-  const db = getDb();
-  return db.prepare('SELECT * FROM allergen_keywords ORDER BY allergen, keyword').all();
+async function getAllergenKeywords() {
+  const db = await getDb();
+  return await db.prepare('SELECT * FROM allergen_keywords ORDER BY allergen, keyword').all();
 }
 
-function addAllergenKeyword(keyword, allergen) {
-  const db = getDb();
-  return db.prepare('INSERT OR IGNORE INTO allergen_keywords (keyword, allergen) VALUES (?, ?)').run(keyword, allergen);
+async function addAllergenKeyword(keyword, allergen) {
+  const db = await getDb();
+  return await db.prepare('INSERT INTO allergen_keywords (keyword, allergen) VALUES (?, ?) ON CONFLICT DO NOTHING').run(keyword, allergen);
 }
 
-function deleteAllergenKeyword(id) {
-  const db = getDb();
-  return db.prepare('DELETE FROM allergen_keywords WHERE id = ?').run(id);
+async function deleteAllergenKeyword(id) {
+  const db = await getDb();
+  return await db.prepare('DELETE FROM allergen_keywords WHERE id = ?').run(id);
 }
 
 module.exports = {

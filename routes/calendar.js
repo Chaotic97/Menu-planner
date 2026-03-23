@@ -16,29 +16,29 @@ const CALENDAR_SCOPE = 'https://www.googleapis.com/auth/calendar.readonly';
 
 // --- Helpers ---
 
-function getSetting(key) {
-  const db = getDb();
-  const row = db.prepare("SELECT value FROM settings WHERE key = ?").get(key);
+async function getSetting(key) {
+  const db = await getDb();
+  const row = await db.prepare("SELECT value FROM settings WHERE key = ?").get(key);
   return row ? row.value : null;
 }
 
-function setSetting(key, value) {
-  const db = getDb();
+async function setSetting(key, value) {
+  const db = await getDb();
   if (value === null || value === undefined || value === '') {
-    db.prepare("DELETE FROM settings WHERE key = ?").run(key);
+    await db.prepare("DELETE FROM settings WHERE key = ?").run(key);
   } else {
-    db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)").run(key, value);
+    await db.prepare("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value").run(key, value);
   }
 }
 
-function getOAuthConfig() {
+async function getOAuthConfig() {
   return {
     clientId: process.env.GOOGLE_CLIENT_ID || '',
     clientSecret: process.env.GOOGLE_CLIENT_SECRET || '',
-    refreshToken: getSetting('gcal_refresh_token'),
-    accessToken: getSetting('gcal_access_token'),
-    tokenExpiry: getSetting('gcal_token_expiry'),
-    calendarId: getSetting('gcal_calendar_id'),
+    refreshToken: await getSetting('gcal_refresh_token'),
+    accessToken: await getSetting('gcal_access_token'),
+    tokenExpiry: await getSetting('gcal_token_expiry'),
+    calendarId: await getSetting('gcal_calendar_id'),
   };
 }
 
@@ -106,7 +106,7 @@ async function refreshAccessToken(clientId, clientSecret, refreshToken) {
 
 // Get a valid access token, refreshing if needed
 async function getValidAccessToken() {
-  const config = getOAuthConfig();
+  const config = await getOAuthConfig();
   if (!config.refreshToken || !config.clientId || !config.clientSecret) {
     return null;
   }
@@ -120,11 +120,11 @@ async function getValidAccessToken() {
   // Refresh the token
   const result = await refreshAccessToken(config.clientId, config.clientSecret, config.refreshToken);
   const expiry = Date.now() + (result.expires_in * 1000);
-  setSetting('gcal_access_token', result.access_token);
-  setSetting('gcal_token_expiry', String(expiry));
+  await setSetting('gcal_access_token', result.access_token);
+  await setSetting('gcal_token_expiry', String(expiry));
   // Google may issue a new refresh token
   if (result.refresh_token) {
-    setSetting('gcal_refresh_token', result.refresh_token);
+    await setSetting('gcal_refresh_token', result.refresh_token);
   }
   return result.access_token;
 }
@@ -139,32 +139,32 @@ function getRedirectUri(req) {
 // --- Routes ---
 
 // GET /api/calendar/settings - Get calendar integration status
-router.get('/settings', (req, res) => {
-  const config = getOAuthConfig();
+router.get('/settings', asyncHandler(async (req, res) => {
+  const config = await getOAuthConfig();
   res.json({
     configured: !!(config.clientId && config.clientSecret),
     calendarId: config.calendarId || '',
     connected: !!config.refreshToken,
   });
-});
+}));
 
 // POST /api/calendar/settings - Save calendar ID
-router.post('/settings', (req, res) => {
+router.post('/settings', asyncHandler(async (req, res) => {
   const { calendarId } = req.body;
 
   if (calendarId !== undefined) {
-    setSetting('gcal_calendar_id', calendarId.trim());
+    await setSetting('gcal_calendar_id', calendarId.trim());
   }
 
   // Invalidate cache when settings change
   eventsCache = { data: null, fetchedAt: 0 };
 
   res.json({ success: true });
-});
+}));
 
 // GET /api/calendar/auth-url - Generate OAuth authorization URL
-router.get('/auth-url', (req, res) => {
-  const config = getOAuthConfig();
+router.get('/auth-url', asyncHandler(async (req, res) => {
+  const config = await getOAuthConfig();
   if (!config.clientId) {
     return res.status(400).json({ error: 'Google Calendar not configured on this server.' });
   }
@@ -180,7 +180,7 @@ router.get('/auth-url', (req, res) => {
   });
 
   res.json({ url: `${GOOGLE_AUTH_URL}?${params}` });
-});
+}));
 
 // GET /api/calendar/callback - Handle OAuth redirect from Google
 router.get('/callback', asyncHandler(async (req, res) => {
@@ -193,7 +193,7 @@ router.get('/callback', asyncHandler(async (req, res) => {
     return res.redirect('/#/settings?gcal=error&msg=no_code');
   }
 
-  const config = getOAuthConfig();
+  const config = await getOAuthConfig();
   if (!config.clientId || !config.clientSecret) {
     return res.redirect('/#/settings?gcal=error&msg=missing_credentials');
   }
@@ -202,9 +202,9 @@ router.get('/callback', asyncHandler(async (req, res) => {
     const redirectUri = getRedirectUri(req);
     const tokens = await exchangeCodeForTokens(code, redirectUri, config.clientId, config.clientSecret);
 
-    setSetting('gcal_access_token', tokens.access_token);
-    setSetting('gcal_refresh_token', tokens.refresh_token);
-    setSetting('gcal_token_expiry', String(Date.now() + (tokens.expires_in * 1000)));
+    await setSetting('gcal_access_token', tokens.access_token);
+    await setSetting('gcal_refresh_token', tokens.refresh_token);
+    await setSetting('gcal_token_expiry', String(Date.now() + (tokens.expires_in * 1000)));
 
     // Invalidate cache
     eventsCache = { data: null, fetchedAt: 0 };
@@ -216,17 +216,17 @@ router.get('/callback', asyncHandler(async (req, res) => {
 }));
 
 // POST /api/calendar/disconnect - Remove stored tokens
-router.post('/disconnect', (req, res) => {
-  setSetting('gcal_access_token', null);
-  setSetting('gcal_refresh_token', null);
-  setSetting('gcal_token_expiry', null);
+router.post('/disconnect', asyncHandler(async (req, res) => {
+  await setSetting('gcal_access_token', null);
+  await setSetting('gcal_refresh_token', null);
+  await setSetting('gcal_token_expiry', null);
   eventsCache = { data: null, fetchedAt: 0 };
   res.json({ success: true });
-});
+}));
 
 // GET /api/calendar/events - Fetch Google Calendar events using OAuth
 router.get('/events', asyncHandler(async (req, res) => {
-  const config = getOAuthConfig();
+  const config = await getOAuthConfig();
 
   if (!config.refreshToken) {
     return res.json({ events: [], configured: false });
@@ -268,9 +268,9 @@ router.get('/events', asyncHandler(async (req, res) => {
     if (result.error) {
       // If token was revoked or expired, clear connection
       if (result.error.code === 401) {
-        setSetting('gcal_access_token', null);
-        setSetting('gcal_refresh_token', null);
-        setSetting('gcal_token_expiry', null);
+        await setSetting('gcal_access_token', null);
+        await setSetting('gcal_refresh_token', null);
+        await setSetting('gcal_token_expiry', null);
         return res.status(401).json({ error: 'Google Calendar authorization expired. Please reconnect in Settings.', configured: false });
       }
       throw new Error(result.error.message || 'Google Calendar API error');

@@ -39,8 +39,8 @@ function getDateForDay(weekStart, dayNum) {
 /**
  * Transform prep tasks result into task row objects.
  */
-function buildPrepTaskRows(prepResult, menuId) {
-  const db = getDb();
+async function buildPrepTaskRows(prepResult, menuId) {
+  const db = await getDb();
 
   // Batch-lookup dish names → ids to avoid N+1 queries
   const dishNameSet = new Set();
@@ -50,9 +50,8 @@ function buildPrepTaskRows(prepResult, menuId) {
     }
   }
   const dishIdMap = new Map();
-  const dishStmt = db.prepare('SELECT id FROM dishes WHERE name = ? AND deleted_at IS NULL');
   for (const name of dishNameSet) {
-    const dish = dishStmt.get(name);
+    const dish = await db.prepare('SELECT id FROM dishes WHERE name = ? AND deleted_at IS NULL').get(name);
     if (dish) dishIdMap.set(name, dish.id);
   }
 
@@ -82,21 +81,21 @@ function buildPrepTaskRows(prepResult, menuId) {
  * Build calendar-aware task rows using the menu's schedule_days and per-dish active_days.
  * Each task gets a due_date based on the first service day + timing_bucket offset.
  */
-function buildWeeklyTaskRows(prepResult, menuId, weekStart) {
-  const db = getDb();
+async function buildWeeklyTaskRows(prepResult, menuId, weekStart) {
+  const db = await getDb();
 
   // Get menu schedule
-  const menu = db.prepare('SELECT schedule_days FROM menus WHERE id = ?').get(menuId);
+  const menu = await db.prepare('SELECT schedule_days FROM menus WHERE id = ?').get(menuId);
   let scheduleDays = [];
   try { scheduleDays = JSON.parse(menu.schedule_days || '[]'); } catch {}
   if (!scheduleDays.length) {
     // No schedule configured — fall back to non-weekly behaviour
-    return buildPrepTaskRows(prepResult, menuId);
+    return await buildPrepTaskRows(prepResult, menuId);
   }
 
   // Get per-dish active_days
   const dishDays = {};
-  const menuDishes = db.prepare('SELECT dish_id, active_days FROM menu_dishes WHERE menu_id = ?').all(menuId);
+  const menuDishes = await db.prepare('SELECT dish_id, active_days FROM menu_dishes WHERE menu_id = ?').all(menuId);
   for (const md of menuDishes) {
     let days = null;
     try { days = md.active_days ? JSON.parse(md.active_days) : null; } catch {}
@@ -115,9 +114,8 @@ function buildWeeklyTaskRows(prepResult, menuId, weekStart) {
     }
   }
   const dishIdMap = new Map();
-  const dishStmt = db.prepare('SELECT id FROM dishes WHERE name = ? AND deleted_at IS NULL');
   for (const name of dishNameSet) {
-    const dish = dishStmt.get(name);
+    const dish = await db.prepare('SELECT id FROM dishes WHERE name = ? AND deleted_at IS NULL').get(name);
     if (dish) dishIdMap.set(name, dish.id);
   }
 
@@ -173,33 +171,31 @@ function buildWeeklyTaskRows(prepResult, menuId, weekStart) {
  * NOTE: Shopping/purchasing is handled separately via the shopping list page,
  * not as tasks. Only prep and custom tasks live in the tasks table.
  */
-function generateAndPersistTasks(menuId, options = {}) {
-  const db = getDb();
-  const menu = db.prepare('SELECT id FROM menus WHERE id = ? AND deleted_at IS NULL').get(menuId);
+async function generateAndPersistTasks(menuId, options = {}) {
+  const db = await getDb();
+  const menu = await db.prepare('SELECT id FROM menus WHERE id = ? AND deleted_at IS NULL').get(menuId);
   if (!menu) return null;
 
-  const prepResult = generatePrepTasks(menuId);
+  const prepResult = await generatePrepTasks(menuId);
 
   // Delete existing auto-generated tasks for this menu
-  db.prepare('DELETE FROM tasks WHERE menu_id = ? AND source = ?').run(menuId, 'auto');
+  await db.prepare('DELETE FROM tasks WHERE menu_id = ? AND source = ?').run(menuId, 'auto');
 
   let prepRows = [];
   if (prepResult) {
     if (options.weekStart) {
-      prepRows = buildWeeklyTaskRows(prepResult, menuId, options.weekStart);
+      prepRows = await buildWeeklyTaskRows(prepResult, menuId, options.weekStart);
     } else {
-      prepRows = buildPrepTaskRows(prepResult, menuId);
+      prepRows = await buildPrepTaskRows(prepResult, menuId);
     }
   }
 
-  const insertStmt = db.prepare(`
-    INSERT INTO tasks (menu_id, source_dish_id, type, title, description, category, quantity, unit, timing_bucket, priority, source, sort_order, due_date)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `);
-
   for (let i = 0; i < prepRows.length; i++) {
     const r = prepRows[i];
-    insertStmt.run(
+    await db.prepare(`
+      INSERT INTO tasks (menu_id, source_dish_id, type, title, description, category, quantity, unit, timing_bucket, priority, source, sort_order, due_date)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
       r.menu_id, r.source_dish_id, r.type, r.title, r.description,
       r.category, r.quantity, r.unit, r.timing_bucket, r.priority,
       r.source, i, r.due_date || null
@@ -217,8 +213,8 @@ function generateAndPersistTasks(menuId, options = {}) {
 /**
  * Get all tasks with optional filters.
  */
-function getTasks(filters = {}) {
-  const db = getDb();
+async function getTasks(filters = {}) {
+  const db = await getDb();
   const conditions = [];
   const params = [];
 
@@ -257,7 +253,7 @@ function getTasks(filters = {}) {
   }
 
   if (filters.overdue === '1' || filters.overdue === true) {
-    conditions.push("t.due_date < date('now') AND t.completed = 0");
+    conditions.push('t.due_date < CURRENT_DATE AND t.completed = 0');
   }
 
   if (filters.search) {
@@ -281,7 +277,7 @@ function getTasks(filters = {}) {
       t.created_at DESC
   `;
 
-  return db.prepare(sql).all(...params);
+  return await db.prepare(sql).all(...params);
 }
 
 module.exports = {

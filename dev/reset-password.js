@@ -22,8 +22,8 @@ async function main() {
 
   const hash = await bcrypt.hash(DEV_PASSWORD, SALT_ROUNDS);
 
-  db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').run('password_hash', hash);
-  db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').run('email', DEV_EMAIL);
+  await db.prepare('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value').run('password_hash', hash);
+  await db.prepare('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value').run('email', DEV_EMAIL);
 
   console.log('');
   console.log('  Dev credentials set:');

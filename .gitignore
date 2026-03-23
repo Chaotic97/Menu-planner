@@ -8,3 +8,5 @@ sessions/
 test-results/
 playwright-report/
 tests/e2e/.auth/
+ecosystem.config.js
+logs/

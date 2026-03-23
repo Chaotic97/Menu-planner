@@ -1,5 +1,6 @@
 const express = require('express');
 const { getDb } = require('../db/database');
+const asyncHandler = require('../middleware/asyncHandler');
 
 const router = express.Router();
 
@@ -10,9 +11,9 @@ const DEFAULT_DAY_PHASES = [
   { id: 'wrapup', name: 'Wrap-up', start: '21:00', end: '22:30' },
 ];
 
-function getDayPhases() {
-  const db = getDb();
-  const row = db.prepare("SELECT value FROM settings WHERE key = 'day_phases'").get();
+async function getDayPhases() {
+  const db = await getDb();
+  const row = await db.prepare("SELECT value FROM settings WHERE key = 'day_phases'").get();
   if (row) {
     try { return JSON.parse(row.value); } catch { /* fall through */ }
   }
@@ -20,13 +21,13 @@ function getDayPhases() {
 }
 
 // GET /api/today — today's tasks grouped by phase
-router.get('/', (req, res) => {
-  const db = getDb();
+router.get('/', asyncHandler(async (req, res) => {
+  const db = await getDb();
   const today = req.query.date || new Date().toISOString().slice(0, 10);
-  const phases = getDayPhases();
+  const phases = await getDayPhases();
 
   // Get today's tasks
-  const todayTasks = db.prepare(`
+  const todayTasks = await db.prepare(`
     SELECT t.*, m.name AS menu_name
     FROM tasks t
     LEFT JOIN menus m ON m.id = t.menu_id
@@ -40,7 +41,7 @@ router.get('/', (req, res) => {
   `).all(today);
 
   // Get overdue tasks (before today, not completed)
-  const overdue = db.prepare(`
+  const overdue = await db.prepare(`
     SELECT t.*, m.name AS menu_name
     FROM tasks t
     LEFT JOIN menus m ON m.id = t.menu_id
@@ -52,7 +53,7 @@ router.get('/', (req, res) => {
   `).all(today);
 
   // Find the "next" task (could be today or overdue)
-  const nextTask = db.prepare(`
+  const nextTask = await db.prepare(`
     SELECT t.*, m.name AS menu_name
     FROM tasks t
     LEFT JOIN menus m ON m.id = t.menu_id
@@ -80,18 +81,18 @@ router.get('/', (req, res) => {
     next_task: nextTask,
     progress: { total, completed },
   });
-});
+}));
 
 // GET /api/today/summary — end-of-day summary
-router.get('/summary', (req, res) => {
-  const db = getDb();
+router.get('/summary', asyncHandler(async (req, res) => {
+  const db = await getDb();
   const today = req.query.date || new Date().toISOString().slice(0, 10);
   const tomorrow = new Date(today + 'T12:00:00');
   tomorrow.setDate(tomorrow.getDate() + 1);
   const tomorrowStr = tomorrow.toISOString().slice(0, 10);
 
   // Completed today (completed_at is today)
-  const completedToday = db.prepare(`
+  const completedToday = await db.prepare(`
     SELECT t.*, m.name AS menu_name
     FROM tasks t
     LEFT JOIN menus m ON m.id = t.menu_id
@@ -100,7 +101,7 @@ router.get('/summary', (req, res) => {
   `).all(today);
 
   // Added today (created_at is today)
-  const addedToday = db.prepare(`
+  const addedToday = await db.prepare(`
     SELECT t.*, m.name AS menu_name
     FROM tasks t
     LEFT JOIN menus m ON m.id = t.menu_id
@@ -109,7 +110,7 @@ router.get('/summary', (req, res) => {
   `).all(today);
 
   // Incomplete today (due today or overdue, not completed)
-  const incomplete = db.prepare(`
+  const incomplete = await db.prepare(`
     SELECT t.*, m.name AS menu_name
     FROM tasks t
     LEFT JOIN menus m ON m.id = t.menu_id
@@ -120,7 +121,7 @@ router.get('/summary', (req, res) => {
   `).all(today);
 
   // Tomorrow's tasks
-  const tomorrowTasks = db.prepare(`
+  const tomorrowTasks = await db.prepare(`
     SELECT t.*, m.name AS menu_name
     FROM tasks t
     LEFT JOIN menus m ON m.id = t.menu_id
@@ -141,15 +142,15 @@ router.get('/summary', (req, res) => {
       tasks: tomorrowTasks,
     },
   });
-});
+}));
 
 // GET /api/today/day-phases — get configured day phases
-router.get('/day-phases', (req, res) => {
-  res.json(getDayPhases());
-});
+router.get('/day-phases', asyncHandler(async (req, res) => {
+  res.json(await getDayPhases());
+}));
 
 // PUT /api/today/day-phases — update day phases
-router.put('/day-phases', (req, res) => {
+router.put('/day-phases', asyncHandler(async (req, res) => {
   const { phases } = req.body;
 
   if (!Array.isArray(phases)) {
@@ -165,18 +166,12 @@ router.put('/day-phases', (req, res) => {
     }
   }
 
-  const db = getDb();
+  const db = await getDb();
   const json = JSON.stringify(phases);
-  const existing = db.prepare("SELECT key FROM settings WHERE key = 'day_phases'").get();
-
-  if (existing) {
-    db.prepare("UPDATE settings SET value = ? WHERE key = 'day_phases'").run(json);
-  } else {
-    db.prepare("INSERT INTO settings (key, value) VALUES ('day_phases', ?)").run(json);
-  }
+  await db.prepare("INSERT INTO settings (key, value) VALUES ('day_phases', ?) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value").run(json);
 
   req.broadcast('day_phases_updated', { phases }, req.headers['x-client-id']);
   res.json(phases);
-});
+}));
 
 module.exports = router;

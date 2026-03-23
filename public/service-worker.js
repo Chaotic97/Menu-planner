@@ -1,4 +1,4 @@
-const CACHE_VERSION = 6;
+const CACHE_VERSION = 7;
 const CACHE_NAME = 'platestack-v' + CACHE_VERSION;
 const API_CACHE_NAME = 'platestack-api-v1';
 const STT_CACHE_NAME = 'platestack-stt-v1';

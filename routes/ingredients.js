@@ -1,14 +1,15 @@
 const express = require('express');
 const { getDb } = require('../db/database');
 const { updateIngredientAllergens } = require('../services/allergenDetector');
+const asyncHandler = require('../middleware/asyncHandler');
 
 const VALID_ALLERGENS = ['celery','crustaceans','eggs','fish','gluten','lupin','milk','molluscs','mustard','nuts','peanuts','sesame','soy','sulphites'];
 
 const router = express.Router();
 
 // GET /api/ingredients - List/search ingredients
-router.get('/', (req, res) => {
-  const db = getDb();
+router.get('/', asyncHandler(async (req, res) => {
+  const db = await getDb();
   const { search, include_usage } = req.query;
 
   let sql;
@@ -32,13 +33,13 @@ router.get('/', (req, res) => {
   }
   sql += ' ORDER BY i.name';
 
-  const ingredients = db.prepare(sql).all(...params);
+  const ingredients = await db.prepare(sql).all(...params);
 
   // Batch attach allergens
   if (ingredients.length > 0) {
     const ids = ingredients.map(i => i.id);
     const ph = ids.map(() => '?').join(',');
-    const allergenRows = db.prepare(
+    const allergenRows = await db.prepare(
       `SELECT ingredient_id, allergen, source FROM ingredient_allergens WHERE ingredient_id IN (${ph})`
     ).all(...ids);
     const allergenMap = {};
@@ -52,11 +53,11 @@ router.get('/', (req, res) => {
   }
 
   res.json(ingredients);
-});
+}));
 
 // POST /api/ingredients - Create or upsert ingredient
-router.post('/', (req, res) => {
-  const db = getDb();
+router.post('/', asyncHandler(async (req, res) => {
+  const db = await getDb();
   const { name, unit_cost, base_unit, category, g_per_ml } = req.body;
 
   if (!name) return res.status(400).json({ error: 'Name is required' });
@@ -67,7 +68,7 @@ router.post('/', (req, res) => {
     return res.status(400).json({ error: 'g_per_ml must be a positive number or null' });
   }
 
-  const existing = db.prepare('SELECT id FROM ingredients WHERE name = ? COLLATE NOCASE').get(name);
+  const existing = await db.prepare('SELECT id FROM ingredients WHERE name = ?').get(name);
 
   if (existing) {
     // Update existing
@@ -80,26 +81,26 @@ router.post('/', (req, res) => {
 
     if (updates.length) {
       params.push(existing.id);
-      db.prepare(`UPDATE ingredients SET ${updates.join(', ')} WHERE id = ?`).run(...params);
+      await db.prepare(`UPDATE ingredients SET ${updates.join(', ')} WHERE id = ?`).run(...params);
     }
     req.broadcast('ingredient_updated', { id: existing.id }, req.headers['x-client-id']);
     res.json({ id: existing.id, updated: true });
   } else {
-    const result = db.prepare(
+    const result = await db.prepare(
       'INSERT INTO ingredients (name, unit_cost, base_unit, category) VALUES (?, ?, ?, ?)'
     ).run(name, unit_cost || 0, base_unit || 'g', category || 'other');
 
     // Auto-detect allergens for the new ingredient
-    updateIngredientAllergens(result.lastInsertRowid);
+    await updateIngredientAllergens(result.lastInsertRowid);
 
     req.broadcast('ingredient_created', { id: result.lastInsertRowid }, req.headers['x-client-id']);
     res.status(201).json({ id: result.lastInsertRowid });
   }
-});
+}));
 
 // PUT /api/ingredients/:id - Update ingredient
-router.put('/:id', (req, res) => {
-  const db = getDb();
+router.put('/:id', asyncHandler(async (req, res) => {
+  const db = await getDb();
   const { name, unit_cost, base_unit, category, g_per_ml } = req.body;
 
   if (unit_cost !== undefined && (typeof unit_cost !== 'number' || isNaN(unit_cost) || unit_cost < 0)) {
@@ -120,35 +121,35 @@ router.put('/:id', (req, res) => {
   if (!updates.length) return res.status(400).json({ error: 'Nothing to update' });
 
   params.push(req.params.id);
-  const result = db.prepare(`UPDATE ingredients SET ${updates.join(', ')} WHERE id = ?`).run(...params);
+  const result = await db.prepare(`UPDATE ingredients SET ${updates.join(', ')} WHERE id = ?`).run(...params);
   if (result.changes === 0) return res.status(404).json({ error: 'Ingredient not found' });
 
   // Re-detect allergens if name changed
   if (name) {
-    updateIngredientAllergens(parseInt(req.params.id));
+    await updateIngredientAllergens(parseInt(req.params.id));
   }
 
   req.broadcast('ingredient_updated', { id: parseInt(req.params.id) }, req.headers['x-client-id']);
   res.json({ success: true });
-});
+}));
 
 // GET /api/ingredients/:id/allergens - Get allergens for single ingredient
-router.get('/:id/allergens', (req, res) => {
-  const db = getDb();
-  const ingredient = db.prepare('SELECT name FROM ingredients WHERE id = ?').get(req.params.id);
+router.get('/:id/allergens', asyncHandler(async (req, res) => {
+  const db = await getDb();
+  const ingredient = await db.prepare('SELECT name FROM ingredients WHERE id = ?').get(req.params.id);
   if (!ingredient) return res.status(404).json({ error: 'Ingredient not found' });
 
-  const allergens = db.prepare(
+  const allergens = await db.prepare(
     'SELECT allergen, source FROM ingredient_allergens WHERE ingredient_id = ? ORDER BY allergen'
   ).all(req.params.id);
   res.json({ ingredient: ingredient.name, allergens: allergens.map(a => a.allergen) });
-});
+}));
 
 // POST /api/ingredients/:id/allergens - Manual allergen override for ingredient
-router.post('/:id/allergens', (req, res) => {
-  const db = getDb();
+router.post('/:id/allergens', asyncHandler(async (req, res) => {
+  const db = await getDb();
 
-  const ingredient = db.prepare('SELECT id FROM ingredients WHERE id = ?').get(req.params.id);
+  const ingredient = await db.prepare('SELECT id FROM ingredients WHERE id = ?').get(req.params.id);
   if (!ingredient) return res.status(404).json({ error: 'Ingredient not found' });
 
   const { allergen, action } = req.body;
@@ -161,35 +162,34 @@ router.post('/:id/allergens', (req, res) => {
   }
 
   if (action === 'add') {
-    db.prepare('INSERT OR REPLACE INTO ingredient_allergens (ingredient_id, allergen, source) VALUES (?, ?, ?)').run(req.params.id, allergen, 'manual');
+    await db.prepare('INSERT INTO ingredient_allergens (ingredient_id, allergen, source) VALUES (?, ?, ?) ON CONFLICT (ingredient_id, allergen) DO UPDATE SET source = EXCLUDED.source').run(req.params.id, allergen, 'manual');
   } else {
-    db.prepare('DELETE FROM ingredient_allergens WHERE ingredient_id = ? AND allergen = ?').run(req.params.id, allergen);
+    await db.prepare('DELETE FROM ingredient_allergens WHERE ingredient_id = ? AND allergen = ?').run(req.params.id, allergen);
   }
 
   req.broadcast('ingredient_updated', { id: parseInt(req.params.id) }, req.headers['x-client-id']);
   res.json({ success: true });
-});
+}));
 
 // PATCH /api/ingredients/bulk-density - Bulk update density values
-router.patch('/bulk-density', (req, res) => {
-  const db = getDb();
+router.patch('/bulk-density', asyncHandler(async (req, res) => {
+  const db = await getDb();
   const { items } = req.body;
 
   if (!Array.isArray(items) || !items.length) {
     return res.status(400).json({ error: 'items array is required' });
   }
 
-  const update = db.prepare('UPDATE ingredients SET g_per_ml = ? WHERE id = ?');
   let updated = 0;
 
   for (const item of items) {
     if (!item.id) continue;
     if (item.g_per_ml !== null && (typeof item.g_per_ml !== 'number' || isNaN(item.g_per_ml) || item.g_per_ml <= 0)) continue;
-    const result = update.run(item.g_per_ml, item.id);
+    const result = await db.prepare('UPDATE ingredients SET g_per_ml = ? WHERE id = ?').run(item.g_per_ml, item.id);
     if (result.changes > 0) updated++;
   }
 
   res.json({ updated });
-});
+}));
 
 module.exports = router;

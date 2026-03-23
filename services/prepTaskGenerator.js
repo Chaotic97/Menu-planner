@@ -33,13 +33,13 @@ function extractPrepTasks(chefNotes, dishName) {
   }));
 }
 
-function generatePrepTasks(menuId) {
-  const db = getDb();
+async function generatePrepTasks(menuId) {
+  const db = await getDb();
 
-  const menu = db.prepare('SELECT * FROM menus WHERE id = ? AND deleted_at IS NULL').get(menuId);
+  const menu = await db.prepare('SELECT * FROM menus WHERE id = ? AND deleted_at IS NULL').get(menuId);
   if (!menu) return null;
 
-  const dishes = db.prepare(`
+  const dishes = await db.prepare(`
     SELECT d.id, d.name, d.chefs_notes, md.servings
     FROM menu_dishes md
     JOIN dishes d ON d.id = md.dish_id

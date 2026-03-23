@@ -15,25 +15,25 @@ const TIME_REGEX = /^\d{2}:\d{2}$/;
 // ─── EXISTING ENDPOINTS (unchanged) ─────────────────────────────────────────
 
 // GET /api/todos/menu/:id/shopping-list
-router.get('/menu/:id/shopping-list', (req, res) => {
-  const result = generateShoppingList(req.params.id);
+router.get('/menu/:id/shopping-list', asyncHandler(async (req, res) => {
+  const result = await generateShoppingList(req.params.id);
   if (!result) return res.status(404).json({ error: 'Menu not found' });
   res.json(result);
-});
+}));
 
 // GET /api/todos/menu/:id/scaled-shopping-list?covers=N
-router.get('/menu/:id/scaled-shopping-list', (req, res) => {
+router.get('/menu/:id/scaled-shopping-list', asyncHandler(async (req, res) => {
   const covers = parseInt(req.query.covers);
   if (isNaN(covers) || covers < 1) {
     return res.status(400).json({ error: 'covers parameter is required and must be a positive integer' });
   }
 
-  const result = generateShoppingList(req.params.id);
+  const result = await generateShoppingList(req.params.id);
   if (!result) return res.status(404).json({ error: 'Menu not found' });
 
   // Calculate base covers — prefer menu's expected_covers, fall back to computed portions
-  const db = getDb();
-  const menu = db.prepare('SELECT expected_covers FROM menus WHERE id = ? AND deleted_at IS NULL').get(req.params.id);
+  const db = await getDb();
+  const menu = await db.prepare('SELECT expected_covers FROM menus WHERE id = ? AND deleted_at IS NULL').get(req.params.id);
 
   let baseCovers;
   let baseCoversSource;
@@ -41,7 +41,7 @@ router.get('/menu/:id/scaled-shopping-list', (req, res) => {
     baseCovers = menu.expected_covers;
     baseCoversSource = 'expected';
   } else {
-    const portionsRow = db.prepare(`
+    const portionsRow = await db.prepare(`
       SELECT COALESCE(SUM(md.servings * COALESCE(d.batch_yield, 1)), 0) AS total_portions
       FROM menu_dishes md
       JOIN dishes d ON d.id = md.dish_id AND d.deleted_at IS NULL
@@ -76,14 +76,14 @@ router.get('/menu/:id/scaled-shopping-list', (req, res) => {
   result.scale_factor = Math.round(scaleFactor * 100) / 100;
 
   res.json(result);
-});
+}));
 
 // GET /api/todos/menu/:id/prep-tasks
-router.get('/menu/:id/prep-tasks', (req, res) => {
-  const result = generatePrepTasks(req.params.id);
+router.get('/menu/:id/prep-tasks', asyncHandler(async (req, res) => {
+  const result = await generatePrepTasks(req.params.id);
   if (!result) return res.status(404).json({ error: 'Menu not found' });
   res.json(result);
-});
+}));
 
 // ─── NEW PERSISTENT TASK ENDPOINTS ──────────────────────────────────────────
 
@@ -92,15 +92,15 @@ router.get('/menu/:id/prep-tasks', (req, res) => {
 router.post('/generate/:menuId', asyncHandler(async (req, res) => {
   const menuId = parseInt(req.params.menuId);
   const { week_start } = req.body || {};
-  const db = getDb();
-  const menu = db.prepare('SELECT id FROM menus WHERE id = ? AND deleted_at IS NULL').get(menuId);
+  const db = await getDb();
+  const menu = await db.prepare('SELECT id FROM menus WHERE id = ? AND deleted_at IS NULL').get(menuId);
   if (!menu) return res.status(404).json({ error: 'Menu not found' });
 
   if (week_start && !DATE_REGEX.test(week_start)) {
     return res.status(400).json({ error: 'week_start must be YYYY-MM-DD format' });
   }
 
-  const result = generateAndPersistTasks(menuId, { weekStart: week_start || null });
+  const result = await generateAndPersistTasks(menuId, { weekStart: week_start || null });
   if (!result) return res.status(404).json({ error: 'Menu not found' });
 
   req.broadcast('tasks_generated', { menu_id: menuId, total: result.total }, req.headers['x-client-id']);
@@ -108,13 +108,13 @@ router.post('/generate/:menuId', asyncHandler(async (req, res) => {
 }));
 
 // GET /api/todos — list tasks with filters
-router.get('/', (req, res) => {
-  const tasks = getTasks(req.query);
+router.get('/', asyncHandler(async (req, res) => {
+  const tasks = await getTasks(req.query);
   res.json(tasks);
-});
+}));
 
 // POST /api/todos — create a custom task
-router.post('/', (req, res) => {
+router.post('/', asyncHandler(async (req, res) => {
   const { title, description, type, priority, menu_id, due_date, due_time, day_phase } = req.body;
 
   if (!title || typeof title !== 'string' || !title.trim()) {
@@ -137,8 +137,8 @@ router.post('/', (req, res) => {
     return res.status(400).json({ error: 'due_time must be HH:MM format' });
   }
 
-  const db = getDb();
-  const result = db.prepare(`
+  const db = await getDb();
+  const result = await db.prepare(`
     INSERT INTO tasks (title, description, type, priority, menu_id, due_date, due_time, day_phase, source)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'manual')
   `).run(
@@ -154,12 +154,12 @@ router.post('/', (req, res) => {
 
   req.broadcast('task_created', { id: result.lastInsertRowid, menu_id: menu_id || null, type: type || 'custom' }, req.headers['x-client-id']);
   res.status(201).json({ id: result.lastInsertRowid });
-});
+}));
 
 // PUT /api/todos/:id — update a task
-router.put('/:id', (req, res) => {
-  const db = getDb();
-  const task = db.prepare('SELECT * FROM tasks WHERE id = ?').get(req.params.id);
+router.put('/:id', asyncHandler(async (req, res) => {
+  const db = await getDb();
+  const task = await db.prepare('SELECT * FROM tasks WHERE id = ?').get(req.params.id);
   if (!task) return res.status(404).json({ error: 'Task not found' });
 
   const { title, description, priority, due_date, due_time, completed, sort_order, day_phase } = req.body;
@@ -216,7 +216,7 @@ router.put('/:id', (req, res) => {
     updates.push('completed = ?');
     params.push(completed ? 1 : 0);
     if (completed) {
-      updates.push("completed_at = datetime('now')");
+      updates.push("completed_at = NOW()");
     } else {
       updates.push('completed_at = NULL');
     }
@@ -234,70 +234,70 @@ router.put('/:id', (req, res) => {
     return res.status(400).json({ error: 'Nothing to update' });
   }
 
-  updates.push("updated_at = datetime('now')");
+  updates.push("updated_at = NOW()");
   params.push(req.params.id);
 
-  db.prepare(`UPDATE tasks SET ${updates.join(', ')} WHERE id = ?`).run(...params);
+  await db.prepare(`UPDATE tasks SET ${updates.join(', ')} WHERE id = ?`).run(...params);
 
   req.broadcast('task_updated', { id: parseInt(req.params.id), menu_id: task.menu_id }, req.headers['x-client-id']);
   res.json({ success: true });
-});
+}));
 
 // PUT /api/todos/:id/next — set a task as "do this next"
-router.put('/:id/next', (req, res) => {
-  const db = getDb();
-  const task = db.prepare('SELECT id FROM tasks WHERE id = ?').get(req.params.id);
+router.put('/:id/next', asyncHandler(async (req, res) => {
+  const db = await getDb();
+  const task = await db.prepare('SELECT id FROM tasks WHERE id = ?').get(req.params.id);
   if (!task) return res.status(404).json({ error: 'Task not found' });
 
   // Clear any existing next flag
-  db.prepare('UPDATE tasks SET is_next = 0 WHERE is_next = 1').run();
+  await db.prepare('UPDATE tasks SET is_next = 0 WHERE is_next = 1').run();
   // Set this task as next
-  db.prepare('UPDATE tasks SET is_next = 1 WHERE id = ?').run(req.params.id);
+  await db.prepare('UPDATE tasks SET is_next = 1 WHERE id = ?').run(req.params.id);
 
   req.broadcast('task_updated', { id: parseInt(req.params.id), is_next: true }, req.headers['x-client-id']);
   res.json({ success: true });
-});
+}));
 
 // DELETE /api/todos/next — clear the "do this next" flag
 // NOTE: must be defined before DELETE /:id to avoid `:id` matching "next"
-router.delete('/next', (req, res) => {
-  const db = getDb();
-  db.prepare('UPDATE tasks SET is_next = 0 WHERE is_next = 1').run();
+router.delete('/next', asyncHandler(async (req, res) => {
+  const db = await getDb();
+  await db.prepare('UPDATE tasks SET is_next = 0 WHERE is_next = 1').run();
 
   req.broadcast('task_updated', { cleared_next: true }, req.headers['x-client-id']);
   res.json({ success: true });
-});
+}));
 
 // DELETE /api/todos/:id — delete a task
-router.delete('/:id', (req, res) => {
-  const db = getDb();
-  const result = db.prepare('DELETE FROM tasks WHERE id = ?').run(req.params.id);
+router.delete('/:id', asyncHandler(async (req, res) => {
+  const db = await getDb();
+  const result = await db.prepare('DELETE FROM tasks WHERE id = ?').run(req.params.id);
   if (result.changes === 0) return res.status(404).json({ error: 'Task not found' });
 
   req.broadcast('task_deleted', { id: parseInt(req.params.id) }, req.headers['x-client-id']);
   res.json({ success: true });
-});
+}));
 
 // POST /api/todos/batch-complete — batch complete/uncomplete tasks
-router.post('/batch-complete', (req, res) => {
+router.post('/batch-complete', asyncHandler(async (req, res) => {
   const { task_ids, completed } = req.body;
   if (!Array.isArray(task_ids) || task_ids.length === 0) {
     return res.status(400).json({ error: 'task_ids must be a non-empty array' });
   }
 
-  const db = getDb();
+  const db = await getDb();
   const placeholders = task_ids.map(() => '?').join(',');
   const completedVal = completed ? 1 : 0;
 
   let result;
   if (completed) {
-    result = db.prepare(`UPDATE tasks SET completed = ?, completed_at = datetime('now'), updated_at = datetime('now') WHERE id IN (${placeholders})`).run(completedVal, ...task_ids);
+    result = await db.prepare(`UPDATE tasks SET completed = ?, completed_at = NOW(), updated_at = NOW() WHERE id IN (${placeholders})`).run(completedVal, ...task_ids);
   } else {
-    result = db.prepare(`UPDATE tasks SET completed = ?, completed_at = NULL, updated_at = datetime('now') WHERE id IN (${placeholders})`).run(completedVal, ...task_ids);
+    result = await db.prepare(`UPDATE tasks SET completed = ?, completed_at = NULL, updated_at = NOW() WHERE id IN (${placeholders})`).run(completedVal, ...task_ids);
   }
 
   req.broadcast('tasks_batch_updated', { task_ids, action: 'complete' }, req.headers['x-client-id']);
   res.json({ success: true, updated: result.changes });
-});
+}));
 
 module.exports = router;

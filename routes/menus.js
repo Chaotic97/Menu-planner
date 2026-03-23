@@ -17,9 +17,9 @@ const COURSE_TEMPLATES = {
 };
 
 // GET /api/menus - List all menus
-router.get('/', (req, res) => {
-  const db = getDb();
-  const menus = db.prepare(`
+router.get('/', asyncHandler(async (req, res) => {
+  const db = await getDb();
+  const menus = await db.prepare(`
     SELECT * FROM menus WHERE deleted_at IS NULL
     ORDER BY
       CASE WHEN menu_type = 'standard' THEN 0 ELSE 1 END,
@@ -32,7 +32,7 @@ router.get('/', (req, res) => {
     const placeholders = menuIds.map(() => '?').join(',');
 
     // Batch: dish counts and menu_dish rows per menu (excluding soft-deleted dishes)
-    const menuDishRows = db.prepare(`
+    const menuDishRows = await db.prepare(`
       SELECT md.menu_id, md.dish_id, md.servings
       FROM menu_dishes md
       JOIN dishes d ON d.id = md.dish_id
@@ -51,7 +51,7 @@ router.get('/', (req, res) => {
     const dishCostMap = {};
     if (allDishIds.length > 0) {
       const dishPlaceholders = allDishIds.map(() => '?').join(',');
-      const ingredientRows = db.prepare(`
+      const ingredientRows = await db.prepare(`
         SELECT di.dish_id, di.quantity, di.unit, i.unit_cost, i.base_unit, i.name AS ingredient_name
         FROM dish_ingredients di
         JOIN ingredients i ON i.id = di.ingredient_id
@@ -59,7 +59,7 @@ router.get('/', (req, res) => {
       `).all(...allDishIds);
 
       // Fetch manual_costs and batch_yield per dish
-      const dishMetaRows = db.prepare(
+      const dishMetaRows = await db.prepare(
         `SELECT id, manual_costs, batch_yield FROM dishes WHERE id IN (${dishPlaceholders})`
       ).all(...allDishIds);
       const dishMetaMap = {};
@@ -85,7 +85,7 @@ router.get('/', (req, res) => {
     }
 
     // Batch: course counts per menu
-    const courseRows = db.prepare(
+    const courseRows = await db.prepare(
       `SELECT menu_id, COUNT(*) AS cnt FROM menu_courses WHERE menu_id IN (${placeholders}) GROUP BY menu_id`
     ).all(...menuIds);
     const courseCountMap = {};
@@ -110,21 +110,21 @@ router.get('/', (req, res) => {
   }
 
   res.json(menus);
-});
+}));
 
 // GET /api/menus/:id - Get menu with all dishes and cost breakdown
-router.get('/:id', (req, res) => {
-  const db = getDb();
-  const menu = db.prepare('SELECT * FROM menus WHERE id = ? AND deleted_at IS NULL').get(req.params.id);
+router.get('/:id', asyncHandler(async (req, res) => {
+  const db = await getDb();
+  const menu = await db.prepare('SELECT * FROM menus WHERE id = ? AND deleted_at IS NULL').get(req.params.id);
   if (!menu) return res.status(404).json({ error: 'Menu not found' });
 
   // Get courses for this menu
-  menu.courses = db.prepare(
+  menu.courses = await db.prepare(
     'SELECT * FROM menu_courses WHERE menu_id = ? ORDER BY sort_order, id'
   ).all(menu.id);
 
   // Get dishes in this menu (include course_id and notes)
-  menu.dishes = db.prepare(`
+  menu.dishes = await db.prepare(`
     SELECT d.*, md.servings, md.sort_order, md.id AS menu_dish_id, md.active_days, md.course_id, md.notes AS menu_dish_notes
     FROM menu_dishes md
     JOIN dishes d ON d.id = md.dish_id
@@ -146,17 +146,17 @@ router.get('/:id', (req, res) => {
     const ph = dishIds.map(() => '?').join(',');
 
     // Batch: allergens (aggregated from ingredient_allergens + dish manual)
-    const allergenMap = getDishAllergensBatch(dishIds);
+    const allergenMap = await getDishAllergensBatch(dishIds);
 
     // Batch: substitution counts
-    const subsRows = db.prepare(
+    const subsRows = await db.prepare(
       `SELECT dish_id, COUNT(*) AS cnt FROM dish_substitutions WHERE dish_id IN (${ph}) GROUP BY dish_id`
     ).all(...dishIds);
     const subsMap = {};
     for (const r of subsRows) subsMap[r.dish_id] = r.cnt;
 
     // Batch: ingredients for cost calculation
-    const ingredientRows = db.prepare(
+    const ingredientRows = await db.prepare(
       `SELECT di.dish_id, di.quantity, di.unit, i.unit_cost, i.base_unit, i.name AS ingredient_name
        FROM dish_ingredients di
        JOIN ingredients i ON i.id = di.ingredient_id
@@ -219,18 +219,18 @@ router.get('/:id', (req, res) => {
   }
 
   res.json(menu);
-});
+}));
 
 // GET /api/menus/:id/kitchen-print - Full menu data for kitchen print
-router.get('/:id/kitchen-print', (req, res) => {
-  const db = getDb();
-  const menu = db.prepare('SELECT * FROM menus WHERE id = ? AND deleted_at IS NULL').get(req.params.id);
+router.get('/:id/kitchen-print', asyncHandler(async (req, res) => {
+  const db = await getDb();
+  const menu = await db.prepare('SELECT * FROM menus WHERE id = ? AND deleted_at IS NULL').get(req.params.id);
   if (!menu) return res.status(404).json({ error: 'Menu not found' });
 
   // Get courses
-  const courses = db.prepare('SELECT * FROM menu_courses WHERE menu_id = ? ORDER BY sort_order, id').all(menu.id);
+  const courses = await db.prepare('SELECT * FROM menu_courses WHERE menu_id = ? ORDER BY sort_order, id').all(menu.id);
 
-  const dishes = db.prepare(`
+  const dishes = await db.prepare(`
     SELECT d.*, md.servings, md.sort_order, md.course_id, md.notes AS menu_dish_notes
     FROM menu_dishes md
     JOIN dishes d ON d.id = md.dish_id
@@ -243,14 +243,14 @@ router.get('/:id/kitchen-print', (req, res) => {
     const ph = dishIds.map(() => '?').join(',');
 
     // Batch: allergens (aggregated from ingredient_allergens + dish manual)
-    const allergenBatchMap = getDishAllergensBatch(dishIds);
+    const allergenBatchMap = await getDishAllergensBatch(dishIds);
     const allergenMap = {};
     for (const id of dishIds) {
       allergenMap[id] = (allergenBatchMap[id] || []).map(a => a.allergen);
     }
 
     // Batch: ingredients
-    const ingredientRows = db.prepare(
+    const ingredientRows = await db.prepare(
       `SELECT di.dish_id, di.quantity, di.unit, di.prep_note, i.name AS ingredient_name
        FROM dish_ingredients di
        JOIN ingredients i ON i.id = di.ingredient_id
@@ -264,7 +264,7 @@ router.get('/:id/kitchen-print', (req, res) => {
     }
 
     // Batch: substitutions
-    const subsRows = db.prepare(
+    const subsRows = await db.prepare(
       `SELECT * FROM dish_substitutions WHERE dish_id IN (${ph}) ORDER BY allergen`
     ).all(...dishIds);
     const subsMap = {};
@@ -274,7 +274,7 @@ router.get('/:id/kitchen-print', (req, res) => {
     }
 
     // Batch: components
-    const compRows = db.prepare(
+    const compRows = await db.prepare(
       `SELECT dish_id, name, sort_order FROM dish_components WHERE dish_id IN (${ph}) ORDER BY sort_order, id`
     ).all(...dishIds);
     const compMap = {};
@@ -284,7 +284,7 @@ router.get('/:id/kitchen-print', (req, res) => {
     }
 
     // Batch: directions
-    const dirRows = db.prepare(
+    const dirRows = await db.prepare(
       `SELECT dish_id, type, text, sort_order FROM dish_directions WHERE dish_id IN (${ph}) ORDER BY sort_order, id`
     ).all(...dishIds);
     const dirMap = {};
@@ -294,7 +294,7 @@ router.get('/:id/kitchen-print', (req, res) => {
     }
 
     // Batch: service directions
-    const svcDirRows = db.prepare(
+    const svcDirRows = await db.prepare(
       `SELECT dish_id, type, text, sort_order FROM dish_service_directions WHERE dish_id IN (${ph}) ORDER BY sort_order, id`
     ).all(...dishIds);
     const svcDirMap = {};
@@ -356,11 +356,11 @@ router.get('/:id/kitchen-print', (req, res) => {
     guest_allergies: menu.guest_allergies ? menu.guest_allergies.split(',').map(a => a.trim()).filter(Boolean) : [],
     expected_covers: menu.expected_covers || 0,
   });
-});
+}));
 
 // POST /api/menus - Create menu
-router.post('/', (req, res) => {
-  const db = getDb();
+router.post('/', asyncHandler(async (req, res) => {
+  const db = await getDb();
   const { name, description, sell_price, expected_covers, guest_allergies, allergen_covers, schedule_days, menu_type, event_date, gcal_event_id, service_style, batch_label } = req.body;
   if (!name) return res.status(400).json({ error: 'Name is required' });
   if (sell_price !== undefined && (typeof sell_price !== 'number' || sell_price < 0)) {
@@ -400,7 +400,7 @@ router.post('/', (req, res) => {
 
   // If setting as standard, demote any existing standard menu
   if (type === 'standard') {
-    db.prepare("UPDATE menus SET menu_type = 'event' WHERE menu_type = 'standard' AND deleted_at IS NULL").run();
+    await db.prepare("UPDATE menus SET menu_type = 'event' WHERE menu_type = 'standard' AND deleted_at IS NULL").run();
   }
 
   const coversJson = allergen_covers
@@ -408,21 +408,21 @@ router.post('/', (req, res) => {
     : '{}';
   const scheduleDaysJson = (schedule_days && type === 'standard') ? JSON.stringify(schedule_days) : '[]';
 
-  const result = db.prepare(
+  const result = await db.prepare(
     'INSERT INTO menus (name, description, sell_price, expected_covers, guest_allergies, allergen_covers, schedule_days, menu_type, event_date, gcal_event_id, service_style, batch_label) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
   ).run(name, description || '', sell_price || 0, expected_covers || 0, guest_allergies || '', coversJson, scheduleDaysJson, type, event_date || null, gcal_event_id || null, service_style || 'alacarte', batch_label || '');
 
   req.broadcast('menu_created', { id: result.lastInsertRowid }, req.headers['x-client-id']);
   res.status(201).json({ id: result.lastInsertRowid });
-});
+}));
 
 // PUT /api/menus/:id - Update menu
-router.put('/:id', (req, res) => {
-  const db = getDb();
+router.put('/:id', asyncHandler(async (req, res) => {
+  const db = await getDb();
   const { name, description, is_active, sell_price, expected_covers, guest_allergies, allergen_covers, schedule_days, menu_type, event_date, gcal_event_id, service_style, batch_label } = req.body;
 
   // Look up current menu to know its type
-  const current = db.prepare('SELECT menu_type FROM menus WHERE id = ? AND deleted_at IS NULL').get(req.params.id);
+  const current = await db.prepare('SELECT menu_type FROM menus WHERE id = ? AND deleted_at IS NULL').get(req.params.id);
   if (!current) return res.status(404).json({ error: 'Menu not found' });
 
   const effectiveType = menu_type || current.menu_type || 'event';
@@ -451,7 +451,7 @@ router.put('/:id', (req, res) => {
 
   // If promoting to standard, demote any existing standard menu
   if (menu_type === 'standard' && current.menu_type !== 'standard') {
-    db.prepare("UPDATE menus SET menu_type = 'event' WHERE menu_type = 'standard' AND deleted_at IS NULL AND id != ?").run(req.params.id);
+    await db.prepare("UPDATE menus SET menu_type = 'event' WHERE menu_type = 'standard' AND deleted_at IS NULL AND id != ?").run(req.params.id);
   }
 
   const updates = [];
@@ -503,27 +503,27 @@ router.put('/:id', (req, res) => {
   if (batch_label !== undefined) {
     updates.push('batch_label = ?'); params.push(batch_label);
   }
-  updates.push("updated_at = datetime('now')");
+  updates.push("updated_at = NOW()");
 
   params.push(req.params.id);
-  const result = db.prepare(`UPDATE menus SET ${updates.join(', ')} WHERE id = ? AND deleted_at IS NULL`).run(...params);
+  const result = await db.prepare(`UPDATE menus SET ${updates.join(', ')} WHERE id = ? AND deleted_at IS NULL`).run(...params);
   if (result.changes === 0) return res.status(404).json({ error: 'Menu not found' });
 
   req.broadcast('menu_updated', { id: parseInt(req.params.id) }, req.headers['x-client-id']);
   res.json({ success: true });
-});
+}));
 
 // DELETE /api/menus/:id - Soft delete
-router.delete('/:id', (req, res) => {
-  const db = getDb();
-  const menu = db.prepare('SELECT id FROM menus WHERE id = ? AND deleted_at IS NULL').get(req.params.id);
+router.delete('/:id', asyncHandler(async (req, res) => {
+  const db = await getDb();
+  const menu = await db.prepare('SELECT id FROM menus WHERE id = ? AND deleted_at IS NULL').get(req.params.id);
   if (!menu) return res.status(404).json({ error: 'Menu not found' });
 
-  db.prepare("UPDATE menus SET deleted_at = datetime('now') WHERE id = ?").run(req.params.id);
+  await db.prepare("UPDATE menus SET deleted_at = NOW() WHERE id = ?").run(req.params.id);
 
   // Cascade soft-delete temp dishes that belong to this menu
-  db.prepare(`
-    UPDATE dishes SET deleted_at = datetime('now')
+  await db.prepare(`
+    UPDATE dishes SET deleted_at = NOW()
     WHERE is_temporary = 1 AND id IN (
       SELECT dish_id FROM menu_dishes WHERE menu_id = ?
     )
@@ -531,16 +531,16 @@ router.delete('/:id', (req, res) => {
 
   req.broadcast('menu_deleted', { id: parseInt(req.params.id) }, req.headers['x-client-id']);
   res.json({ success: true });
-});
+}));
 
 // POST /api/menus/:id/restore - Restore soft-deleted menu
-router.post('/:id/restore', (req, res) => {
-  const db = getDb();
-  const result = db.prepare("UPDATE menus SET deleted_at = NULL WHERE id = ?").run(req.params.id);
+router.post('/:id/restore', asyncHandler(async (req, res) => {
+  const db = await getDb();
+  const result = await db.prepare("UPDATE menus SET deleted_at = NULL WHERE id = ?").run(req.params.id);
   if (result.changes === 0) return res.status(404).json({ error: 'Menu not found' });
 
   // Restore temp dishes that belong to this menu
-  db.prepare(`
+  await db.prepare(`
     UPDATE dishes SET deleted_at = NULL
     WHERE is_temporary = 1 AND id IN (
       SELECT dish_id FROM menu_dishes WHERE menu_id = ?
@@ -549,12 +549,12 @@ router.post('/:id/restore', (req, res) => {
 
   req.broadcast('menu_created', { id: parseInt(req.params.id) }, req.headers['x-client-id']);
   res.json({ success: true });
-});
+}));
 
 // PUT /api/menus/:id/dishes/reorder - Batch update sort_order
-router.put('/:id/dishes/reorder', (req, res) => {
-  const db = getDb();
-  const menu = db.prepare('SELECT id FROM menus WHERE id = ? AND deleted_at IS NULL').get(req.params.id);
+router.put('/:id/dishes/reorder', asyncHandler(async (req, res) => {
+  const db = await getDb();
+  const menu = await db.prepare('SELECT id FROM menus WHERE id = ? AND deleted_at IS NULL').get(req.params.id);
   if (!menu) return res.status(404).json({ error: 'Menu not found' });
 
   const { order } = req.body;
@@ -563,23 +563,21 @@ router.put('/:id/dishes/reorder', (req, res) => {
     return res.status(400).json({ error: 'order array is required' });
   }
 
-  const stmtWithCourse = db.prepare('UPDATE menu_dishes SET sort_order = ?, course_id = ? WHERE menu_id = ? AND dish_id = ?');
-  const stmtNoCourse = db.prepare('UPDATE menu_dishes SET sort_order = ? WHERE menu_id = ? AND dish_id = ?');
   for (const item of order) {
     if (item.course_id !== undefined) {
-      stmtWithCourse.run(item.sort_order, item.course_id === null ? null : item.course_id, req.params.id, item.dish_id);
+      await db.prepare('UPDATE menu_dishes SET sort_order = ?, course_id = ? WHERE menu_id = ? AND dish_id = ?').run(item.sort_order, item.course_id === null ? null : item.course_id, req.params.id, item.dish_id);
     } else {
-      stmtNoCourse.run(item.sort_order, req.params.id, item.dish_id);
+      await db.prepare('UPDATE menu_dishes SET sort_order = ? WHERE menu_id = ? AND dish_id = ?').run(item.sort_order, req.params.id, item.dish_id);
     }
   }
 
   req.broadcast('menu_updated', { id: parseInt(req.params.id) }, req.headers['x-client-id']);
   res.json({ success: true });
-});
+}));
 
 // POST /api/menus/:id/dishes - Add dish to menu
-router.post('/:id/dishes', (req, res) => {
-  const db = getDb();
+router.post('/:id/dishes', asyncHandler(async (req, res) => {
+  const db = await getDb();
   const { dish_id, servings, sort_order, active_days, course_id } = req.body;
 
   if (!dish_id) return res.status(400).json({ error: 'dish_id is required' });
@@ -592,12 +590,12 @@ router.post('/:id/dishes', (req, res) => {
     }
   }
 
-  const maxOrder = db.prepare('SELECT MAX(sort_order) AS max_order FROM menu_dishes WHERE menu_id = ?').get(req.params.id);
+  const maxOrder = await db.prepare('SELECT MAX(sort_order) AS max_order FROM menu_dishes WHERE menu_id = ?').get(req.params.id);
   const order = sort_order !== undefined ? sort_order : (maxOrder.max_order || 0) + 1;
   const activeDaysJson = active_days ? JSON.stringify(active_days) : null;
 
   try {
-    db.prepare('INSERT INTO menu_dishes (menu_id, dish_id, servings, sort_order, active_days, course_id) VALUES (?, ?, ?, ?, ?, ?)').run(
+    await db.prepare('INSERT INTO menu_dishes (menu_id, dish_id, servings, sort_order, active_days, course_id) VALUES (?, ?, ?, ?, ?, ?)').run(
       req.params.id, dish_id, servings || 1, order, activeDaysJson, course_id || null
     );
     req.broadcast('menu_updated', { id: parseInt(req.params.id) }, req.headers['x-client-id']);
@@ -608,11 +606,11 @@ router.post('/:id/dishes', (req, res) => {
     }
     throw err;
   }
-});
+}));
 
 // PUT /api/menus/:id/dishes/:dishId - Update servings/order/active_days/course_id/notes
-router.put('/:id/dishes/:dishId', (req, res) => {
-  const db = getDb();
+router.put('/:id/dishes/:dishId', asyncHandler(async (req, res) => {
+  const db = await getDb();
   const { servings, sort_order, active_days, course_id, notes } = req.body;
 
   if (active_days !== undefined && active_days !== null) {
@@ -646,40 +644,40 @@ router.put('/:id/dishes/:dishId', (req, res) => {
   if (!updates.length) return res.status(400).json({ error: 'Nothing to update' });
 
   params.push(req.params.id, req.params.dishId);
-  const result = db.prepare(`UPDATE menu_dishes SET ${updates.join(', ')} WHERE menu_id = ? AND dish_id = ?`).run(...params);
+  const result = await db.prepare(`UPDATE menu_dishes SET ${updates.join(', ')} WHERE menu_id = ? AND dish_id = ?`).run(...params);
   if (result.changes === 0) return res.status(404).json({ error: 'Menu dish not found' });
 
   req.broadcast('menu_updated', { id: parseInt(req.params.id) }, req.headers['x-client-id']);
   res.json({ success: true });
-});
+}));
 
 // DELETE /api/menus/:id/dishes/:dishId - Remove dish from menu
-router.delete('/:id/dishes/:dishId', (req, res) => {
-  const db = getDb();
-  const result = db.prepare('DELETE FROM menu_dishes WHERE menu_id = ? AND dish_id = ?').run(req.params.id, req.params.dishId);
+router.delete('/:id/dishes/:dishId', asyncHandler(async (req, res) => {
+  const db = await getDb();
+  const result = await db.prepare('DELETE FROM menu_dishes WHERE menu_id = ? AND dish_id = ?').run(req.params.id, req.params.dishId);
   if (result.changes === 0) return res.status(404).json({ error: 'Menu dish not found' });
   req.broadcast('menu_updated', { id: parseInt(req.params.id) }, req.headers['x-client-id']);
   res.json({ success: true });
-});
+}));
 
 // ============================
 // Menu Courses / Sections
 // ============================
 
 // GET /api/menus/:id/courses - List courses for a menu
-router.get('/:id/courses', (req, res) => {
-  const db = getDb();
-  const menu = db.prepare('SELECT id FROM menus WHERE id = ? AND deleted_at IS NULL').get(req.params.id);
+router.get('/:id/courses', asyncHandler(async (req, res) => {
+  const db = await getDb();
+  const menu = await db.prepare('SELECT id FROM menus WHERE id = ? AND deleted_at IS NULL').get(req.params.id);
   if (!menu) return res.status(404).json({ error: 'Menu not found' });
 
-  const courses = db.prepare('SELECT * FROM menu_courses WHERE menu_id = ? ORDER BY sort_order, id').all(req.params.id);
+  const courses = await db.prepare('SELECT * FROM menu_courses WHERE menu_id = ? ORDER BY sort_order, id').all(req.params.id);
   res.json(courses);
-});
+}));
 
 // POST /api/menus/:id/courses - Create a course/section
-router.post('/:id/courses', (req, res) => {
-  const db = getDb();
-  const menu = db.prepare('SELECT id FROM menus WHERE id = ? AND deleted_at IS NULL').get(req.params.id);
+router.post('/:id/courses', asyncHandler(async (req, res) => {
+  const db = await getDb();
+  const menu = await db.prepare('SELECT id FROM menus WHERE id = ? AND deleted_at IS NULL').get(req.params.id);
   if (!menu) return res.status(404).json({ error: 'Menu not found' });
 
   const { name, notes, sort_order } = req.body;
@@ -687,22 +685,22 @@ router.post('/:id/courses', (req, res) => {
     return res.status(400).json({ error: 'Course name is required' });
   }
 
-  const maxOrder = db.prepare('SELECT MAX(sort_order) AS max_order FROM menu_courses WHERE menu_id = ?').get(req.params.id);
+  const maxOrder = await db.prepare('SELECT MAX(sort_order) AS max_order FROM menu_courses WHERE menu_id = ?').get(req.params.id);
   const order = sort_order !== undefined ? sort_order : (maxOrder.max_order || 0) + 1;
 
-  const result = db.prepare('INSERT INTO menu_courses (menu_id, name, notes, sort_order) VALUES (?, ?, ?, ?)').run(
+  const result = await db.prepare('INSERT INTO menu_courses (menu_id, name, notes, sort_order) VALUES (?, ?, ?, ?)').run(
     req.params.id, name.trim(), notes || '', order
   );
 
   req.broadcast('menu_updated', { id: parseInt(req.params.id) }, req.headers['x-client-id']);
   res.status(201).json({ id: result.lastInsertRowid, name: name.trim(), notes: notes || '', sort_order: order });
-});
+}));
 
 // PUT /api/menus/:id/courses/reorder - Batch reorder courses
 // NOTE: Must be defined before /:id/courses/:courseId to avoid matching "reorder" as courseId
-router.put('/:id/courses/reorder', (req, res) => {
-  const db = getDb();
-  const menu = db.prepare('SELECT id FROM menus WHERE id = ? AND deleted_at IS NULL').get(req.params.id);
+router.put('/:id/courses/reorder', asyncHandler(async (req, res) => {
+  const db = await getDb();
+  const menu = await db.prepare('SELECT id FROM menus WHERE id = ? AND deleted_at IS NULL').get(req.params.id);
   if (!menu) return res.status(404).json({ error: 'Menu not found' });
 
   const { order } = req.body;
@@ -710,20 +708,19 @@ router.put('/:id/courses/reorder', (req, res) => {
     return res.status(400).json({ error: 'order array is required' });
   }
 
-  const stmt = db.prepare('UPDATE menu_courses SET sort_order = ? WHERE id = ? AND menu_id = ?');
   for (const item of order) {
-    stmt.run(item.sort_order, item.course_id, req.params.id);
+    await db.prepare('UPDATE menu_courses SET sort_order = ? WHERE id = ? AND menu_id = ?').run(item.sort_order, item.course_id, req.params.id);
   }
 
   req.broadcast('menu_updated', { id: parseInt(req.params.id) }, req.headers['x-client-id']);
   res.json({ success: true });
-});
+}));
 
 // POST /api/menus/:id/courses/from-template - Create courses from a template
 // NOTE: Must be defined before /:id/courses/:courseId
-router.post('/:id/courses/from-template', (req, res) => {
-  const db = getDb();
-  const menu = db.prepare('SELECT id FROM menus WHERE id = ? AND deleted_at IS NULL').get(req.params.id);
+router.post('/:id/courses/from-template', asyncHandler(async (req, res) => {
+  const db = await getDb();
+  const menu = await db.prepare('SELECT id FROM menus WHERE id = ? AND deleted_at IS NULL').get(req.params.id);
   if (!menu) return res.status(404).json({ error: 'Menu not found' });
 
   const { template } = req.body;
@@ -732,23 +729,22 @@ router.post('/:id/courses/from-template', (req, res) => {
   }
 
   const courseNames = COURSE_TEMPLATES[template];
-  const maxOrder = db.prepare('SELECT MAX(sort_order) AS max_order FROM menu_courses WHERE menu_id = ?').get(req.params.id);
+  const maxOrder = await db.prepare('SELECT MAX(sort_order) AS max_order FROM menu_courses WHERE menu_id = ?').get(req.params.id);
   let startOrder = (maxOrder.max_order || 0) + 1;
 
   const created = [];
-  const stmt = db.prepare('INSERT INTO menu_courses (menu_id, name, sort_order) VALUES (?, ?, ?)');
   for (const name of courseNames) {
-    const result = stmt.run(req.params.id, name, startOrder++);
+    const result = await db.prepare('INSERT INTO menu_courses (menu_id, name, sort_order) VALUES (?, ?, ?)').run(req.params.id, name, startOrder++);
     created.push({ id: result.lastInsertRowid, name, sort_order: startOrder - 1 });
   }
 
   req.broadcast('menu_updated', { id: parseInt(req.params.id) }, req.headers['x-client-id']);
   res.status(201).json({ courses: created, template });
-});
+}));
 
 // PUT /api/menus/:id/courses/:courseId - Update course name/notes/sort_order
-router.put('/:id/courses/:courseId', (req, res) => {
-  const db = getDb();
+router.put('/:id/courses/:courseId', asyncHandler(async (req, res) => {
+  const db = await getDb();
   const { name, notes, sort_order } = req.body;
 
   const updates = [];
@@ -763,24 +759,24 @@ router.put('/:id/courses/:courseId', (req, res) => {
   if (!updates.length) return res.status(400).json({ error: 'Nothing to update' });
 
   params.push(req.params.courseId, req.params.id);
-  const result = db.prepare(`UPDATE menu_courses SET ${updates.join(', ')} WHERE id = ? AND menu_id = ?`).run(...params);
+  const result = await db.prepare(`UPDATE menu_courses SET ${updates.join(', ')} WHERE id = ? AND menu_id = ?`).run(...params);
   if (result.changes === 0) return res.status(404).json({ error: 'Course not found' });
 
   req.broadcast('menu_updated', { id: parseInt(req.params.id) }, req.headers['x-client-id']);
   res.json({ success: true });
-});
+}));
 
 // DELETE /api/menus/:id/courses/:courseId - Delete course (dishes become unassigned)
-router.delete('/:id/courses/:courseId', (req, res) => {
-  const db = getDb();
+router.delete('/:id/courses/:courseId', asyncHandler(async (req, res) => {
+  const db = await getDb();
   // Unassign dishes from this course
-  db.prepare('UPDATE menu_dishes SET course_id = NULL WHERE course_id = ? AND menu_id = ?').run(req.params.courseId, req.params.id);
-  const result = db.prepare('DELETE FROM menu_courses WHERE id = ? AND menu_id = ?').run(req.params.courseId, req.params.id);
+  await db.prepare('UPDATE menu_dishes SET course_id = NULL WHERE course_id = ? AND menu_id = ?').run(req.params.courseId, req.params.id);
+  const result = await db.prepare('DELETE FROM menu_courses WHERE id = ? AND menu_id = ?').run(req.params.courseId, req.params.id);
   if (result.changes === 0) return res.status(404).json({ error: 'Course not found' });
 
   req.broadcast('menu_updated', { id: parseInt(req.params.id) }, req.headers['x-client-id']);
   res.json({ success: true });
-});
+}));
 
 // ============================
 // Weekly Specials
@@ -802,8 +798,8 @@ router.get('/specials/export-docx', asyncHandler(async (req, res) => {
 }));
 
 // GET /api/menus/specials/list - List all weekly specials
-router.get('/specials/list', (req, res) => {
-  const db = getDb();
+router.get('/specials/list', asyncHandler(async (req, res) => {
+  const db = await getDb();
   const { week, active_only } = req.query;
 
   let sql = `
@@ -826,12 +822,12 @@ router.get('/specials/list', (req, res) => {
   if (conditions.length) sql += ' WHERE ' + conditions.join(' AND ');
   sql += ' ORDER BY ws.week_start DESC, d.category, d.name';
 
-  const specials = db.prepare(sql).all(...params);
+  const specials = await db.prepare(sql).all(...params);
 
   // Batch attach allergens
   if (specials.length > 0) {
     const specialDishIds = [...new Set(specials.map(s => s.dish_id))];
-    const allergenBatch = getDishAllergensBatch(specialDishIds);
+    const allergenBatch = await getDishAllergensBatch(specialDishIds);
     const allergenMap = {};
     for (const id of specialDishIds) {
       allergenMap[id] = (allergenBatch[id] || []).map(a => a.allergen);
@@ -842,28 +838,28 @@ router.get('/specials/list', (req, res) => {
   }
 
   res.json(specials);
-});
+}));
 
 // POST /api/menus/specials - Create a weekly special
-router.post('/specials', (req, res) => {
-  const db = getDb();
+router.post('/specials', asyncHandler(async (req, res) => {
+  const db = await getDb();
   const { dish_id, week_start, week_end, notes } = req.body;
 
   if (!dish_id || !week_start || !week_end) {
     return res.status(400).json({ error: 'dish_id, week_start, and week_end are required' });
   }
 
-  const result = db.prepare(
+  const result = await db.prepare(
     'INSERT INTO weekly_specials (dish_id, week_start, week_end, notes) VALUES (?, ?, ?, ?)'
   ).run(dish_id, week_start, week_end, notes || '');
 
   req.broadcast('special_created', { id: result.lastInsertRowid, week_start }, req.headers['x-client-id']);
   res.status(201).json({ id: result.lastInsertRowid });
-});
+}));
 
 // PUT /api/menus/specials/:id - Update a weekly special
-router.put('/specials/:id', (req, res) => {
-  const db = getDb();
+router.put('/specials/:id', asyncHandler(async (req, res) => {
+  const db = await getDb();
   const { dish_id, week_start, week_end, notes, is_active } = req.body;
 
   const updates = [];
@@ -877,19 +873,19 @@ router.put('/specials/:id', (req, res) => {
   if (!updates.length) return res.status(400).json({ error: 'Nothing to update' });
 
   params.push(req.params.id);
-  const result = db.prepare(`UPDATE weekly_specials SET ${updates.join(', ')} WHERE id = ?`).run(...params);
+  const result = await db.prepare(`UPDATE weekly_specials SET ${updates.join(', ')} WHERE id = ?`).run(...params);
   if (result.changes === 0) return res.status(404).json({ error: 'Special not found' });
   req.broadcast('special_updated', { id: parseInt(req.params.id) }, req.headers['x-client-id']);
   res.json({ success: true });
-});
+}));
 
 // DELETE /api/menus/specials/:id
-router.delete('/specials/:id', (req, res) => {
-  const db = getDb();
-  const result = db.prepare('DELETE FROM weekly_specials WHERE id = ?').run(req.params.id);
+router.delete('/specials/:id', asyncHandler(async (req, res) => {
+  const db = await getDb();
+  const result = await db.prepare('DELETE FROM weekly_specials WHERE id = ?').run(req.params.id);
   if (result.changes === 0) return res.status(404).json({ error: 'Special not found' });
   req.broadcast('special_deleted', { id: parseInt(req.params.id) }, req.headers['x-client-id']);
   res.json({ success: true });
-});
+}));
 
 module.exports = router;

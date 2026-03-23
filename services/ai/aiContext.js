@@ -14,7 +14,7 @@ const { getDb } = require('../../db/database');
 async function buildContext(pageContext) {
   if (!pageContext || !pageContext.page) return '';
 
-  const db = getDb();
+  const db = await getDb();
   const parts = [];
   const page = pageContext.page;
 
@@ -26,7 +26,7 @@ async function buildContext(pageContext) {
 
   // Dish edit/view context
   if (pageContext.entityType === 'dish' && pageContext.entityId) {
-    const dish = db.prepare(
+    const dish = await db.prepare(
       'SELECT id, name, description, category, chefs_notes, batch_yield, suggested_price FROM dishes WHERE id = ? AND deleted_at IS NULL'
     ).get(pageContext.entityId);
 
@@ -37,7 +37,7 @@ async function buildContext(pageContext) {
       if (dish.batch_yield) parts.push(`Batch yield: ${dish.batch_yield} portions`);
 
       // Get ingredients
-      const ingredients = db.prepare(
+      const ingredients = await db.prepare(
         `SELECT di.quantity, di.unit, i.name, di.prep_note, di.sort_order
          FROM dish_ingredients di
          JOIN ingredients i ON di.ingredient_id = i.id
@@ -55,7 +55,7 @@ async function buildContext(pageContext) {
       }
 
       // Get directions
-      const directions = db.prepare(
+      const directions = await db.prepare(
         'SELECT type, text, sort_order FROM dish_directions WHERE dish_id = ? ORDER BY sort_order'
       ).all(pageContext.entityId);
 
@@ -76,7 +76,7 @@ async function buildContext(pageContext) {
       }
 
       // Get allergens
-      const allergens = db.prepare(
+      const allergens = await db.prepare(
         'SELECT allergen, source FROM dish_allergens WHERE dish_id = ?'
       ).all(pageContext.entityId);
 
@@ -88,7 +88,7 @@ async function buildContext(pageContext) {
 
   // Menu context
   if (pageContext.entityType === 'menu' && pageContext.entityId) {
-    const menu = db.prepare(
+    const menu = await db.prepare(
       'SELECT id, name, description, sell_price, expected_covers, menu_type, event_date, service_style FROM menus WHERE id = ? AND deleted_at IS NULL'
     ).get(pageContext.entityId);
 
@@ -101,11 +101,11 @@ async function buildContext(pageContext) {
       if (menu.expected_covers) parts.push(`Expected covers: ${menu.expected_covers}`);
 
       // Get courses/sections
-      const courses = db.prepare(
+      const courses = await db.prepare(
         'SELECT id, name, notes FROM menu_courses WHERE menu_id = ? ORDER BY sort_order'
       ).all(pageContext.entityId);
 
-      const dishes = db.prepare(
+      const dishes = await db.prepare(
         `SELECT d.id, d.name, d.category, md.servings, md.course_id
          FROM menu_dishes md
          JOIN dishes d ON md.dish_id = d.id
@@ -135,22 +135,22 @@ async function buildContext(pageContext) {
   }
 
   // --- Kitchen pulse: compact stats so Haiku knows current workload ---
-  const taskPending = db.prepare('SELECT COUNT(*) as cnt FROM tasks WHERE completed = 0').get().cnt;
-  const taskOverdue = db.prepare("SELECT COUNT(*) as cnt FROM tasks WHERE completed = 0 AND due_date < date('now')").get().cnt;
+  const taskPending = (await db.prepare('SELECT COUNT(*) as cnt FROM tasks WHERE completed = 0').get()).cnt;
+  const taskOverdue = (await db.prepare("SELECT COUNT(*) as cnt FROM tasks WHERE completed = 0 AND due_date < CURRENT_DATE").get()).cnt;
   if (taskPending > 0 || taskOverdue > 0) {
     const overdueNote = taskOverdue > 0 ? ` (${taskOverdue} overdue)` : '';
     parts.push(`Tasks: ${taskPending} pending${overdueNote}`);
   }
 
-  const todayNotes = db.prepare(
-    "SELECT title, shift FROM service_notes WHERE date = date('now') ORDER BY created_at DESC LIMIT 3"
+  const todayNotes = await db.prepare(
+    "SELECT title, shift FROM service_notes WHERE date = CURRENT_DATE ORDER BY created_at DESC LIMIT 3"
   ).all();
   if (todayNotes.length) {
     parts.push("Today's service notes: " + todayNotes.map(n => `${n.title} (${n.shift})`).join(', '));
   }
 
-  const upcomingEvents = db.prepare(
-    "SELECT id, name, event_date FROM menus WHERE deleted_at IS NULL AND menu_type = 'event' AND event_date >= date('now') ORDER BY event_date LIMIT 5"
+  const upcomingEvents = await db.prepare(
+    "SELECT id, name, event_date FROM menus WHERE deleted_at IS NULL AND menu_type = 'event' AND event_date >= CURRENT_DATE ORDER BY event_date LIMIT 5"
   ).all();
   if (upcomingEvents.length) {
     parts.push('Upcoming events: ' + upcomingEvents.map(m => `${m.name} on ${m.event_date} (${m.id})`).join(', '));
@@ -159,18 +159,18 @@ async function buildContext(pageContext) {
   // Provide dish/menu lists for name resolution — skip when already on a specific entity.
   // Keep lists compact: name + ID only, capped to reduce token overhead.
   if (!pageContext.entityType) {
-    const dishes = db.prepare(
+    const dishes = await db.prepare(
       'SELECT id, name FROM dishes WHERE deleted_at IS NULL ORDER BY name LIMIT 25'
     ).all();
     if (dishes.length) {
       parts.push('Dishes: ' + dishes.map(d => `${d.name} (${d.id})`).join(', '));
-      const total = db.prepare('SELECT COUNT(*) as cnt FROM dishes WHERE deleted_at IS NULL').get().cnt;
+      const total = (await db.prepare('SELECT COUNT(*) as cnt FROM dishes WHERE deleted_at IS NULL').get()).cnt;
       if (total > 25) parts.push(`(${total - 25} more — use search_dishes)`);
     }
   }
 
   if (pageContext.entityType !== 'menu') {
-    const menus = db.prepare(
+    const menus = await db.prepare(
       'SELECT id, name FROM menus WHERE deleted_at IS NULL ORDER BY name LIMIT 10'
     ).all();
     if (menus.length) {
@@ -185,15 +185,15 @@ async function buildContext(pageContext) {
  * Build dynamic suggestion hints — lightweight stats for the command bar.
  * No AI call, pure DB. Returns { suggestions: [...] } keyed by page pattern.
  */
-function buildSuggestionHints(page) {
-  const db = getDb();
+async function buildSuggestionHints(page) {
+  const db = await getDb();
   const hints = [];
 
   // Task stats — useful on any page
-  const taskOverdue = db.prepare("SELECT COUNT(*) as cnt FROM tasks WHERE completed = 0 AND due_date < date('now')").get().cnt;
+  const taskOverdue = (await db.prepare("SELECT COUNT(*) as cnt FROM tasks WHERE completed = 0 AND due_date < CURRENT_DATE").get()).cnt;
 
   // Menu stats
-  const menusWithoutTasks = db.prepare(
+  const menusWithoutTasks = await db.prepare(
     `SELECT m.id, m.name FROM menus m
      WHERE m.deleted_at IS NULL
      AND NOT EXISTS (SELECT 1 FROM tasks t WHERE t.menu_id = m.id AND t.source = 'auto')
@@ -201,12 +201,12 @@ function buildSuggestionHints(page) {
   ).all();
 
   // Upcoming events
-  const nextEvent = db.prepare(
-    "SELECT name, event_date FROM menus WHERE deleted_at IS NULL AND menu_type = 'event' AND event_date >= date('now') ORDER BY event_date LIMIT 1"
+  const nextEvent = await db.prepare(
+    "SELECT name, event_date FROM menus WHERE deleted_at IS NULL AND menu_type = 'event' AND event_date >= CURRENT_DATE ORDER BY event_date LIMIT 1"
   ).get();
 
   // Dishes without directions (could use cleanup)
-  const dishesNeedingCleanup = db.prepare(
+  const dishesNeedingCleanup = await db.prepare(
     `SELECT d.id, d.name FROM dishes d
      WHERE d.deleted_at IS NULL
      AND d.chefs_notes IS NOT NULL AND d.chefs_notes != ''
@@ -215,7 +215,7 @@ function buildSuggestionHints(page) {
   ).all();
 
   // Today's notes count
-  const todayNotesCount = db.prepare("SELECT COUNT(*) as cnt FROM service_notes WHERE date = date('now')").get().cnt;
+  const todayNotesCount = (await db.prepare("SELECT COUNT(*) as cnt FROM service_notes WHERE date = CURRENT_DATE").get()).cnt;
 
   // Build page-specific dynamic suggestions
   if (page === '#/todos' || page === '#/today') {

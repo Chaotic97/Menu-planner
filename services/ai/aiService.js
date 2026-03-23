@@ -37,21 +37,21 @@ function invalidateContextCache() {
 /**
  * Get the API key from settings table
  */
-function getApiKey() {
-  const db = getDb();
-  const row = db.prepare('SELECT value FROM settings WHERE key = ?').get('ai_api_key');
+async function getApiKey() {
+  const db = await getDb();
+  const row = await db.prepare('SELECT value FROM settings WHERE key = ?').get('ai_api_key');
   return row ? row.value : null;
 }
 
 /**
  * Get AI feature settings
  */
-function getAiSettings() {
-  const db = getDb();
-  const keyRow = db.prepare('SELECT value FROM settings WHERE key = ?').get('ai_api_key');
-  const featRow = db.prepare('SELECT value FROM settings WHERE key = ?').get('ai_features');
-  const dailyRow = db.prepare('SELECT value FROM settings WHERE key = ?').get('ai_daily_limit');
-  const monthlyRow = db.prepare('SELECT value FROM settings WHERE key = ?').get('ai_monthly_limit');
+async function getAiSettings() {
+  const db = await getDb();
+  const keyRow = await db.prepare('SELECT value FROM settings WHERE key = ?').get('ai_api_key');
+  const featRow = await db.prepare('SELECT value FROM settings WHERE key = ?').get('ai_features');
+  const dailyRow = await db.prepare('SELECT value FROM settings WHERE key = ?').get('ai_daily_limit');
+  const monthlyRow = await db.prepare('SELECT value FROM settings WHERE key = ?').get('ai_monthly_limit');
 
   return {
     hasApiKey: !!(keyRow && keyRow.value),
@@ -64,13 +64,13 @@ function getAiSettings() {
 /**
  * Check usage limits. Returns { allowed: bool, reason?: string }
  */
-function checkUsageLimits() {
-  const db = getDb();
-  const settings = getAiSettings();
+async function checkUsageLimits() {
+  const db = await getDb();
+  const settings = await getAiSettings();
 
   if (settings.dailyLimit > 0) {
-    const todayRow = db.prepare(
-      "SELECT COUNT(*) as cnt FROM ai_usage WHERE created_at >= date('now')"
+    const todayRow = await db.prepare(
+      "SELECT COUNT(*) as cnt FROM ai_usage WHERE created_at >= CURRENT_DATE"
     ).get();
     if (todayRow.cnt >= settings.dailyLimit) {
       return { allowed: false, reason: 'Daily AI usage limit reached. Adjust in Settings.' };
@@ -78,8 +78,8 @@ function checkUsageLimits() {
   }
 
   if (settings.monthlyLimit > 0) {
-    const monthRow = db.prepare(
-      "SELECT COUNT(*) as cnt FROM ai_usage WHERE created_at >= date('now', 'start of month')"
+    const monthRow = await db.prepare(
+      "SELECT COUNT(*) as cnt FROM ai_usage WHERE created_at >= DATE_TRUNC('month', CURRENT_DATE)::date"
     ).get();
     if (monthRow.cnt >= settings.monthlyLimit) {
       return { allowed: false, reason: 'Monthly AI usage limit reached. Adjust in Settings.' };
@@ -92,9 +92,9 @@ function checkUsageLimits() {
 /**
  * Track usage in the ai_usage table
  */
-function trackUsage(tokensIn, tokensOut, toolUsed) {
-  const db = getDb();
-  db.prepare(
+async function trackUsage(tokensIn, tokensOut, toolUsed) {
+  const db = await getDb();
+  await db.prepare(
     'INSERT INTO ai_usage (tokens_in, tokens_out, model, tool_used) VALUES (?, ?, ?, ?)'
   ).run(tokensIn, tokensOut, MODEL, toolUsed || null);
 }
@@ -102,18 +102,18 @@ function trackUsage(tokensIn, tokensOut, toolUsed) {
 /**
  * Get usage stats
  */
-function getUsageStats() {
-  const db = getDb();
+async function getUsageStats() {
+  const db = await getDb();
 
-  const today = db.prepare(
-    "SELECT COUNT(*) as requests, COALESCE(SUM(tokens_in), 0) as tokens_in, COALESCE(SUM(tokens_out), 0) as tokens_out FROM ai_usage WHERE created_at >= date('now')"
+  const today = await db.prepare(
+    "SELECT COUNT(*) as requests, COALESCE(SUM(tokens_in), 0) as tokens_in, COALESCE(SUM(tokens_out), 0) as tokens_out FROM ai_usage WHERE created_at >= CURRENT_DATE"
   ).get();
 
-  const month = db.prepare(
-    "SELECT COUNT(*) as requests, COALESCE(SUM(tokens_in), 0) as tokens_in, COALESCE(SUM(tokens_out), 0) as tokens_out FROM ai_usage WHERE created_at >= date('now', 'start of month')"
+  const month = await db.prepare(
+    "SELECT COUNT(*) as requests, COALESCE(SUM(tokens_in), 0) as tokens_in, COALESCE(SUM(tokens_out), 0) as tokens_out FROM ai_usage WHERE created_at >= DATE_TRUNC('month', CURRENT_DATE)::date"
   ).get();
 
-  const settings = getAiSettings();
+  const settings = await getAiSettings();
 
   return {
     today: { requests: today.requests, tokens_in: today.tokens_in, tokens_out: today.tokens_out },
@@ -185,12 +185,12 @@ async function callApi(client, systemPrompt, tools, messages) {
  * Returns: { response, autoExecuted?, toolCall?, preview?, confirmationData?, toolResults? }
  */
 async function processCommand(message, pageContext, conversationHistory, broadcast, options = {}) {
-  const apiKey = getApiKey();
+  const apiKey = await getApiKey();
   if (!apiKey) {
     return { response: 'Please set up your Anthropic API key in Settings to use AI features.', needsSetup: true };
   }
 
-  const limitCheck = checkUsageLimits();
+  const limitCheck = await checkUsageLimits();
   if (!limitCheck.allowed) {
     return { response: limitCheck.reason, rateLimited: true };
   }
@@ -248,7 +248,7 @@ async function processCommand(message, pageContext, conversationHistory, broadca
     // No tool call — return text response (final answer)
     if (!toolCall) {
       const toolNames = executedTools.map(t => t.name).join(',') || null;
-      trackUsage(totalTokensIn, totalTokensOut, toolNames);
+      await trackUsage(totalTokensIn, totalTokensOut, toolNames);
 
       if (executedTools.length > 0) {
         // Had auto-executed tools in earlier rounds, now Haiku gave final answer
@@ -271,7 +271,7 @@ async function processCommand(message, pageContext, conversationHistory, broadca
       // Execute immediately and feed result back to Haiku
       let result;
       try {
-        result = executeToolHandler(toolCall.name, toolCall.input, { preview: false, pageContext, broadcast });
+        result = await executeToolHandler(toolCall.name, toolCall.input, { preview: false, pageContext, broadcast });
       } catch (toolErr) {
         console.error(`Tool ${toolCall.name} failed:`, toolErr);
         const errorMessage = `Tool error: ${toolErr.message || 'execution failed'}`;
@@ -303,16 +303,16 @@ async function processCommand(message, pageContext, conversationHistory, broadca
     if (isEffectivelyAutoApproved(toolCall.name)) {
       let result;
       try {
-        result = executeToolHandler(toolCall.name, toolCall.input, { preview: false, pageContext, broadcast });
+        result = await executeToolHandler(toolCall.name, toolCall.input, { preview: false, pageContext, broadcast });
       } catch (toolErr) {
         console.error(`Tool ${toolCall.name} failed on final round:`, toolErr);
-        trackUsage(totalTokensIn, totalTokensOut, null);
+        await trackUsage(totalTokensIn, totalTokensOut, null);
         return { response: `Action failed: ${toolErr.message || 'unknown error'}` };
       }
       executedTools.push({ name: toolCall.name, input: toolCall.input, result });
       if (result.undoId) invalidateContextCache();
       const toolNames = executedTools.map(t => t.name).join(',');
-      trackUsage(totalTokensIn, totalTokensOut, toolNames);
+      await trackUsage(totalTokensIn, totalTokensOut, toolNames);
 
       const lastMutating = executedTools.filter(t => t.result.undoId);
       const lastResult = lastMutating.length ? lastMutating[lastMutating.length - 1].result : null;
@@ -327,9 +327,9 @@ async function processCommand(message, pageContext, conversationHistory, broadca
 
     // Non-auto-approved tool — needs confirmation (stops the loop)
     const toolNames = executedTools.map(t => t.name).join(',') || null;
-    trackUsage(totalTokensIn, totalTokensOut, toolNames ? toolNames + ',' + toolCall.name : toolCall.name);
+    await trackUsage(totalTokensIn, totalTokensOut, toolNames ? toolNames + ',' + toolCall.name : toolCall.name);
 
-    const preview = executeToolHandler(toolCall.name, toolCall.input, { preview: true, pageContext });
+    const preview = await executeToolHandler(toolCall.name, toolCall.input, { preview: true, pageContext });
 
     return {
       response: textResponse || preview.message,
@@ -347,7 +347,7 @@ async function processCommand(message, pageContext, conversationHistory, broadca
   }
 
   // Safety fallback (shouldn't reach here)
-  trackUsage(totalTokensIn, totalTokensOut, null);
+  await trackUsage(totalTokensIn, totalTokensOut, null);
   return { response: 'I ran into an issue processing that request. Please try again.' };
 }
 
@@ -372,14 +372,14 @@ async function executeConfirmedAction(confirmationData, broadcast) {
  * @param {Function} emit - callback(eventType, data) for SSE events
  */
 async function processCommandStream(message, pageContext, conversationHistory, broadcast, emit, options = {}) {
-  const apiKey = getApiKey();
+  const apiKey = await getApiKey();
   if (!apiKey) {
     emit('error', { message: 'Please set up your Anthropic API key in Settings to use AI features.' });
     emit('done', {});
     return;
   }
 
-  const limitCheck = checkUsageLimits();
+  const limitCheck = await checkUsageLimits();
   if (!limitCheck.allowed) {
     emit('error', { message: limitCheck.reason });
     emit('done', {});
@@ -504,7 +504,7 @@ async function processCommandStream(message, pageContext, conversationHistory, b
     // No tool call — final text response
     if (!toolCall) {
       const toolNames = executedTools.map(t => t.name).join(',') || null;
-      trackUsage(totalTokensIn, totalTokensOut, toolNames);
+      await trackUsage(totalTokensIn, totalTokensOut, toolNames);
 
       emit('done', {
         fullText: textResponse,
@@ -518,7 +518,7 @@ async function processCommandStream(message, pageContext, conversationHistory, b
     if (isEffectivelyAutoApproved(toolCall.name) && round < MAX_TOOL_ROUNDS) {
       let result;
       try {
-        result = executeToolHandler(toolCall.name, toolCall.input, { preview: false, pageContext, broadcast });
+        result = await executeToolHandler(toolCall.name, toolCall.input, { preview: false, pageContext, broadcast });
       } catch (toolErr) {
         console.error(`Tool ${toolCall.name} failed:`, toolErr);
         // Feed the error back to the model so it can recover
@@ -560,11 +560,11 @@ async function processCommandStream(message, pageContext, conversationHistory, b
     if (isEffectivelyAutoApproved(toolCall.name)) {
       let result;
       try {
-        result = executeToolHandler(toolCall.name, toolCall.input, { preview: false, pageContext, broadcast });
+        result = await executeToolHandler(toolCall.name, toolCall.input, { preview: false, pageContext, broadcast });
       } catch (toolErr) {
         console.error(`Tool ${toolCall.name} failed on final round:`, toolErr);
         const toolNamesStr = executedTools.map(t => t.name).join(',') || null;
-        trackUsage(totalTokensIn, totalTokensOut, toolNamesStr);
+        await trackUsage(totalTokensIn, totalTokensOut, toolNamesStr);
         emit('error', { message: `Action failed: ${toolErr.message || 'unknown error'}` });
         emit('done', {});
         return;
@@ -574,7 +574,7 @@ async function processCommandStream(message, pageContext, conversationHistory, b
       emit('tool_result', { name: toolCall.name, message: result.message });
 
       const toolNamesStr = executedTools.map(t => t.name).join(',');
-      trackUsage(totalTokensIn, totalTokensOut, toolNamesStr);
+      await trackUsage(totalTokensIn, totalTokensOut, toolNamesStr);
 
       emit('done', {
         fullText: textResponse || result.message,
@@ -586,9 +586,9 @@ async function processCommandStream(message, pageContext, conversationHistory, b
 
     // Non-auto-approved — needs confirmation
     const toolNamesStr = executedTools.map(t => t.name).join(',') || null;
-    trackUsage(totalTokensIn, totalTokensOut, toolNamesStr ? toolNamesStr + ',' + toolCall.name : toolCall.name);
+    await trackUsage(totalTokensIn, totalTokensOut, toolNamesStr ? toolNamesStr + ',' + toolCall.name : toolCall.name);
 
-    const preview = executeToolHandler(toolCall.name, toolCall.input, { preview: true, pageContext });
+    const preview = await executeToolHandler(toolCall.name, toolCall.input, { preview: true, pageContext });
 
     emit('confirmation', {
       toolName: toolCall.name,
@@ -604,7 +604,7 @@ async function processCommandStream(message, pageContext, conversationHistory, b
     return;
   }
 
-  trackUsage(totalTokensIn, totalTokensOut, null);
+  await trackUsage(totalTokensIn, totalTokensOut, null);
   emit('error', { message: 'Processing limit reached. Please try again.' });
   emit('done', {});
 }

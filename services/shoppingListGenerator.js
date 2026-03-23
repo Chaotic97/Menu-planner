@@ -1,14 +1,14 @@
 const { getDb } = require('../db/database');
 const { convertUnits, convertWithDensity, normalizeUnit, round2 } = require('./costCalculator');
 
-function generateShoppingList(menuId) {
-  const db = getDb();
+async function generateShoppingList(menuId) {
+  const db = await getDb();
 
-  const menu = db.prepare('SELECT * FROM menus WHERE id = ? AND deleted_at IS NULL').get(menuId);
+  const menu = await db.prepare('SELECT * FROM menus WHERE id = ? AND deleted_at IS NULL').get(menuId);
   if (!menu) return null;
 
   // Get all dish-ingredients for this menu, multiplied by servings
-  const rows = db.prepare(`
+  const rows = await db.prepare(`
     SELECT
       md.servings,
       di.quantity,
@@ -125,7 +125,7 @@ function generateShoppingList(menuId) {
     }));
 
   // Compute total portions the menu produces at current servings
-  const portionsRow = db.prepare(`
+  const portionsRow = await db.prepare(`
     SELECT COALESCE(SUM(md.servings * COALESCE(d.batch_yield, 1)), 0) AS total_portions
     FROM menu_dishes md
     JOIN dishes d ON d.id = md.dish_id

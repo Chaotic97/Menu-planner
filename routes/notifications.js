@@ -2,6 +2,7 @@
 
 const express = require('express');
 const { getDb } = require('../db/database');
+const asyncHandler = require('../middleware/asyncHandler');
 
 const router = express.Router();
 
@@ -21,9 +22,9 @@ const DEFAULTS = {
 const VALID_KEYS = Object.keys(DEFAULTS);
 
 // GET /api/notifications/preferences
-router.get('/preferences', (req, res) => {
-  const db = getDb();
-  const row = db.prepare("SELECT value FROM settings WHERE key = 'notification_preferences'").get();
+router.get('/preferences', asyncHandler(async (req, res) => {
+  const db = await getDb();
+  const row = await db.prepare("SELECT value FROM settings WHERE key = 'notification_preferences'").get();
   if (row) {
     try {
       const prefs = JSON.parse(row.value);
@@ -32,11 +33,11 @@ router.get('/preferences', (req, res) => {
     } catch { /* fall through */ }
   }
   res.json(DEFAULTS);
-});
+}));
 
 // PUT /api/notifications/preferences
-router.put('/preferences', (req, res) => {
-  const db = getDb();
+router.put('/preferences', asyncHandler(async (req, res) => {
+  const db = await getDb();
   const body = req.body;
 
   if (!body || typeof body !== 'object') {
@@ -62,7 +63,7 @@ router.put('/preferences', (req, res) => {
 
   // Build merged preferences — only keep known keys
   const current = {};
-  const existingRow = db.prepare("SELECT value FROM settings WHERE key = 'notification_preferences'").get();
+  const existingRow = await db.prepare("SELECT value FROM settings WHERE key = 'notification_preferences'").get();
   if (existingRow) {
     try { Object.assign(current, JSON.parse(existingRow.value)); } catch { /* ignore */ }
   }
@@ -75,24 +76,20 @@ router.put('/preferences', (req, res) => {
   }
 
   const json = JSON.stringify(merged);
-  if (existingRow) {
-    db.prepare("UPDATE settings SET value = ? WHERE key = 'notification_preferences'").run(json);
-  } else {
-    db.prepare("INSERT INTO settings (key, value) VALUES ('notification_preferences', ?)").run(json);
-  }
+  await db.prepare("INSERT INTO settings (key, value) VALUES ('notification_preferences', ?) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value").run(json);
 
   res.json(merged);
-});
+}));
 
 // GET /api/notifications/pending — items needing notification right now
-router.get('/pending', (req, res) => {
-  const db = getDb();
+router.get('/pending', asyncHandler(async (req, res) => {
+  const db = await getDb();
   const today = new Date().toISOString().slice(0, 10);
   const now = new Date();
   const nowHHMM = now.toTimeString().slice(0, 5);
 
   // Overdue tasks
-  const overdue = db.prepare(`
+  const overdue = await db.prepare(`
     SELECT t.id, t.title, t.priority, t.due_date, t.due_time, m.name AS menu_name
     FROM tasks t
     LEFT JOIN menus m ON m.id = t.menu_id
@@ -102,7 +99,7 @@ router.get('/pending', (req, res) => {
   `).all(today);
 
   // Tasks due today with a due_time (for reminders)
-  const upcomingToday = db.prepare(`
+  const upcomingToday = await db.prepare(`
     SELECT t.id, t.title, t.priority, t.due_date, t.due_time, t.day_phase, m.name AS menu_name
     FROM tasks t
     LEFT JOIN menus m ON m.id = t.menu_id
@@ -112,7 +109,7 @@ router.get('/pending', (req, res) => {
   `).all(today, nowHHMM);
 
   // Today's task count for daily briefing
-  const todayCount = db.prepare(`
+  const todayCount = await db.prepare(`
     SELECT COUNT(*) AS total,
            SUM(CASE WHEN completed = 1 THEN 1 ELSE 0 END) AS completed
     FROM tasks WHERE due_date = ?
@@ -123,7 +120,7 @@ router.get('/pending', (req, res) => {
   twoDaysOut.setDate(twoDaysOut.getDate() + 2);
   const twoDaysStr = twoDaysOut.toISOString().slice(0, 10);
 
-  const expiringSpecials = db.prepare(`
+  const expiringSpecials = await db.prepare(`
     SELECT ws.id, ws.week_end, ws.notes, d.name AS dish_name
     FROM weekly_specials ws
     JOIN dishes d ON d.id = ws.dish_id
@@ -132,7 +129,7 @@ router.get('/pending', (req, res) => {
   `).all(twoDaysStr, today);
 
   // Day phases (for phase transition reminders)
-  const phaseRow = db.prepare("SELECT value FROM settings WHERE key = 'day_phases'").get();
+  const phaseRow = await db.prepare("SELECT value FROM settings WHERE key = 'day_phases'").get();
   let phases = [];
   if (phaseRow) {
     try { phases = JSON.parse(phaseRow.value); } catch { /* ignore */ }
@@ -147,6 +144,6 @@ router.get('/pending', (req, res) => {
     expiring_specials: expiringSpecials,
     phases,
   });
-});
+}));
 
 module.exports = router;

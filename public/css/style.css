@@ -2686,7 +2686,11 @@ textarea.input { resize: vertical; min-height: 80px; }
 
   /* Main content: add padding for bottom nav + safe area */
   #app-content {
-    padding: 12px 12px calc(64px + env(safe-area-inset-bottom, 0px)) 12px;
+    padding: 12px 12px calc(56px + env(safe-area-inset-bottom, 0px)) 12px;
+  }
+  /* Extra bottom padding when command bar is visible above bottom nav */
+  #app-content.qc-bar-active {
+    padding-bottom: calc(56px + 50px + env(safe-area-inset-bottom, 0px));
   }
 
   /* Cards: single column */

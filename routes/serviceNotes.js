@@ -1,5 +1,6 @@
 const express = require('express');
 const { getDb } = require('../db/database');
+const asyncHandler = require('../middleware/asyncHandler');
 
 const router = express.Router();
 
@@ -7,39 +8,39 @@ const VALID_SHIFTS = ['all', 'am', 'lunch', 'pm', 'prep'];
 const DATE_REGEX = /^\d{4}-\d{2}-\d{2}$/;
 
 // GET /api/service-notes?date=YYYY-MM-DD&month=YYYY-MM
-router.get('/', (req, res) => {
-  const db = getDb();
+router.get('/', asyncHandler(async (req, res) => {
+  const db = await getDb();
   const { date, month } = req.query;
 
   let notes;
   if (date) {
-    notes = db.prepare('SELECT * FROM service_notes WHERE date = ? ORDER BY shift, created_at DESC').all(date);
+    notes = await db.prepare('SELECT * FROM service_notes WHERE date = ? ORDER BY shift, created_at DESC').all(date);
   } else if (month) {
-    notes = db.prepare("SELECT * FROM service_notes WHERE strftime('%Y-%m', date) = ? ORDER BY date DESC, shift, created_at DESC").all(month);
+    notes = await db.prepare("SELECT * FROM service_notes WHERE TO_CHAR(date::timestamp, 'YYYY-MM') = ? ORDER BY date DESC, shift, created_at DESC").all(month);
   } else {
     // Return last 30 days
-    notes = db.prepare("SELECT * FROM service_notes WHERE date >= date('now', '-30 days') ORDER BY date DESC, shift, created_at DESC").all();
+    notes = await db.prepare("SELECT * FROM service_notes WHERE date >= CURRENT_DATE - INTERVAL '30 days' ORDER BY date DESC, shift, created_at DESC").all();
   }
 
   res.json(notes);
-});
+}));
 
 // GET /api/service-notes/dates?month=YYYY-MM — returns just dates that have notes
-router.get('/dates', (req, res) => {
-  const db = getDb();
+router.get('/dates', asyncHandler(async (req, res) => {
+  const db = await getDb();
   const { month } = req.query;
   let rows;
   if (month) {
-    rows = db.prepare("SELECT DISTINCT date FROM service_notes WHERE strftime('%Y-%m', date) = ? ORDER BY date").all(month);
+    rows = await db.prepare("SELECT DISTINCT date FROM service_notes WHERE TO_CHAR(date::timestamp, 'YYYY-MM') = ? ORDER BY date").all(month);
   } else {
-    rows = db.prepare("SELECT DISTINCT date FROM service_notes ORDER BY date DESC LIMIT 60").all();
+    rows = await db.prepare("SELECT DISTINCT date FROM service_notes ORDER BY date DESC LIMIT 60").all();
   }
   res.json(rows.map(r => r.date));
-});
+}));
 
 // POST /api/service-notes
-router.post('/', (req, res) => {
-  const db = getDb();
+router.post('/', asyncHandler(async (req, res) => {
+  const db = await getDb();
   const { date, shift, title, content } = req.body;
 
   if (!date) return res.status(400).json({ error: 'date is required' });
@@ -47,17 +48,17 @@ router.post('/', (req, res) => {
   if (shift && !VALID_SHIFTS.includes(shift)) return res.status(400).json({ error: `shift must be one of: ${VALID_SHIFTS.join(', ')}` });
   if (!content && !title) return res.status(400).json({ error: 'title or content is required' });
 
-  const result = db.prepare(
+  const result = await db.prepare(
     'INSERT INTO service_notes (date, shift, title, content) VALUES (?, ?, ?, ?)'
   ).run(date, shift || 'all', title || '', content || '');
 
   req.broadcast('service_note_created', { id: result.lastInsertRowid, date }, req.headers['x-client-id']);
   res.status(201).json({ id: result.lastInsertRowid });
-});
+}));
 
 // PUT /api/service-notes/:id
-router.put('/:id', (req, res) => {
-  const db = getDb();
+router.put('/:id', asyncHandler(async (req, res) => {
+  const db = await getDb();
   const { date, shift, title, content } = req.body;
 
   if (date !== undefined && !DATE_REGEX.test(date)) return res.status(400).json({ error: 'date must be YYYY-MM-DD format' });
@@ -69,24 +70,24 @@ router.put('/:id', (req, res) => {
   if (shift !== undefined) { updates.push('shift = ?'); params.push(shift); }
   if (title !== undefined) { updates.push('title = ?'); params.push(title); }
   if (content !== undefined) { updates.push('content = ?'); params.push(content); }
-  updates.push("updated_at = datetime('now')");
+  updates.push("updated_at = NOW()");
 
   if (updates.length === 1) return res.status(400).json({ error: 'Nothing to update' });
 
   params.push(req.params.id);
-  const result = db.prepare(`UPDATE service_notes SET ${updates.join(', ')} WHERE id = ?`).run(...params);
+  const result = await db.prepare(`UPDATE service_notes SET ${updates.join(', ')} WHERE id = ?`).run(...params);
   if (result.changes === 0) return res.status(404).json({ error: 'Service note not found' });
   req.broadcast('service_note_updated', { id: parseInt(req.params.id) }, req.headers['x-client-id']);
   res.json({ success: true });
-});
+}));
 
 // DELETE /api/service-notes/:id
-router.delete('/:id', (req, res) => {
-  const db = getDb();
-  const result = db.prepare('DELETE FROM service_notes WHERE id = ?').run(req.params.id);
+router.delete('/:id', asyncHandler(async (req, res) => {
+  const db = await getDb();
+  const result = await db.prepare('DELETE FROM service_notes WHERE id = ?').run(req.params.id);
   if (result.changes === 0) return res.status(404).json({ error: 'Service note not found' });
   req.broadcast('service_note_deleted', { id: parseInt(req.params.id) }, req.headers['x-client-id']);
   res.json({ success: true });
-});
+}));
 
 module.exports = router;
