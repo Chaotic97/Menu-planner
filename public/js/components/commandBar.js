@@ -1,4 +1,4 @@
-import { createTask, aiCommand, aiConfirm, aiUndo, aiVoice, createConversation, addConversationMessage, getAiSuggestions } from '../api.js';
+import { createTask, aiCommand, aiConfirm, aiUndo, createConversation, addConversationMessage, getAiSuggestions } from '../api.js';
 import { showToast } from './toast.js';
 import { escapeHtml } from '../utils/escapeHtml.js';
 import { toggleDrawer } from './chatDrawer.js';
@@ -207,91 +207,9 @@ function createBar() {
   const sendBtn = barEl.querySelector('.cb-send');
   const modeToggle = barEl.querySelector('.cb-mode-toggle');
 
-  // Insert mic button between input and send — local Whisper or cloud Gemini
+  // Insert mic button between input and send
   const micBtn = createMicButton(input);
   sendBtn.parentNode.insertBefore(micBtn, sendBtn);
-
-  // Cloud voice mic button (Gemini transcription)
-  const cloudMicBtn = document.createElement('button');
-  cloudMicBtn.className = 'cb-cloud-mic';
-  cloudMicBtn.title = 'Cloud voice (Gemini)';
-  cloudMicBtn.setAttribute('aria-label', 'Cloud voice input');
-  cloudMicBtn.innerHTML = `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/><circle cx="18" cy="5" r="2" fill="currentColor" stroke="none" opacity="0.6"/></svg>`;
-  cloudMicBtn.style.display = 'none'; // Hidden by default, toggled via settings
-  sendBtn.parentNode.insertBefore(cloudMicBtn, sendBtn);
-
-  let _cloudRecording = false;
-  let _cloudMediaRecorder = null;
-  let _cloudChunks = [];
-
-  cloudMicBtn.addEventListener('click', async () => {
-    if (_cloudRecording) {
-      // Stop recording
-      if (_cloudMediaRecorder && _cloudMediaRecorder.state !== 'inactive') {
-        _cloudMediaRecorder.stop();
-      }
-      return;
-    }
-
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      _cloudChunks = [];
-      _cloudMediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
-
-      _cloudMediaRecorder.ondataavailable = (e) => {
-        if (e.data.size > 0) _cloudChunks.push(e.data);
-      };
-
-      _cloudMediaRecorder.onstop = async () => {
-        _cloudRecording = false;
-        cloudMicBtn.classList.remove('cb-cloud-mic--recording');
-        stream.getTracks().forEach(t => t.stop());
-
-        if (!_cloudChunks.length) return;
-
-        const blob = new Blob(_cloudChunks, { type: 'audio/webm' });
-        cloudMicBtn.disabled = true;
-
-        try {
-          const context = getPageContext();
-          const result = await aiVoice(blob, context);
-          if (result.text) {
-            input.value = result.text;
-            input.focus();
-          }
-        } catch (err) {
-          showToast('Voice transcription failed: ' + err.message, 'error');
-        } finally {
-          cloudMicBtn.disabled = false;
-        }
-      };
-
-      _cloudMediaRecorder.start();
-      _cloudRecording = true;
-      cloudMicBtn.classList.add('cb-cloud-mic--recording');
-
-      // Auto-stop after 30 seconds
-      setTimeout(() => {
-        if (_cloudRecording && _cloudMediaRecorder && _cloudMediaRecorder.state !== 'inactive') {
-          _cloudMediaRecorder.stop();
-        }
-      }, 30000);
-    } catch (err) {
-      showToast('Microphone access denied', 'error');
-    }
-  });
-
-  // Check voice mode preference and toggle buttons
-  function updateVoiceMode() {
-    const mode = localStorage.getItem('voice_mode') || 'local';
-    micBtn.style.display = mode === 'local' ? '' : 'none';
-    cloudMicBtn.style.display = mode === 'cloud' ? '' : 'none';
-  }
-  updateVoiceMode();
-  window.addEventListener('storage', (e) => {
-    if (e.key === 'voice_mode') updateVoiceMode();
-  });
-  window.addEventListener('voicemode:changed', updateVoiceMode);
 
   // Create suggestions dropdown
   suggestionsEl = document.createElement('div');

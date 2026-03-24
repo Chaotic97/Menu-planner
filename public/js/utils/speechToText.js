@@ -5,6 +5,7 @@
  */
 
 import { showToast } from '../components/toast.js';
+import { aiVoice } from '../api.js';
 
 const MODEL_ID = 'Xenova/whisper-small';
 const MAX_RECORD_SECONDS = 30;
@@ -459,8 +460,69 @@ function stopRecording() {
   }
 }
 
+/** Check if cloud voice mode is active */
+function isCloudMode() {
+  return localStorage.getItem('voice_mode') === 'cloud';
+}
+
+/**
+ * Handle cloud voice: record → upload to Gemini → insert text.
+ */
+async function handleCloudMicTap(button, targetInput) {
+  activeButton = button;
+
+  try {
+    const audioBlob = await startRecording(button, targetInput);
+
+    // Switch to transcribing state
+    button.classList.remove('stt-recording');
+    button.classList.add('stt-transcribing');
+    button.innerHTML = micIcon;
+    button.title = 'Transcribing...';
+
+    // Build page context from hash
+    const hash = window.location.hash || '';
+    const context = { page: hash };
+    const dishMatch = hash.match(/^#\/dishes\/(\d+)/);
+    if (dishMatch) { context.entityType = 'dish'; context.entityId = parseInt(dishMatch[1]); }
+    const menuMatch = hash.match(/^#\/menus\/(\d+)$/);
+    if (menuMatch) { context.entityType = 'menu'; context.entityId = parseInt(menuMatch[1]); }
+
+    const result = await aiVoice(audioBlob, context);
+    const text = (result.text || '').trim();
+
+    targetInput.classList.remove('stt-interim-text');
+
+    if (text) {
+      const prefix = originalInputValue || '';
+      const spaceBefore = prefix.length > 0 && !prefix.endsWith(' ') ? ' ' : '';
+      targetInput.value = prefix + spaceBefore + text;
+      const newPos = targetInput.value.length;
+      targetInput.setSelectionRange(newPos, newPos);
+      targetInput.focus();
+      targetInput.dispatchEvent(new Event('input', { bubbles: true }));
+    } else {
+      targetInput.value = originalInputValue || '';
+      showToast('No speech detected. Please try again.', 'info', 3000);
+    }
+  } catch (err) {
+    if (err.name !== 'NotAllowedError' && err.name !== 'PermissionDeniedError') {
+      showToast('Cloud voice failed. Please try again.', 'error', 3000);
+      console.error('Cloud STT error:', err);
+    }
+  } finally {
+    button.classList.remove('stt-recording', 'stt-transcribing');
+    button.innerHTML = micIcon;
+    button.title = 'Voice input';
+    activeButton = null;
+    isRecording = false;
+    originalInputValue = '';
+  }
+}
+
 /**
  * Handle a mic button tap. Manages the full record -> transcribe -> insert flow.
+ * Routes to cloud (Gemini) or local (Whisper) based on voice_mode setting.
  */
 async function handleMicTap(button, targetInput) {
   // If another button is already recording, ignore
@@ -470,6 +532,11 @@ async function handleMicTap(button, targetInput) {
   if (isRecording && activeButton === button) {
     stopRecording();
     return; // The promise from startRecording will resolve and continue the flow
+  }
+
+  // Cloud mode — skip Whisper model checks, send to server
+  if (isCloudMode()) {
+    return handleCloudMicTap(button, targetInput);
   }
 
   // Guard: check if model is pre-downloaded
