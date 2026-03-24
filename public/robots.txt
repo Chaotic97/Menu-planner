@@ -1,0 +1,7 @@
+User-agent: *
+Allow: /
+Disallow: /api/
+Disallow: /app
+Disallow: /uploads/
+
+Sitemap: https://platestack.app/sitemap.xml

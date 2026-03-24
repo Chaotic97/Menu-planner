@@ -69,7 +69,7 @@ export async function renderDishView(container, dishId) {
     const costPerPortion = dish.cost.costPerPortion ?? combined;
     const batchYield = dish.cost.batchYield || 1;
     const pct = dish.food_cost_percent;
-    const pctColor = pct === null ? '' : pct > 35 ? 'var(--danger)' : pct > 30 ? 'var(--warning)' : 'var(--success)';
+    const pctClass = pct === null ? '' : pct > 35 ? 'cost-badge-red' : pct > 30 ? 'cost-badge-yellow' : 'cost-badge-green';
 
     let html = '';
     if (batchYield > 1) {
@@ -80,7 +80,7 @@ export async function renderDishView(container, dishId) {
     }
     html += `<div class="dv-cost-row">
       <span>${batchYield > 1 ? 'Cost per portion' : 'Food cost'}</span>
-      <span>$${costPerPortion.toFixed(2)}${pct !== null ? ` <span style="color:${pctColor};font-weight:700;">(${pct}%)</span>` : ''}</span>
+      <span>$${costPerPortion.toFixed(2)}${pct !== null ? ` <span class="cost-badge ${pctClass}">(${pct}%)</span>` : ''}</span>
     </div>`;
     if (dish.suggested_price) {
       html += `<div class="dv-cost-row"><span>Selling price</span><span>$${Number(dish.suggested_price).toFixed(2)}</span></div>`;
@@ -282,7 +282,7 @@ export async function renderDishView(container, dishId) {
       const combined = (dish.cost.combinedTotal ?? dish.cost.totalCost) * activeMultiplier;
       const costPerPortion = combined / target;
       const pct = dish.suggested_price ? Math.round((costPerPortion / dish.suggested_price) * 10000) / 100 : null;
-      const pctColor = pct === null ? '' : pct > 35 ? 'var(--danger)' : pct > 30 ? 'var(--warning)' : 'var(--success)';
+      const pctClass = pct === null ? '' : pct > 35 ? 'cost-badge-red' : pct > 30 ? 'cost-badge-yellow' : 'cost-badge-green';
 
       // Re-render cost summary in place
       const costCard = container.querySelector('.dv-sidebar .dv-card');
@@ -293,7 +293,7 @@ export async function renderDishView(container, dishId) {
           html += `<div class="dv-cost-row"><span>Batch cost (${target} portions)</span><span>$${combined.toFixed(2)}</span></div>`;
         }
         html += `<div class="dv-cost-row"><span>${target > 1 ? 'Cost per portion' : 'Food cost'}</span>`;
-        html += `<span>$${costPerPortion.toFixed(2)}${pct !== null ? ` <span style="color:${pctColor};font-weight:700;">(${pct}%)</span>` : ''}</span></div>`;
+        html += `<span>$${costPerPortion.toFixed(2)}${pct !== null ? ` <span class="cost-badge ${pctClass}">(${pct}%)</span>` : ''}</span></div>`;
         if (dish.suggested_price) {
           html += `<div class="dv-cost-row"><span>Selling price</span><span>$${Number(dish.suggested_price).toFixed(2)}</span></div>`;
         }

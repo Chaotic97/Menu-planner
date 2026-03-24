@@ -10,7 +10,7 @@ export function renderAllergenBadges(allergens, compact = false) {
     const isManual = typeof a === 'object' && a.source === 'manual';
     const cls = compact ? 'allergen-badge compact' : 'allergen-badge';
     const label = escapeHtml(info.label);
-    return `<span class="${cls}" style="background:${info.color}" title="${label}${isManual ? ' (manual)' : ''}">${label}</span>`;
+    return `<span class="${cls} allergen-${name}" title="${label}${isManual ? ' (manual)' : ''}">${label}</span>`;
   });
 
   return `<div class="allergen-badges">${items.join('')}</div>`;
