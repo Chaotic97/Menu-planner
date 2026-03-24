@@ -777,10 +777,11 @@ textarea.input { resize: vertical; min-height: 80px; }
   display: inline-block;
   padding: 3px 10px;
   font-size: 0.72rem;
-  font-weight: 600;
+  font-weight: 700;
   color: #1a1a1a;
   border-radius: 20px;
   white-space: nowrap;
+  text-shadow: 0 0.5px 0 rgba(0,0,0,0.06);
 }
 
 .allergen-badge.compact {
@@ -789,19 +790,19 @@ textarea.input { resize: vertical; min-height: 80px; }
 }
 
 /* --- Allergen-specific colours (EU 14) --- */
-.allergen-celery { background: #4caf50; }
-.allergen-gluten { background: #ff9800; }
-.allergen-crustaceans { background: #f44336; }
+.allergen-celery { background: #4caf50; color: #fff; }
+.allergen-gluten { background: #ff9800; color: #fff; }
+.allergen-crustaceans { background: #f44336; color: #fff; }
 .allergen-eggs { background: #ffeb3b; color: #333; }
-.allergen-fish { background: #2196f3; }
-.allergen-lupin { background: #9c27b0; }
+.allergen-fish { background: #2196f3; color: #fff; }
+.allergen-lupin { background: #9c27b0; color: #fff; }
 .allergen-milk { background: #e0e0e0; color: #333; }
-.allergen-molluscs { background: #00bcd4; }
+.allergen-molluscs { background: #00bcd4; color: #fff; }
 .allergen-mustard { background: #ffc107; color: #333; }
 .allergen-nuts { background: #795548; color: #fff; }
-.allergen-peanuts { background: #d4a574; }
-.allergen-sesame { background: #c8b89a; }
-.allergen-soy { background: #8bc34a; }
+.allergen-peanuts { background: #d4a574; color: #333; }
+.allergen-sesame { background: #c8b89a; color: #333; }
+.allergen-soy { background: #8bc34a; color: #fff; }
 .allergen-sulphites { background: #607d8b; color: #fff; }
 
 /* ============================
