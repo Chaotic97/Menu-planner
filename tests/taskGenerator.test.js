@@ -31,46 +31,46 @@ describe('buildPrepTaskRows', () => {
     ],
   };
 
-  test('transforms prep task groups into task rows (one per dish)', () => {
-    const rows = buildPrepTaskRows(prepResult, 1);
+  test('transforms prep task groups into task rows (one per dish)', async () => {
+    const rows = await buildPrepTaskRows(prepResult, 1);
     expect(rows).toHaveLength(2);
   });
 
-  test('sets type to prep and source to auto', () => {
-    const rows = buildPrepTaskRows(prepResult, 1);
+  test('sets type to prep and source to auto', async () => {
+    const rows = await buildPrepTaskRows(prepResult, 1);
     for (const row of rows) {
       expect(row.type).toBe('prep');
       expect(row.source).toBe('auto');
     }
   });
 
-  test('preserves timing_bucket', () => {
-    const rows = buildPrepTaskRows(prepResult, 1);
+  test('preserves timing_bucket', async () => {
+    const rows = await buildPrepTaskRows(prepResult, 1);
     for (const row of rows) {
       expect(row.timing_bucket).toBe('during_service');
     }
   });
 
-  test('uses dish name as title', () => {
-    const rows = buildPrepTaskRows(prepResult, 1);
+  test('uses dish name as title', async () => {
+    const rows = await buildPrepTaskRows(prepResult, 1);
     expect(rows[0].title).toBe('Pasta Carbonara');
     expect(rows[1].title).toBe('Caesar Salad');
   });
 
-  test('uses dish name as description', () => {
-    const rows = buildPrepTaskRows(prepResult, 1);
+  test('uses dish name as description', async () => {
+    const rows = await buildPrepTaskRows(prepResult, 1);
     expect(rows[0].description).toBe('Pasta Carbonara');
   });
 
-  test('looks up dish id via DB', () => {
-    const rows = buildPrepTaskRows(prepResult, 1);
+  test('looks up dish id via DB', async () => {
+    const rows = await buildPrepTaskRows(prepResult, 1);
     for (const row of rows) {
       expect(row.source_dish_id).toBe(42);
     }
   });
 
-  test('handles empty task_groups', () => {
-    const rows = buildPrepTaskRows({ task_groups: [] }, 1);
+  test('handles empty task_groups', async () => {
+    const rows = await buildPrepTaskRows({ task_groups: [] }, 1);
     expect(rows).toHaveLength(0);
   });
 });
@@ -143,11 +143,11 @@ describe('buildWeeklyTaskRows', () => {
     );
   });
 
-  test('assigns due_date based on timing bucket and first service day', () => {
+  test('assigns due_date based on timing bucket and first service day', async () => {
     // Week of 2026-03-02 (Monday), schedule Wed-Sun
     // First service day = Wed 2026-03-04
     // during_service offset = 0, so due_date = Wed 2026-03-04
-    const rows = buildWeeklyTaskRows(prepResult, 1, '2026-03-02');
+    const rows = await buildWeeklyTaskRows(prepResult, 1, '2026-03-02');
 
     const lamb = rows.find(r => r.title === 'Grilled Lamb');
     expect(lamb.due_date).toBe('2026-03-04'); // during_service Wed = Wed
@@ -156,17 +156,17 @@ describe('buildWeeklyTaskRows', () => {
     expect(pasta.due_date).toBe('2026-03-04'); // during_service Wed = Wed
   });
 
-  test('all rows have type prep and source auto', () => {
-    const rows = buildWeeklyTaskRows(prepResult, 1, '2026-03-02');
+  test('all rows have type prep and source auto', async () => {
+    const rows = await buildWeeklyTaskRows(prepResult, 1, '2026-03-02');
     for (const r of rows) {
       expect(r.type).toBe('prep');
       expect(r.source).toBe('auto');
     }
   });
 
-  test('falls back to non-weekly when schedule_days is empty', () => {
+  test('falls back to non-weekly when schedule_days is empty', async () => {
     mockMenuSchedule.schedule_days = '[]';
-    const rows = buildWeeklyTaskRows(prepResult, 1, '2026-03-02');
+    const rows = await buildWeeklyTaskRows(prepResult, 1, '2026-03-02');
     // Should fall back to buildPrepTaskRows which has no due_date
     for (const r of rows) {
       expect(r.due_date).toBeUndefined();
