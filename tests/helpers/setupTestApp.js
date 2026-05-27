@@ -95,7 +95,9 @@ async function createTestApp() {
 
   // Run the PostgreSQL schema
   const schemaPath = path.join(__dirname, '..', '..', 'db', 'schema-pg.sql');
-  const schemaSql = fs.readFileSync(schemaPath, 'utf-8');
+  let schemaSql = fs.readFileSync(schemaPath, 'utf-8');
+  // Remove CREATE EXTENSION since it might fail without superuser, and we try to do it above safely
+  schemaSql = schemaSql.replace(/CREATE EXTENSION IF NOT EXISTS citext;/gi, '');
   await pool.query(schemaSql);
 
   // Run seed data
