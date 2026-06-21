@@ -84,11 +84,20 @@ async function createTestApp() {
   // Create a unique schema for this test suite to isolate parallel runs
   const schemaName = 'test_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
 
-  const pool = new Pool({ connectionString: TEST_DATABASE_URL });
+  // Pin search_path at connection startup (via PGOPTIONS) so EVERY pooled
+  // connection deterministically targets the isolated schema, with `public`
+  // kept on the path so the citext type (installed in public) still resolves.
+  // Doing this in a `connect` event handler instead races the pool (the SET is
+  // not awaited before the first query runs), which silently drops the schema
+  // and makes seed-data-dependent tests fail intermittently.
+  const pool = new Pool({
+    connectionString: TEST_DATABASE_URL,
+    options: `-c search_path=${schemaName},public`,
+  });
 
-  // Create isolated schema
+  // Create isolated schema. The startup search_path points here already; a
+  // not-yet-existing schema on the path is harmless until a table is queried.
   await pool.query(`CREATE SCHEMA ${schemaName}`);
-  await pool.query(`SET search_path TO ${schemaName}`);
 
   // Ensure citext extension exists (in public schema)
   try { await pool.query('CREATE EXTENSION IF NOT EXISTS citext'); } catch {}
