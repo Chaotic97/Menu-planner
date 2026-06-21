@@ -12,6 +12,11 @@ function convertPlaceholders(sql) {
   return sql.replace(/\?/g, () => `$${++idx}`);
 }
 
+// Tables whose primary key is not a column named `id` — `RETURNING id` is invalid.
+const NO_ID_TABLES = new Set([
+  'settings', 'dish_tags', 'dish_allergens', 'ingredient_allergens',
+]);
+
 class StmtWrapper {
   constructor(queryFn, sql) {
     this._query = queryFn;
@@ -31,9 +36,12 @@ class StmtWrapper {
 
   async run(...params) {
     let sql = this._sql;
+    const tableMatch = /^\s*INSERT\s+INTO\s+"?([a-z_][a-z0-9_]*)"?/i.exec(sql);
+    const tableName = tableMatch ? tableMatch[1].toLowerCase() : '';
     const needsReturning = this._isInsert &&
       !/RETURNING/i.test(sql) &&
-      !/ON\s+CONFLICT/i.test(sql);
+      !/ON\s+CONFLICT/i.test(sql) &&
+      !NO_ID_TABLES.has(tableName);
     if (needsReturning) {
       sql = sql.replace(/;?\s*$/, '') + ' RETURNING id';
     }
@@ -84,11 +92,20 @@ async function createTestApp() {
   // Create a unique schema for this test suite to isolate parallel runs
   const schemaName = 'test_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
 
-  const pool = new Pool({ connectionString: TEST_DATABASE_URL });
+  // Pin search_path at connection startup (via PGOPTIONS) so EVERY pooled
+  // connection deterministically targets the isolated schema, with `public`
+  // kept on the path so the citext type (installed in public) still resolves.
+  // Doing this in a `connect` event handler instead races the pool (the SET is
+  // not awaited before the first query runs), which silently drops the schema
+  // and makes seed-data-dependent tests fail intermittently.
+  const pool = new Pool({
+    connectionString: TEST_DATABASE_URL,
+    options: `-c search_path=${schemaName},public`,
+  });
 
-  // Create isolated schema
+  // Create isolated schema. The startup search_path points here already; a
+  // not-yet-existing schema on the path is harmless until a table is queried.
   await pool.query(`CREATE SCHEMA ${schemaName}`);
-  await pool.query(`SET search_path TO ${schemaName}`);
 
   // Ensure citext extension exists (in public schema)
   try { await pool.query('CREATE EXTENSION IF NOT EXISTS citext'); } catch {}

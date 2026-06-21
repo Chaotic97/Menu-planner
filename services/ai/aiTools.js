@@ -1540,7 +1540,7 @@ const handlers = {
     if (input.query) { sql += ' AND t.title LIKE ?'; params.push(`%${input.query}%`); }
     if (input.type) { sql += ' AND t.type = ?'; params.push(input.type); }
     if (input.completed !== undefined) { sql += ' AND t.completed = ?'; params.push(input.completed ? 1 : 0); }
-    if (input.overdue) { sql += " AND t.due_date < CURRENT_DATE AND t.completed = 0"; }
+    if (input.overdue) { sql += " AND t.due_date < CURRENT_DATE::text AND t.completed = 0"; }
 
     sql += ' ORDER BY t.due_date, t.priority LIMIT 20';
     const tasks = await db.prepare(sql).all(...params);
@@ -1613,7 +1613,7 @@ const handlers = {
     // Aggregate ingredients from all dishes on this menu
     const items = await db.prepare(
       `SELECT i.name, i.unit_cost, i.base_unit,
-              SUM(di.quantity * md.servings) as total_qty, di.unit
+              SUM(di.quantity * md.servings) as total_qty, MIN(di.unit) as unit
        FROM menu_dishes md
        JOIN dish_ingredients di ON di.dish_id = md.dish_id
        JOIN ingredients i ON di.ingredient_id = i.id
@@ -1650,7 +1650,7 @@ const handlers = {
     const ingredientCount = (await db.prepare('SELECT COUNT(*) as cnt FROM ingredients').get()).cnt;
     const taskTotal = (await db.prepare('SELECT COUNT(*) as cnt FROM tasks').get()).cnt;
     const taskPending = (await db.prepare('SELECT COUNT(*) as cnt FROM tasks WHERE completed = 0').get()).cnt;
-    const taskOverdue = (await db.prepare("SELECT COUNT(*) as cnt FROM tasks WHERE completed = 0 AND due_date < CURRENT_DATE").get()).cnt;
+    const taskOverdue = (await db.prepare("SELECT COUNT(*) as cnt FROM tasks WHERE completed = 0 AND due_date < CURRENT_DATE::text").get()).cnt;
     const noteCount = (await db.prepare('SELECT COUNT(*) as cnt FROM service_notes').get()).cnt;
     const specialCount = (await db.prepare('SELECT COUNT(*) as cnt FROM weekly_specials WHERE is_active = 1').get()).cnt;
     // Recent activity
@@ -1660,7 +1660,7 @@ const handlers = {
 
     // Upcoming events with dates
     const upcomingEvents = await db.prepare(
-      "SELECT name, event_date FROM menus WHERE deleted_at IS NULL AND event_date IS NOT NULL AND event_date >= CURRENT_DATE ORDER BY event_date ASC LIMIT 5"
+      "SELECT name, event_date FROM menus WHERE deleted_at IS NULL AND event_date IS NOT NULL AND event_date >= CURRENT_DATE::text ORDER BY event_date ASC LIMIT 5"
     ).all();
 
     const parts = [

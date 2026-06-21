@@ -29,9 +29,12 @@ async function detectAllergens(ingredientNames) {
 /**
  * Detect allergens for a single ingredient name.
  * Returns array of matched allergen strings.
+ *
+ * Pass `executor` (a transaction wrapper) when called inside a db.transaction()
+ * so reads/writes happen on the same connection and can see uncommitted rows.
  */
-async function detectAllergensForName(ingredientName) {
-  const db = await getDb();
+async function detectAllergensForName(ingredientName, executor) {
+  const db = executor || await getDb();
   const keywords = await db.prepare('SELECT keyword, allergen FROM allergen_keywords').all();
   const detected = new Set();
   const normalized = ingredientName.toLowerCase().trim();
@@ -51,13 +54,13 @@ async function detectAllergensForName(ingredientName) {
  * Clears previous auto entries and re-detects from ingredient name.
  * Preserves manual overrides.
  */
-async function updateIngredientAllergens(ingredientId) {
-  const db = await getDb();
+async function updateIngredientAllergens(ingredientId, executor) {
+  const db = executor || await getDb();
 
   const ingredient = await db.prepare('SELECT name FROM ingredients WHERE id = ?').get(ingredientId);
   if (!ingredient) return [];
 
-  const detected = await detectAllergensForName(ingredient.name);
+  const detected = await detectAllergensForName(ingredient.name, db);
 
   // Remove old auto-detected allergens (keep manual overrides)
   await db.prepare("DELETE FROM ingredient_allergens WHERE ingredient_id = ? AND source = 'auto'").run(ingredientId);
@@ -75,8 +78,8 @@ async function updateIngredientAllergens(ingredientId) {
  * Called when a dish is created/updated with new ingredients.
  * Also maintains backward-compat dish_allergens (auto) entries.
  */
-async function updateDishAllergens(dishId) {
-  const db = await getDb();
+async function updateDishAllergens(dishId, executor) {
+  const db = executor || await getDb();
 
   // Get all ingredients for this dish
   const ingredients = await db.prepare(`
@@ -87,7 +90,7 @@ async function updateDishAllergens(dishId) {
 
   // Update ingredient_allergens for each ingredient
   for (const ing of ingredients) {
-    await updateIngredientAllergens(ing.id);
+    await updateIngredientAllergens(ing.id, db);
   }
 
   // Also update dish_allergens auto entries for backward compat

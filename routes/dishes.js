@@ -208,38 +208,41 @@ router.post('/', asyncHandler(async (req, res) => {
     }
   }
 
-  await db.transaction(async (tx) => {
+  const dishId = await db.transaction(async (tx) => {
     const result = await tx.prepare(`
       INSERT INTO dishes (name, description, category, chefs_notes, service_notes, suggested_price, manual_costs, batch_yield, is_temporary)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(name, description || '', category || 'main', chefs_notes || '', service_notes || '', suggested_price || 0, manual_costs ? JSON.stringify(manual_costs) : '[]', batch_yield || 1, is_temporary ? 1 : 0);
 
-    const dishId = result.lastInsertRowid;
+    const id = result.lastInsertRowid;
 
     // Add ingredients
-    await saveIngredients(tx, dishId, ingredients);
+    await saveIngredients(tx, id, ingredients);
 
     // Save tags
-    await saveDishTags(tx, dishId, tags);
+    await saveDishTags(tx, id, tags);
 
     // Save substitutions
-    await saveDishSubstitutions(tx, dishId, substitutions);
+    await saveDishSubstitutions(tx, id, substitutions);
 
     // Save service components
-    await saveDishComponents(tx, dishId, components);
+    await saveDishComponents(tx, id, components);
 
     // Save directions
-    await saveDishDirections(tx, dishId, directions);
+    await saveDishDirections(tx, id, directions);
 
     // Save service directions
-    await saveDishServiceDirections(tx, dishId, service_directions);
+    await saveDishServiceDirections(tx, id, service_directions);
 
-    // Detect allergens
-    await updateDishAllergens(dishId);
+    // Detect allergens (pass tx so it sees the just-inserted ingredients)
+    await updateDishAllergens(id, tx);
 
-    req.broadcast('dish_created', { id: dishId }, req.headers['x-client-id']);
-    res.status(201).json({ id: dishId });
+    return id;
   });
+
+  // Broadcast/respond only after COMMIT, so a follow-up read can't race the write.
+  req.broadcast('dish_created', { id: dishId }, req.headers['x-client-id']);
+  res.status(201).json({ id: dishId });
 }));
 
 // POST /api/dishes/:id/duplicate - Duplicate a dish
@@ -248,7 +251,7 @@ router.post('/:id/duplicate', asyncHandler(async (req, res) => {
   const source = await db.prepare('SELECT * FROM dishes WHERE id = ? AND deleted_at IS NULL').get(req.params.id);
   if (!source) return res.status(404).json({ error: 'Dish not found' });
 
-  await db.transaction(async (tx) => {
+  const newId = await db.transaction(async (tx) => {
     const result = await tx.prepare(`
       INSERT INTO dishes (name, description, category, chefs_notes, service_notes, suggested_price, manual_costs, batch_yield)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
@@ -263,7 +266,7 @@ router.post('/:id/duplicate', asyncHandler(async (req, res) => {
       source.batch_yield || 1
     );
 
-    const newId = result.lastInsertRowid;
+    const id = result.lastInsertRowid;
 
     // Copy all dish_ingredients (including sort_order)
     const ingredients = await tx.prepare(`
@@ -276,7 +279,7 @@ router.post('/:id/duplicate', asyncHandler(async (req, res) => {
       await tx.prepare(`
         INSERT INTO dish_ingredients (dish_id, ingredient_id, quantity, unit, prep_note, sort_order)
         VALUES (?, ?, ?, ?, ?, ?)
-      `).run(newId, ing.ingredient_id, ing.quantity, ing.unit, ing.prep_note, ing.sort_order || 0);
+      `).run(id, ing.ingredient_id, ing.quantity, ing.unit, ing.prep_note, ing.sort_order || 0);
     }
 
     // Copy section headers
@@ -286,7 +289,7 @@ router.post('/:id/duplicate', asyncHandler(async (req, res) => {
     for (const h of sectionHeaders) {
       await tx.prepare(
         'INSERT INTO dish_section_headers (dish_id, label, sort_order) VALUES (?, ?, ?)'
-      ).run(newId, h.label, h.sort_order);
+      ).run(id, h.label, h.sort_order);
     }
 
     // Copy substitutions
@@ -295,13 +298,13 @@ router.post('/:id/duplicate', asyncHandler(async (req, res) => {
       await tx.prepare(`
         INSERT INTO dish_substitutions (dish_id, allergen, original_ingredient, substitute_ingredient, substitute_quantity, substitute_unit, notes)
         VALUES (?, ?, ?, ?, ?, ?, ?)
-      `).run(newId, s.allergen, s.original_ingredient, s.substitute_ingredient, s.substitute_quantity, s.substitute_unit, s.notes);
+      `).run(id, s.allergen, s.original_ingredient, s.substitute_ingredient, s.substitute_quantity, s.substitute_unit, s.notes);
     }
 
     // Copy tags
     const tagIds = await tx.prepare('SELECT tag_id FROM dish_tags WHERE dish_id = ?').all(req.params.id);
     for (const t of tagIds) {
-      await tx.prepare('INSERT INTO dish_tags (dish_id, tag_id) VALUES (?, ?) ON CONFLICT (dish_id, tag_id) DO NOTHING').run(newId, t.tag_id);
+      await tx.prepare('INSERT INTO dish_tags (dish_id, tag_id) VALUES (?, ?) ON CONFLICT (dish_id, tag_id) DO NOTHING').run(id, t.tag_id);
     }
 
     // Copy service components
@@ -309,7 +312,7 @@ router.post('/:id/duplicate', asyncHandler(async (req, res) => {
       'SELECT name, sort_order FROM dish_components WHERE dish_id = ? ORDER BY sort_order, id'
     ).all(req.params.id);
     for (const c of comps) {
-      await tx.prepare('INSERT INTO dish_components (dish_id, name, sort_order) VALUES (?, ?, ?)').run(newId, c.name, c.sort_order);
+      await tx.prepare('INSERT INTO dish_components (dish_id, name, sort_order) VALUES (?, ?, ?)').run(id, c.name, c.sort_order);
     }
 
     // Copy directions
@@ -317,7 +320,7 @@ router.post('/:id/duplicate', asyncHandler(async (req, res) => {
       'SELECT type, text, sort_order FROM dish_directions WHERE dish_id = ? ORDER BY sort_order, id'
     ).all(req.params.id);
     for (const d of dirs) {
-      await tx.prepare('INSERT INTO dish_directions (dish_id, type, text, sort_order) VALUES (?, ?, ?, ?)').run(newId, d.type, d.text, d.sort_order);
+      await tx.prepare('INSERT INTO dish_directions (dish_id, type, text, sort_order) VALUES (?, ?, ?, ?)').run(id, d.type, d.text, d.sort_order);
     }
 
     // Copy service directions
@@ -325,10 +328,10 @@ router.post('/:id/duplicate', asyncHandler(async (req, res) => {
       'SELECT type, text, sort_order FROM dish_service_directions WHERE dish_id = ? ORDER BY sort_order, id'
     ).all(req.params.id);
     for (const d of svcDirs) {
-      await tx.prepare('INSERT INTO dish_service_directions (dish_id, type, text, sort_order) VALUES (?, ?, ?, ?)').run(newId, d.type, d.text, d.sort_order);
+      await tx.prepare('INSERT INTO dish_service_directions (dish_id, type, text, sort_order) VALUES (?, ?, ?, ?)').run(id, d.type, d.text, d.sort_order);
     }
 
-    await updateDishAllergens(newId);
+    await updateDishAllergens(id, tx);
 
     // Copy dish-level manual allergen overrides
     const manualAllergens = await tx.prepare(
@@ -337,12 +340,15 @@ router.post('/:id/duplicate', asyncHandler(async (req, res) => {
     for (const a of manualAllergens) {
       await tx.prepare(
         "INSERT INTO dish_allergens (dish_id, allergen, source) VALUES (?, ?, 'manual') ON CONFLICT (dish_id, allergen) DO NOTHING"
-      ).run(newId, a.allergen);
+      ).run(id, a.allergen);
     }
 
-    req.broadcast('dish_created', { id: newId }, req.headers['x-client-id']);
-    res.status(201).json({ id: newId });
+    return id;
   });
+
+  // Broadcast/respond only after COMMIT, so a follow-up read can't race the write.
+  req.broadcast('dish_created', { id: newId }, req.headers['x-client-id']);
+  res.status(201).json({ id: newId });
 }));
 
 // POST /api/dishes/import-url - Import recipe from URL
@@ -492,8 +498,8 @@ router.put('/:id', asyncHandler(async (req, res) => {
       await tx.prepare('DELETE FROM dish_section_headers WHERE dish_id = ?').run(req.params.id);
       await saveIngredients(tx, req.params.id, ingredients);
 
-      // Re-detect allergens
-      await updateDishAllergens(req.params.id);
+      // Re-detect allergens (pass tx so it sees the replaced ingredients)
+      await updateDishAllergens(req.params.id, tx);
     }
 
     // Update tags if provided

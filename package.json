@@ -12,7 +12,6 @@
     "test:e2e": "npx playwright test"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.78.0",
     "@anthropic-ai/vertex-sdk": "^0.14.4",
     "@google-cloud/vertexai": "^1.10.2",
     "@simplewebauthn/browser": "^13.0.0",
@@ -24,8 +23,8 @@
     "exceljs": "^4.4.0",
     "express": "^4.22.2",
     "express-session": "^1.19.0",
-    "multer": "^1.4.5-lts.1",
-    "nodemailer": "^8.0.1",
+    "multer": "^2.2.0",
+    "nodemailer": "^9.0.1",
     "pdf-parse": "^2.4.5",
     "pg": "^8.16.0",
     "session-file-store": "^1.5.0",
