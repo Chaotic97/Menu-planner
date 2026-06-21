@@ -39,6 +39,902 @@ function formatWeekLabel(mondayStr) {
   return `${fmt(mon)} – ${fmt(sun)}`;
 }
 
+function renderDishRow(dish, isHouse, scheduleDays) {
+  const hasConflict = dish.allergy_conflicts && dish.allergy_conflicts.length > 0;
+  const isTemp = !!dish.is_temporary;
+  let dishActiveDays = null;
+  try { dishActiveDays = dish.active_days ? JSON.parse(dish.active_days) : null; } catch {}
+  const hasNote = dish.menu_dish_notes && dish.menu_dish_notes.trim();
+  return `
+    <div class="mb-dish-row ${hasConflict ? 'allergy-conflict' : ''} ${isTemp ? 'mb-temp-dish' : ''}" data-dish-id="${dish.id}" data-course-id="${dish.course_id || ''}" data-temporary="${isTemp ? '1' : '0'}" draggable="true">
+      <div class="drag-handle" title="Drag to reorder">&#8942;&#8942;</div>
+      <div class="mb-dish-thumb">
+        ${dish.photo_path
+          ? `<img src="${escapeHtml(dish.photo_path)}" alt="${escapeHtml(dish.name)}">`
+          : '<div class="mb-no-thumb"></div>'
+        }
+      </div>
+      <div class="mb-dish-info">
+        ${isTemp
+          ? `<button type="button" class="dish-name-link mb-temp-edit-btn" data-dish-id="${dish.id}"><strong>${escapeHtml(dish.name)}</strong></button>`
+          : `<a href="#/dishes/${dish.id}" class="dish-name-link"><strong>${escapeHtml(dish.name)}</strong></a>`
+        }
+        ${isTemp ? '<span class="mb-temp-badge">Temp</span>' : ''}
+        ${renderAllergenBadges(dish.allergens, true)}
+        ${hasConflict ? `<div class="mb-allergy-warning">&#9888; Guest allergy: ${escapeHtml(dish.allergy_conflicts.join(', '))}</div>` : ''}
+        ${!isTemp && dish.substitution_count > 0 ? `<span class="subs-badge" data-dish-id="${dish.id}" title="Has allergen substitutions">&#8644; ${dish.substitution_count} sub${dish.substitution_count > 1 ? 's' : ''}</span>` : ''}
+        ${isHouse && scheduleDays.length ? `
+          <div class="mb-dish-days" data-dish-id="${dish.id}">
+            ${scheduleDays.map(d => {
+              const isActive = dishActiveDays === null || dishActiveDays.includes(d);
+              return `<button type="button" class="mb-dish-day-btn ${isActive ? 'active' : ''}" data-day="${d}" data-dish="${dish.id}">${escapeHtml(DAY_LETTERS[d])}</button>`;
+            }).join('')}
+          </div>
+        ` : ''}
+      </div>
+      ${!isTemp ? `
+      <div class="mb-cost-info">
+        ${dish.cost_per_serving > 0 ? `
+          <span class="mb-cost-value">$${dish.cost_total.toFixed(2)}</span>
+          ${(dish.batch_yield || 1) > 1 ? `
+            <span class="mb-cost-detail">$${dish.cost_per_portion.toFixed(2)}/portion</span>
+          ` : ''}
+        ` : ''}
+      </div>
+      <div class="mb-servings">
+        <button class="btn btn-icon servings-dec" data-dish="${dish.id}">-</button>
+        <input type="number" class="mb-servings-input" data-dish="${dish.id}" value="${dish.servings}" min="1" step="1" title="Number of batches">
+        <button class="btn btn-icon servings-inc" data-dish="${dish.id}">+</button>
+        <span class="mb-servings-label">${(dish.batch_yield || 1) > 1 ? 'batches' : 'servings'}</span>
+        ${(dish.batch_yield || 1) > 1 ? `
+          <span class="mb-portions-label">(${dish.total_portions} portions)</span>
+          <input type="number" class="input mb-portion-target" data-dish="${dish.id}" data-yield="${dish.batch_yield}"
+                 min="1" step="1" placeholder="target" title="Enter target portions to auto-calculate batches"
+                 style="width:70px;padding:2px 6px;font-size:0.8rem;margin-left:4px;">
+        ` : ''}
+      </div>
+      ` : ''}
+      <button class="btn btn-icon mc-dish-note-btn ${hasNote ? 'mc-has-note' : ''}" data-dish="${dish.id}" title="Dish notes">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" width="14" height="14"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+      </button>
+      <div class="mb-row-actions" data-dish-id="${dish.id}"></div>
+      <div class="mc-dish-note-area ${hasNote ? 'mc-note-open' : ''}">
+        <textarea class="mc-dish-note-textarea" data-dish="${dish.id}" placeholder="Add a note for this dish in this menu..." rows="2">${escapeHtml(dish.menu_dish_notes || '')}</textarea>
+      </div>
+    </div>
+  `;
+}
+
+function renderCourseSection(course, dishes, isHouse, scheduleDays, isCoursed) {
+  const hasNote = course.notes && course.notes.trim();
+  const label = isCoursed ? 'Course' : 'Section';
+  return `
+    <div class="mc-course-section" data-course-id="${course.id}" draggable="true">
+      <div class="mc-course-header">
+        <div class="drag-handle mc-course-drag" title="Drag to reorder ${label.toLowerCase()}">&#8942;&#8942;</div>
+        <h2 class="mc-course-name">${escapeHtml(course.name)}</h2>
+        <span class="mc-course-dish-count">${dishes.length} dish${dishes.length !== 1 ? 'es' : ''}</span>
+        <button class="btn btn-icon mc-course-note-btn ${hasNote ? 'mc-has-note' : ''}" title="${label} notes">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" width="14" height="14"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+        </button>
+        <button class="btn btn-sm mc-course-add-dish" data-course-id="${course.id}">+ Dish</button>
+        <span class="mc-course-actions" data-course-id="${course.id}"></span>
+      </div>
+      <div class="mc-course-note-area ${hasNote ? 'mc-note-open' : ''}">
+        <textarea class="mc-course-note-textarea" data-course-id="${course.id}" placeholder="Add ${label.toLowerCase()} notes (e.g., timing, service instructions)..." rows="2">${escapeHtml(course.notes || '')}</textarea>
+      </div>
+      <div class="menu-dishes mc-course-dishes" data-course-id="${course.id}">
+        ${dishes.length ? dishes.map(dish => renderDishRow(dish, isHouse, scheduleDays)).join('') : `
+          <div class="mc-course-empty">No dishes in this ${label.toLowerCase()} yet</div>
+        `}
+      </div>
+    </div>
+  `;
+}
+
+function showEditCourse(courseId, currentName, currentNotes, ctx) {
+  const serviceStyle = ctx.menu.service_style || 'alacarte';
+  const label = serviceStyle === 'coursed' ? 'Course' : 'Section';
+  const modal = openModal(`Edit ${label}`, `
+    <form id="edit-course-form" class="form">
+      <div class="form-group">
+        <label for="edit-course-name">${label} Name *</label>
+        <input type="text" id="edit-course-name" class="input" required value="${escapeHtml(currentName)}">
+      </div>
+      <div class="form-group">
+        <label for="edit-course-notes">Notes</label>
+        <textarea id="edit-course-notes" class="input" rows="2">${escapeHtml(currentNotes || '')}</textarea>
+      </div>
+      <div class="form-actions">
+        <button type="submit" class="btn btn-primary">Save</button>
+      </div>
+    </form>
+  `);
+
+  modal.querySelector('#edit-course-name').select();
+
+  modal.querySelector('#edit-course-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const name = modal.querySelector('#edit-course-name').value.trim();
+    if (!name) return;
+    const notes = modal.querySelector('#edit-course-notes').value.trim();
+    try {
+      await updateCourse(ctx.menuId, courseId, { name, notes });
+      await ctx.refreshMenu();
+      closeModal(modal);
+      showToast(`${label} updated`);
+      ctx.render();
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
+  });
+}
+
+function setupDragDrop(ctx) {
+  const dishRows = ctx.container.querySelectorAll('.mb-dish-row[draggable]');
+  let draggedId = null;
+  let dragType = null;
+
+  dishRows.forEach(row => {
+    row.addEventListener('dragstart', (e) => {
+      draggedId = row.dataset.dishId;
+      dragType = 'dish';
+      row.classList.add('dragging');
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/plain', `dish:${draggedId}`);
+    });
+
+    row.addEventListener('dragend', () => {
+      row.classList.remove('dragging');
+      ctx.container.querySelectorAll('.drag-over, .mc-drop-target').forEach(r => r.classList.remove('drag-over', 'mc-drop-target'));
+    });
+
+    row.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      if (dragType === 'dish' && row.dataset.dishId !== draggedId) {
+        ctx.container.querySelectorAll('.drag-over').forEach(r => r.classList.remove('drag-over'));
+        row.classList.add('drag-over');
+      }
+    });
+
+    row.addEventListener('dragleave', () => {
+      row.classList.remove('drag-over');
+    });
+
+    row.addEventListener('drop', async (e) => {
+      e.preventDefault();
+      row.classList.remove('drag-over');
+      if (dragType !== 'dish') return;
+      const targetId = row.dataset.dishId;
+      if (draggedId === targetId) return;
+
+      const targetCourseId = row.dataset.courseId || null;
+      const dishes = ctx.menu.dishes;
+      const fromIndex = dishes.findIndex(d => String(d.id) === String(draggedId));
+      const toIndex = dishes.findIndex(d => String(d.id) === String(targetId));
+      if (fromIndex === -1 || toIndex === -1) return;
+
+      const [moved] = dishes.splice(fromIndex, 1);
+      moved.course_id = targetCourseId ? parseInt(targetCourseId) : null;
+      dishes.splice(toIndex, 0, moved);
+
+      const order = dishes.map((d, i) => ({
+        dish_id: d.id,
+        sort_order: i,
+        course_id: d.course_id === undefined ? undefined : (d.course_id || null)
+      }));
+      try {
+        await reorderMenuDishes(ctx.menuId, order);
+        await ctx.refreshMenu();
+        ctx.render();
+      } catch (err) {
+        showToast('Failed to reorder', 'error');
+      }
+    });
+  });
+
+  ctx.container.querySelectorAll('.mc-course-dishes').forEach(zone => {
+    zone.addEventListener('dragover', (e) => {
+      if (dragType !== 'dish') return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      zone.classList.add('mc-drop-target');
+    });
+
+    zone.addEventListener('dragleave', () => {
+      zone.classList.remove('mc-drop-target');
+    });
+
+    zone.addEventListener('drop', async (e) => {
+      e.preventDefault();
+      zone.classList.remove('mc-drop-target');
+      if (dragType !== 'dish' || !draggedId) return;
+      if (e.target.closest('.mb-dish-row')) return;
+
+      const targetCourseId = zone.dataset.courseId ? parseInt(zone.dataset.courseId) : null;
+      const dish = ctx.menu.dishes.find(d => String(d.id) === String(draggedId));
+      if (!dish) return;
+
+      try {
+        await updateMenuDish(ctx.menuId, draggedId, { course_id: targetCourseId });
+        await ctx.refreshMenu();
+        ctx.render();
+        showToast('Dish moved');
+      } catch (err) {
+        showToast('Failed to move dish', 'error');
+      }
+    });
+  });
+
+  const courseSections = ctx.container.querySelectorAll('.mc-course-section[draggable]');
+  courseSections.forEach(section => {
+    const handle = section.querySelector('.mc-course-drag');
+    if (!handle) return;
+
+    handle.addEventListener('dragstart', (e) => {
+      e.stopPropagation();
+      draggedId = section.dataset.courseId;
+      dragType = 'course';
+      section.classList.add('dragging');
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/plain', `course:${draggedId}`);
+    });
+
+    section.addEventListener('dragend', () => {
+      section.classList.remove('dragging');
+      ctx.container.querySelectorAll('.drag-over').forEach(r => r.classList.remove('drag-over'));
+    });
+
+    section.addEventListener('dragover', (e) => {
+      if (dragType !== 'course') return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      if (section.dataset.courseId !== draggedId) {
+        ctx.container.querySelectorAll('.mc-course-section.drag-over').forEach(r => r.classList.remove('drag-over'));
+        section.classList.add('drag-over');
+      }
+    });
+
+    section.addEventListener('dragleave', () => {
+      section.classList.remove('drag-over');
+    });
+
+    section.addEventListener('drop', async (e) => {
+      e.preventDefault();
+      section.classList.remove('drag-over');
+      if (dragType !== 'course') return;
+      const targetCourseId = section.dataset.courseId;
+      if (draggedId === targetCourseId) return;
+
+      const courses = ctx.menu.courses || [];
+      const fromIdx = courses.findIndex(c => String(c.id) === String(draggedId));
+      const toIdx = courses.findIndex(c => String(c.id) === String(targetCourseId));
+      if (fromIdx === -1 || toIdx === -1) return;
+
+      const [moved] = courses.splice(fromIdx, 1);
+      courses.splice(toIdx, 0, moved);
+
+      const order = courses.map((c, i) => ({ course_id: c.id, sort_order: i }));
+      try {
+        await reorderCourses(ctx.menuId, order);
+        await ctx.refreshMenu();
+        ctx.render();
+      } catch (err) {
+        showToast('Failed to reorder', 'error');
+      }
+    });
+  });
+
+  let touchDragId = null;
+  let touchStartY = 0;
+
+  dishRows.forEach(row => {
+    const handle = row.querySelector('.drag-handle:not(.mc-course-drag)');
+    if (!handle) return;
+
+    handle.addEventListener('touchstart', (e) => {
+      touchDragId = row.dataset.dishId;
+      touchStartY = e.touches[0].clientY;
+      row.classList.add('dragging');
+    }, { passive: true });
+
+    handle.addEventListener('touchmove', (e) => {
+      e.preventDefault();
+    }, { passive: false });
+
+    handle.addEventListener('touchend', async (e) => {
+      row.classList.remove('dragging');
+      if (!touchDragId) return;
+
+      const touchEndY = e.changedTouches[0].clientY;
+      const diff = touchEndY - touchStartY;
+      const dishes = ctx.menu.dishes;
+      const fromIndex = dishes.findIndex(d => String(d.id) === String(touchDragId));
+
+      let toIndex = fromIndex;
+      if (diff > 40 && fromIndex < dishes.length - 1) toIndex = fromIndex + 1;
+      else if (diff < -40 && fromIndex > 0) toIndex = fromIndex - 1;
+
+      if (toIndex !== fromIndex) {
+        const [moved] = dishes.splice(fromIndex, 1);
+        dishes.splice(toIndex, 0, moved);
+        const order = dishes.map((d, i) => ({ dish_id: d.id, sort_order: i }));
+        try {
+          await reorderMenuDishes(ctx.menuId, order);
+          ctx.render();
+        } catch (err) {
+          showToast('Failed to reorder', 'error');
+        }
+      }
+      touchDragId = null;
+    });
+  });
+}
+
+async function showPrepareWeek(ctx) {
+  let scheduleDays = [];
+  try { scheduleDays = JSON.parse(ctx.menu.schedule_days || '[]'); } catch {}
+  if (!scheduleDays.length) {
+    showToast('Set service days first', 'warning');
+    return;
+  }
+
+  const defaultMonday = getNextMonday();
+  const dayOrder = { 1: 0, 2: 1, 3: 2, 4: 3, 5: 4, 6: 5, 0: 6 };
+  const sortedDays = [...scheduleDays].sort((a, b) => dayOrder[a] - dayOrder[b]);
+
+  const modal = openModal('Prepare Week', `
+    <div class="form-group">
+      <label for="week-start-input">Week Starting (Monday)</label>
+      <input type="date" id="week-start-input" class="input" value="${defaultMonday}">
+      <p class="text-muted" style="margin-top:6px;font-size:0.85rem;">
+        ${formatWeekLabel(defaultMonday)}
+      </p>
+    </div>
+    <div class="mb-week-preview">
+      <h4 style="margin:0 0 8px;">Service days: ${sortedDays.map(d => DAY_NAMES[d]).join(', ')}</h4>
+      <p style="margin:0 0 4px;font-size:0.9rem;">${ctx.menu.dishes.length} dish${ctx.menu.dishes.length !== 1 ? 'es' : ''} on this menu</p>
+      ${(() => {
+        const daySpecific = ctx.menu.dishes.filter(d => {
+          let ad = null;
+          try { ad = d.active_days ? JSON.parse(d.active_days) : null; } catch {}
+          return ad !== null && ad.length < scheduleDays.length;
+        });
+        return daySpecific.length ? `<p style="margin:0;font-size:0.85rem;color:var(--text-secondary);">${daySpecific.length} dish${daySpecific.length !== 1 ? 'es' : ''} with day-specific schedules</p>` : '';
+      })()}
+    </div>
+    <button id="generate-week-btn" class="btn btn-primary" style="width:100%;margin-top:16px;">Generate Prep Tasks</button>
+  `);
+
+  const weekInput = modal.querySelector('#week-start-input');
+  const hintP = weekInput.nextElementSibling;
+  weekInput.addEventListener('input', () => {
+    if (weekInput.value) {
+      hintP.textContent = formatWeekLabel(weekInput.value);
+    }
+  });
+
+  modal.querySelector('#generate-week-btn').addEventListener('click', async () => {
+    const weekStart = weekInput.value;
+    if (!weekStart) {
+      showToast('Select a week start date', 'error');
+      return;
+    }
+
+    const btn = modal.querySelector('#generate-week-btn');
+    btn.disabled = true;
+    btn.textContent = 'Generating...';
+
+    try {
+      const result = await generateTasks(ctx.menuId, { week_start: weekStart });
+      closeModal(modal);
+      showToast(`Generated ${result.prep_count} prep task${result.prep_count !== 1 ? 's' : ''} for ${formatWeekLabel(weekStart)}`, 'success');
+    } catch (err) {
+      btn.disabled = false;
+      btn.textContent = 'Generate Prep Tasks';
+      showToast(err.message || 'Failed to generate tasks', 'error');
+    }
+  });
+}
+
+async function showScaleModal(ctx) {
+  const totalPortions = ctx.menu.dishes.reduce((s, d) => s + (d.total_portions || d.servings), 0);
+  const defaultCovers = ctx.menu.expected_covers || totalPortions;
+
+  const modal = openModal('Scale for Event', `
+    <div class="form-group">
+      <label for="scale-covers">Number of Covers</label>
+      <input type="number" id="scale-covers" class="input" min="1" value="${defaultCovers}" placeholder="e.g., 50">
+      <p class="text-muted" style="margin-top:6px;font-size:0.85rem;">
+        Current menu produces ${totalPortions} portions${ctx.menu.expected_covers ? ` (${ctx.menu.expected_covers} expected covers)` : ''}. Enter total covers needed.
+      </p>
+    </div>
+    <button id="scale-calculate-btn" class="btn btn-primary" style="width:100%;margin-bottom:16px;">Calculate Scaled List</button>
+    <div id="scaled-result"></div>
+  `);
+
+  const coversInput = modal.querySelector('#scale-covers');
+  const calcBtn = modal.querySelector('#scale-calculate-btn');
+  const resultDiv = modal.querySelector('#scaled-result');
+
+  calcBtn.addEventListener('click', async () => {
+    const covers = parseInt(coversInput.value);
+    if (!covers || covers < 1) {
+      showToast('Enter a valid cover count', 'error');
+      return;
+    }
+
+    resultDiv.innerHTML = '<div class="loading" style="padding:12px;">Calculating...</div>';
+
+    try {
+      const data = await getScaledShoppingList(ctx.menuId, covers);
+
+      let html = `
+        <div class="shopping-summary" style="margin-bottom:16px;">
+          <strong>Scaled for ${data.covers} covers</strong>
+          (${data.scale_factor}x from ${data.base_covers} ${data.base_covers_source === 'expected' ? 'expected' : 'base'} covers)<br>
+          <strong>Estimated Total: $${data.total_estimated_cost.toFixed(2)}</strong>
+        </div>
+      `;
+
+      for (const group of data.groups) {
+        html += `<div class="todo-group">
+          <h3 class="todo-group-title">${capitalize(group.category)}</h3>`;
+        for (const item of group.items) {
+          html += `<div class="todo-item" style="cursor:default;">
+            <span class="todo-text">
+              <strong>${escapeHtml(item.ingredient)}</strong>
+              <span class="todo-qty">${item.total_quantity} ${item.unit}</span>
+              ${item.estimated_cost !== null ? `<span class="todo-cost">$${item.estimated_cost.toFixed(2)}</span>` : ''}
+            </span>
+          </div>`;
+        }
+        html += '</div>';
+      }
+
+      html += '<button id="scale-print-btn" class="btn btn-secondary" style="width:100%;margin-top:16px;">Print Scaled List</button>';
+
+      resultDiv.innerHTML = html;
+
+      modal.querySelector('#scale-print-btn').addEventListener('click', () => {
+        const printHtml = `
+          <html><head><title>Scaled Shopping List - ${escapeHtml(data.menu_name)}</title>
+          <style>
+            body { font-family: -apple-system, sans-serif; padding: 20px; }
+            h1 { font-size: 1.4rem; margin-bottom: 4px; }
+            h3 { margin-top: 16px; border-bottom: 1px solid #ccc; padding-bottom: 4px; }
+            .item { padding: 4px 0; display: flex; justify-content: space-between; }
+            .summary { margin: 12px 0; padding: 8px; background: #f5f5f0; }
+          </style></head><body>
+          <h1>Scaled Shopping List: ${escapeHtml(data.menu_name)}</h1>
+          <div class="summary">
+            <strong>${data.covers} covers</strong> (${data.scale_factor}x scale) |
+            Estimated Total: <strong>$${data.total_estimated_cost.toFixed(2)}</strong>
+          </div>
+          ${data.groups.map(g => `
+            <h3>${capitalize(g.category)}</h3>
+            ${g.items.map(i => `
+              <div class="item">
+                <span>${escapeHtml(i.ingredient)} &mdash; ${i.total_quantity} ${i.unit}</span>
+                <span>${i.estimated_cost !== null ? '$' + i.estimated_cost.toFixed(2) : ''}</span>
+              </div>
+            `).join('')}
+          `).join('')}
+          </body></html>
+        `;
+        printSheet(printHtml);
+      });
+
+    } catch (err) {
+      resultDiv.innerHTML = `<div class="error" style="padding:12px;">${escapeHtml(err.message)}</div>`;
+    }
+  });
+}
+
+async function showKitchenPrint(ctx) {
+  try {
+    const data = await getMenuKitchenPrint(ctx.menuId);
+    const courses = data.courses || [];
+    const isCoursed = (data.menu.service_style || 'alacarte') === 'coursed';
+    const hasCourses = courses.length > 0;
+
+    let html = `
+      <html><head><title>Service Sheet - ${escapeHtml(data.menu.name)}</title>
+      <style>
+        body { font-family: -apple-system, sans-serif; padding: 20px; color: #1a1a1a; }
+        h1 { font-size: 1.6rem; margin-bottom: 4px; border-bottom: 3px solid #1a1a1a; padding-bottom: 8px; }
+        .meta { font-size: 0.9rem; color: #555; margin: 8px 0 20px; }
+        .meta .alert { color: #d32f2f; font-weight: 700; }
+        .course-header { font-size: 1.3rem; font-weight: 700; margin: 24px 0 6px; padding: 8px 0 4px; border-bottom: 2px solid #333; }
+        .course-notes { font-size: 0.85rem; color: #555; font-style: italic; margin: 4px 0 12px; padding: 4px 10px; background: #f0f8ff; border-left: 3px solid #4a90d9; }
+        .dish-block { margin: 0 0 20px; padding-bottom: 20px; border-bottom: 1px solid #ddd; page-break-inside: avoid; display: grid; grid-template-columns: 120px 1fr; gap: 0 16px; }
+        .course-num { font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: #888; padding-top: 3px; }
+        .course-cat { font-size: 0.7rem; color: #aaa; margin-top: 2px; text-transform: capitalize; }
+        .dish-name { font-size: 1.15rem; font-weight: 700; margin-bottom: 6px; }
+        .dish-note { font-size: 0.82rem; color: #444; margin: 4px 0 8px; padding: 4px 8px; background: #fffde7; border-left: 3px solid #f9a825; font-style: italic; }
+        .allergens { margin-bottom: 6px; }
+        .allergen-tag { display: inline-block; padding: 2px 8px; font-size: 0.72rem; font-weight: 700; background: #ffcdd2; color: #b71c1c; border-radius: 10px; margin-right: 3px; margin-bottom: 3px; }
+        .ingredients { margin: 4px 0 8px; padding-left: 0; list-style: none; }
+        .ingredients li { font-size: 0.9rem; font-weight: 600; color: #1a1a1a; padding: 2px 0; border-bottom: 1px solid #f0f0f0; }
+        .notes { font-size: 0.85rem; color: #333; margin-top: 6px; padding: 6px 10px; background: #f5f5f0; border-left: 3px solid #999; }
+        .notes-label { font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: #888; margin-bottom: 2px; }
+        .subs { font-size: 0.82rem; margin-top: 6px; padding: 5px 10px; background: #fff3e0; border-left: 3px solid #e65100; }
+        .subs strong { color: #e65100; }
+        @media print { body { padding: 0; } }
+      </style></head><body>
+      <h1>${escapeHtml(data.menu.name)}</h1>
+      <div class="meta">
+        Printed: ${new Date().toLocaleDateString()}
+        ${data.expected_covers ? ` &nbsp;·&nbsp; <strong>Covers: ${data.expected_covers}</strong>` : ''}
+        ${data.guest_allergies.length ? ` &nbsp;·&nbsp; <span class="alert">&#9888; Guest Allergies: ${escapeHtml(data.guest_allergies.join(', ').toUpperCase())}</span>` : ''}
+        ${hasCourses ? ` &nbsp;·&nbsp; ${courses.length} ${isCoursed ? 'course' : 'section'}${courses.length !== 1 ? 's' : ''}` : ''}
+      </div>
+    `;
+
+    function renderDishBlock(dish, courseNum) {
+      const batchYield = dish.batch_yield || 1;
+      const servings = dish.servings || 1;
+      const batchInfo = servings > 1 || batchYield > 1
+        ? ` &mdash; ${servings} batch${servings !== 1 ? 'es' : ''}${batchYield > 1 ? ` (${dish.total_portions || servings * batchYield} portions)` : ''}`
+        : '';
+
+      let block = `<div class="dish-block">`;
+      block += `<div><div class="course-num">${courseNum}</div><div class="course-cat">${escapeHtml(dish.category || '')}</div></div>`;
+      block += `<div>`;
+      block += `<div class="dish-name">${escapeHtml(dish.name)}${batchInfo}</div>`;
+
+      if (dish.menu_dish_notes) {
+        block += `<div class="dish-note">${escapeHtml(dish.menu_dish_notes)}</div>`;
+      }
+
+      if (dish.allergens.length) {
+        block += `<div class="allergens">${dish.allergens.map(a => `<span class="allergen-tag">${escapeHtml(a)}</span>`).join('')}</div>`;
+      }
+
+      if (dish.components && dish.components.length) {
+        block += `<ul class="ingredients">${dish.components.map(c => `<li>${escapeHtml(c.name)}</li>`).join('')}</ul>`;
+      } else {
+        block += `<p style="font-size:0.85rem;color:#888;margin:4px 0 8px;font-style:italic;">No service components added.</p>`;
+      }
+
+      if (dish.ingredients && dish.ingredients.length) {
+        block += `<div style="margin:8px 0;"><div class="notes-label">Ingredients${servings > 1 ? ' (scaled &times;' + servings + ')' : ''}</div>`;
+        block += '<table style="width:100%;border-collapse:collapse;font-size:0.85rem;margin-top:4px;">';
+        for (const ing of dish.ingredients) {
+          block += '<tr><td style="padding:2px 6px;border-bottom:1px solid #f0f0f0;">' + escapeHtml(ing.ingredient_name) + '</td>';
+          block += '<td style="padding:2px 6px;border-bottom:1px solid #f0f0f0;text-align:right;white-space:nowrap;"><strong>' + ing.quantity + '</strong> ' + escapeHtml(ing.unit || '') + '</td>';
+          block += '<td style="padding:2px 6px;border-bottom:1px solid #f0f0f0;color:#888;font-size:0.8rem;">' + escapeHtml(ing.prep_note || '') + '</td></tr>';
+        }
+        block += '</table></div>';
+      }
+
+      if (dish.directions && dish.directions.length) {
+        block += '<div style="margin:8px 0;"><div class="notes-label">Prep Method</div>';
+        let stepNum = 0;
+        for (const d of dish.directions) {
+          if (d.type === 'section') {
+            block += '<div style="font-weight:700;margin:8px 0 4px;border-bottom:1px solid #ddd;padding-bottom:2px;">' + escapeHtml(d.text) + '</div>';
+          } else {
+            stepNum++;
+            block += '<div style="display:flex;gap:6px;margin-bottom:4px;font-size:0.85rem;"><span style="font-weight:700;color:#888;min-width:18px;">' + stepNum + '.</span><span>' + escapeHtml(d.text) + '</span></div>';
+          }
+        }
+        block += '</div>';
+      } else if (dish.chefs_notes) {
+        block += '<div class="notes"><div class="notes-label">Chef\'s Notes</div>' + escapeHtml(dish.chefs_notes) + '</div>';
+      }
+
+      if (dish.service_directions && dish.service_directions.length) {
+        block += '<div style="margin:8px 0;"><div class="notes-label">Service Process</div>';
+        let stepNum = 0;
+        for (const d of dish.service_directions) {
+          if (d.type === 'section') {
+            block += '<div style="font-weight:700;margin:8px 0 4px;border-bottom:1px solid #ddd;padding-bottom:2px;">' + escapeHtml(d.text) + '</div>';
+          } else {
+            stepNum++;
+            block += '<div style="display:flex;gap:6px;margin-bottom:4px;font-size:0.85rem;"><span style="font-weight:700;color:#888;min-width:18px;">' + stepNum + '.</span><span>' + escapeHtml(d.text) + '</span></div>';
+          }
+        }
+        block += '</div>';
+      }
+
+      if (dish.substitutions && dish.substitutions.length) {
+        block += `<div class="subs"><strong>Subs:</strong> `;
+        block += dish.substitutions.map(s =>
+          `${escapeHtml(s.allergen)}: ${escapeHtml(s.original_ingredient)} &rarr; ${escapeHtml(s.substitute_ingredient)}${s.notes ? ' (' + escapeHtml(s.notes) + ')' : ''}`
+        ).join('; ');
+        block += `</div>`;
+      }
+
+      if (dish.service_notes) {
+        block += `<div class="notes"><div class="notes-label">Service Notes</div>${escapeHtml(dish.service_notes)}</div>`;
+      }
+
+      block += `</div></div>`;
+      return block;
+    }
+
+    if (hasCourses) {
+      let courseNum = 1;
+      for (const course of courses) {
+        const courseDishes = (data.courseMap[course.id] || []);
+        html += `<div class="course-header">${isCoursed ? `Course ${courseNum}: ` : ''}${escapeHtml(course.name)}</div>`;
+        if (course.notes) {
+          html += `<div class="course-notes">${escapeHtml(course.notes)}</div>`;
+        }
+        let dishNum = 1;
+        for (const dish of courseDishes) {
+          html += renderDishBlock(dish, `${isCoursed ? `Course ${courseNum}` : escapeHtml(course.name)} · Dish ${dishNum}`);
+          dishNum++;
+        }
+        if (!courseDishes.length) {
+          html += '<p style="color:#888;font-style:italic;margin:8px 0;">No dishes in this course</p>';
+        }
+        courseNum++;
+      }
+
+      if (data.unassigned && data.unassigned.length) {
+        html += '<div class="course-header">Other Dishes</div>';
+        data.unassigned.forEach((dish, i) => {
+          html += renderDishBlock(dish, `Dish ${i + 1}`);
+        });
+      }
+    } else {
+      data.dishes.forEach((dish, i) => {
+        html += renderDishBlock(dish, `Course ${i + 1}`);
+      });
+    }
+
+    html += `</body></html>`;
+    printSheet(html);
+  } catch (err) {
+    showToast('Failed to generate service sheet: ' + err.message, 'error');
+  }
+}
+
+async function showTempDishEditModal(dishId, ctx) {
+  let dish;
+  try {
+    dish = await getDish(dishId);
+  } catch (err) {
+    showToast('Failed to load dish', 'error');
+    return;
+  }
+
+  const currentAllergens = new Set(
+    (dish.allergens || []).filter(a => a.source === 'manual').map(a => a.allergen)
+  );
+  const serviceDirections = dish.service_directions || [];
+  const svcDirData = serviceDirections.map((d, i) => ({ ...d, sort_order: i }));
+
+  function renderSvcDirRows() {
+    return svcDirData.map((d, idx) => {
+      if (d.type === 'section') {
+        return `<div class="mb-temp-svcdir-row mb-temp-svcdir-section" data-idx="${idx}">
+          <span class="drag-handle" title="Drag to reorder">&#8942;&#8942;</span>
+          <input type="text" class="input mb-temp-svcdir-label" value="${escapeHtml(d.text || '')}" placeholder="Section heading">
+          <button type="button" class="btn btn-icon mb-temp-svcdir-remove" data-idx="${idx}" title="Remove">&times;</button>
+        </div>`;
+      }
+      return `<div class="mb-temp-svcdir-row mb-temp-svcdir-step" data-idx="${idx}">
+        <span class="drag-handle" title="Drag to reorder">&#8942;&#8942;</span>
+        <textarea class="input mb-temp-svcdir-text" rows="2" placeholder="Service direction step">${escapeHtml(d.text || '')}</textarea>
+        <button type="button" class="btn btn-icon mb-temp-svcdir-remove" data-idx="${idx}" title="Remove">&times;</button>
+      </div>`;
+    }).join('');
+  }
+
+  const modal = openModal(`Edit Temp Dish: ${escapeHtml(dish.name)}`, `
+    <form id="temp-dish-form" class="form mb-temp-dish-form">
+      <div class="form-group">
+        <label for="temp-dish-name">Name</label>
+        <input type="text" id="temp-dish-name" class="input" value="${escapeHtml(dish.name)}" required>
+      </div>
+
+      <div class="form-group">
+        <label>Allergens</label>
+        <div class="mb-temp-allergen-grid">
+          ${ALLERGEN_LIST.map(a => `
+            <button type="button" class="mb-temp-allergen-btn ${currentAllergens.has(a) ? 'active' : ''}" data-allergen="${a}">
+              ${escapeHtml(capitalize(a))}
+            </button>
+          `).join('')}
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label>Service Directions</label>
+        <div id="temp-svcdir-list">${renderSvcDirRows()}</div>
+        <div class="mb-temp-svcdir-actions">
+          <button type="button" id="temp-svcdir-add-step" class="btn btn-sm">+ Step</button>
+          <button type="button" id="temp-svcdir-add-section" class="btn btn-sm">+ Section</button>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label for="temp-dish-service-notes">Service Notes (FoH)</label>
+        <textarea id="temp-dish-service-notes" class="input" rows="3" placeholder="Notes for front of house...">${escapeHtml(dish.service_notes || '')}</textarea>
+      </div>
+
+      <button type="submit" class="btn btn-primary" style="width:100%;">Save</button>
+    </form>
+  `);
+
+  modal.querySelectorAll('.mb-temp-allergen-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      btn.classList.toggle('active');
+    });
+  });
+
+  const svcDirList = modal.querySelector('#temp-svcdir-list');
+
+  function refreshSvcDirList() {
+    svcDirList.innerHTML = renderSvcDirRows();
+    svcDirList.querySelectorAll('.mb-temp-svcdir-remove').forEach(btn => {
+      btn.addEventListener('click', () => {
+        svcDirData.splice(parseInt(btn.dataset.idx), 1);
+        refreshSvcDirList();
+      });
+    });
+  }
+
+  refreshSvcDirList();
+
+  modal.querySelector('#temp-svcdir-add-step').addEventListener('click', () => {
+    svcDirData.push({ type: 'step', text: '', sort_order: svcDirData.length });
+    refreshSvcDirList();
+    const rows = svcDirList.querySelectorAll('.mb-temp-svcdir-text');
+    if (rows.length) rows[rows.length - 1].focus();
+  });
+
+  modal.querySelector('#temp-svcdir-add-section').addEventListener('click', () => {
+    svcDirData.push({ type: 'section', text: '', sort_order: svcDirData.length });
+    refreshSvcDirList();
+    const rows = svcDirList.querySelectorAll('.mb-temp-svcdir-label');
+    if (rows.length) rows[rows.length - 1].focus();
+  });
+
+  modal.querySelector('#temp-dish-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const name = modal.querySelector('#temp-dish-name').value.trim();
+    if (!name) return;
+
+    const dirRows = svcDirList.querySelectorAll('.mb-temp-svcdir-row');
+    const service_directions = Array.from(dirRows).map((row, idx) => {
+      if (row.classList.contains('mb-temp-svcdir-section')) {
+        const text = row.querySelector('.mb-temp-svcdir-label').value.trim();
+        return text ? { type: 'section', text, sort_order: idx } : null;
+      }
+      const text = row.querySelector('.mb-temp-svcdir-text').value.trim();
+      return text ? { type: 'step', text, sort_order: idx } : null;
+    }).filter(Boolean);
+
+    const service_notes = modal.querySelector('#temp-dish-service-notes').value;
+
+    const selectedAllergens = new Set();
+    modal.querySelectorAll('.mb-temp-allergen-btn.active').forEach(btn => {
+      selectedAllergens.add(btn.dataset.allergen);
+    });
+
+    try {
+      await updateDish(dishId, { name, service_notes, service_directions });
+
+      const promises = [];
+      for (const a of ALLERGEN_LIST) {
+        const wasSet = currentAllergens.has(a);
+        const isSet = selectedAllergens.has(a);
+        if (isSet && !wasSet) {
+          promises.push(updateDishAllergen(dishId, { allergen: a, action: 'add' }));
+        } else if (!isSet && wasSet) {
+          promises.push(updateDishAllergen(dishId, { allergen: a, action: 'remove' }));
+        }
+      }
+      await Promise.all(promises);
+
+      await ctx.refreshMenu();
+      closeModal();
+      showToast('Temp dish updated');
+      ctx.render();
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
+  });
+}
+
+async function showDishPicker(targetCourseId, ctx) {
+  let allDishes;
+  try {
+    allDishes = await getDishes();
+  } catch (err) {
+    showToast('Failed to load dishes', 'error');
+    return;
+  }
+
+  const existingIds = new Set(ctx.menu.dishes.map(d => d.id));
+  const available = allDishes.filter(d => !existingIds.has(d.id));
+
+  const modal = openModal('Add Dishes', `
+    <div class="mb-quick-add">
+      <input type="text" id="quick-add-name" class="input" placeholder="Quick add: type a name to add a temp dish">
+      <button type="button" id="quick-add-btn" class="btn btn-sm btn-primary">+ Add Temp</button>
+    </div>
+    ${available.length ? `<input type="text" id="dish-picker-search" class="input" placeholder="Search existing dishes...">` : ''}
+    <div class="mb-picker-list" id="mb-picker-list">
+      ${available.map(d => `
+        <div class="mb-picker-item" data-id="${d.id}">
+          <div class="mb-picker-info">
+            <strong>${escapeHtml(d.name)}</strong>
+            <span class="category-badge">${escapeHtml(d.category)}</span>
+            ${renderAllergenBadges(d.allergens, true)}
+          </div>
+          <button class="btn btn-sm btn-primary add-to-menu-btn" data-id="${d.id}">Add</button>
+        </div>
+      `).join('')}
+    </div>
+  `);
+
+  const quickAddInput = modal.querySelector('#quick-add-name');
+  const quickAddBtn = modal.querySelector('#quick-add-btn');
+
+  async function quickAddDish() {
+    const name = quickAddInput.value.trim();
+    if (!name) return;
+    quickAddBtn.disabled = true;
+    quickAddBtn.textContent = 'Adding...';
+    try {
+      const dish = await createDish({ name, category: 'other', is_temporary: true });
+      await addDishToMenu(ctx.menuId, { dish_id: dish.id, servings: 1, course_id: targetCourseId || null });
+      quickAddInput.value = '';
+      await ctx.refreshMenu();
+      showToast(`"${name}" added as temp dish`);
+    } catch (err) {
+      showToast(err.message, 'error');
+    } finally {
+      quickAddBtn.disabled = false;
+      quickAddBtn.textContent = '+ Add Temp';
+    }
+  }
+
+  quickAddBtn.addEventListener('click', quickAddDish);
+  quickAddInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      quickAddDish();
+    }
+  });
+
+  const searchInput = modal.querySelector('#dish-picker-search');
+  if (searchInput) {
+    searchInput.addEventListener('input', () => {
+      const query = searchInput.value.toLowerCase();
+      modal.querySelectorAll('.mb-picker-item').forEach(item => {
+        const name = item.querySelector('strong').textContent.toLowerCase();
+        item.style.display = name.includes(query) ? '' : 'none';
+      });
+    });
+  }
+
+  modal.querySelectorAll('.add-to-menu-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const dishId = btn.dataset.id;
+      try {
+        await addDishToMenu(ctx.menuId, { dish_id: parseInt(dishId), servings: 1, course_id: targetCourseId || null });
+        btn.textContent = 'Added';
+        btn.disabled = true;
+        btn.classList.remove('btn-primary');
+        await ctx.refreshMenu();
+        showToast('Dish added');
+      } catch (err) {
+        showToast(err.message, 'error');
+      }
+    });
+  });
+
+  const origClose = modal.querySelector('.modal-close');
+  origClose.addEventListener('click', () => ctx.render(), { once: true });
+}
+
 export async function renderMenuBuilder(container, menuId) {
   container.innerHTML = '<div class="loading">Loading menu...</div>';
 
@@ -49,6 +945,14 @@ export async function renderMenuBuilder(container, menuId) {
     container.innerHTML = `<div class="error">Failed to load menu: ${escapeHtml(err.message)}</div>`;
     return;
   }
+
+  const ctx = {
+    get menu() { return menu; },
+    get menuId() { return menuId; },
+    get container() { return container; },
+    refreshMenu: async () => { menu = await getMenu(menuId); },
+    render: () => render(),
+  };
 
   function render() {
     const guestAllergies = menu.guest_allergies
@@ -357,7 +1261,7 @@ export async function renderMenuBuilder(container, menuId) {
     });
 
     // "Prepare Week" button
-    container.querySelector('#prepare-week-btn')?.addEventListener('click', showPrepareWeek);
+    container.querySelector('#prepare-week-btn')?.addEventListener('click', () => showPrepareWeek(ctx));
 
     // Guest allergy toggles + cover counts
     container.querySelectorAll('.allergen-toggle').forEach(btn => {
@@ -403,8 +1307,8 @@ export async function renderMenuBuilder(container, menuId) {
     }
 
     // Add dish buttons
-    container.querySelector('#add-dish-btn')?.addEventListener('click', () => showDishPicker());
-    container.querySelector('#add-dish-empty')?.addEventListener('click', () => showDishPicker());
+    container.querySelector('#add-dish-btn')?.addEventListener('click', () => showDishPicker(null, ctx));
+    container.querySelector('#add-dish-empty')?.addEventListener('click', () => showDishPicker(null, ctx));
 
     // Set back-navigation context when clicking dish name links
     container.addEventListener('click', (e) => {
@@ -415,7 +1319,7 @@ export async function renderMenuBuilder(container, menuId) {
     // Per-course "Add Dish" buttons
     container.querySelectorAll('.mc-course-add-dish').forEach(btn => {
       btn.addEventListener('click', () => {
-        showDishPicker(parseInt(btn.dataset.courseId));
+        showDishPicker(parseInt(btn.dataset.courseId), ctx);
       });
     });
 
@@ -423,8 +1327,8 @@ export async function renderMenuBuilder(container, menuId) {
     const mbOverflowSlot = container.querySelector('#mb-overflow-menu');
     if (mbOverflowSlot) {
       const overflowItems = [
-        { label: 'Print Kitchen Sheet', icon: '🖨', onClick: showKitchenPrint },
-        { label: 'Scale for Event', icon: '⚖', onClick: showScaleModal },
+        { label: 'Print Kitchen Sheet', icon: '🖨', onClick: () => showKitchenPrint(ctx) },
+        { label: 'Scale for Event', icon: '⚖', onClick: () => showScaleModal(ctx) },
         { label: 'View Tasks', icon: '✓', onClick: () => { window.location.hash = '#/todos'; } },
       ];
       if (isHouse) {
@@ -581,7 +1485,7 @@ export async function renderMenuBuilder(container, menuId) {
 
       const actions = isTemp
         ? [
-          { label: 'Edit', icon: '✏️', onClick: () => showTempDishEditModal(parseInt(dishId)) },
+          { label: 'Edit', icon: '✏️', onClick: () => showTempDishEditModal(parseInt(dishId), ctx) },
           { label: 'Remove', icon: '✕', danger: true, onClick: async () => {
             try {
               await removeDishFromMenu(menuId, dishId);
@@ -615,7 +1519,7 @@ export async function renderMenuBuilder(container, menuId) {
     // Temp dish edit buttons (click on name)
     container.querySelectorAll('.mb-temp-edit-btn').forEach(btn => {
       btn.addEventListener('click', () => {
-        showTempDishEditModal(parseInt(btn.dataset.dishId));
+        showTempDishEditModal(parseInt(btn.dataset.dishId), ctx);
       });
     });
 
@@ -625,7 +1529,7 @@ export async function renderMenuBuilder(container, menuId) {
       const course = courses.find(c => c.id === courseId);
       if (!course) return;
       const trigger = createActionMenu([
-        { label: 'Edit Name', icon: '✏️', onClick: () => showEditCourse(courseId, course.name, course.notes) },
+        { label: 'Edit Name', icon: '✏️', onClick: () => showEditCourse(courseId, course.name, course.notes, ctx) },
         { label: `Delete ${styleLabel}`, icon: '✕', danger: true, onClick: async () => {
           try {
             await deleteCourse(menuId, courseId);
@@ -734,924 +1638,7 @@ export async function renderMenuBuilder(container, menuId) {
     });
 
     // Drag and drop
-    setupDragDrop();
-  }
-
-  function renderDishRow(dish, isHouse, scheduleDays) {
-    const hasConflict = dish.allergy_conflicts && dish.allergy_conflicts.length > 0;
-    const isTemp = !!dish.is_temporary;
-    let dishActiveDays = null;
-    try { dishActiveDays = dish.active_days ? JSON.parse(dish.active_days) : null; } catch {}
-    const hasNote = dish.menu_dish_notes && dish.menu_dish_notes.trim();
-    return `
-      <div class="mb-dish-row ${hasConflict ? 'allergy-conflict' : ''} ${isTemp ? 'mb-temp-dish' : ''}" data-dish-id="${dish.id}" data-course-id="${dish.course_id || ''}" data-temporary="${isTemp ? '1' : '0'}" draggable="true">
-        <div class="drag-handle" title="Drag to reorder">&#8942;&#8942;</div>
-        <div class="mb-dish-thumb">
-          ${dish.photo_path
-            ? `<img src="${escapeHtml(dish.photo_path)}" alt="${escapeHtml(dish.name)}">`
-            : '<div class="mb-no-thumb"></div>'
-          }
-        </div>
-        <div class="mb-dish-info">
-          ${isTemp
-            ? `<button type="button" class="dish-name-link mb-temp-edit-btn" data-dish-id="${dish.id}"><strong>${escapeHtml(dish.name)}</strong></button>`
-            : `<a href="#/dishes/${dish.id}" class="dish-name-link"><strong>${escapeHtml(dish.name)}</strong></a>`
-          }
-          ${isTemp ? '<span class="mb-temp-badge">Temp</span>' : ''}
-          ${renderAllergenBadges(dish.allergens, true)}
-          ${hasConflict ? `<div class="mb-allergy-warning">&#9888; Guest allergy: ${escapeHtml(dish.allergy_conflicts.join(', '))}</div>` : ''}
-          ${!isTemp && dish.substitution_count > 0 ? `<span class="subs-badge" data-dish-id="${dish.id}" title="Has allergen substitutions">&#8644; ${dish.substitution_count} sub${dish.substitution_count > 1 ? 's' : ''}</span>` : ''}
-          ${isHouse && scheduleDays.length ? `
-            <div class="mb-dish-days" data-dish-id="${dish.id}">
-              ${scheduleDays.map(d => {
-                const isActive = dishActiveDays === null || dishActiveDays.includes(d);
-                return `<button type="button" class="mb-dish-day-btn ${isActive ? 'active' : ''}" data-day="${d}" data-dish="${dish.id}">${escapeHtml(DAY_LETTERS[d])}</button>`;
-              }).join('')}
-            </div>
-          ` : ''}
-        </div>
-        ${!isTemp ? `
-        <div class="mb-cost-info">
-          ${dish.cost_per_serving > 0 ? `
-            <span class="mb-cost-value">$${dish.cost_total.toFixed(2)}</span>
-            ${(dish.batch_yield || 1) > 1 ? `
-              <span class="mb-cost-detail">$${dish.cost_per_portion.toFixed(2)}/portion</span>
-            ` : ''}
-          ` : ''}
-        </div>
-        <div class="mb-servings">
-          <button class="btn btn-icon servings-dec" data-dish="${dish.id}">-</button>
-          <input type="number" class="mb-servings-input" data-dish="${dish.id}" value="${dish.servings}" min="1" step="1" title="Number of batches">
-          <button class="btn btn-icon servings-inc" data-dish="${dish.id}">+</button>
-          <span class="mb-servings-label">${(dish.batch_yield || 1) > 1 ? 'batches' : 'servings'}</span>
-          ${(dish.batch_yield || 1) > 1 ? `
-            <span class="mb-portions-label">(${dish.total_portions} portions)</span>
-            <input type="number" class="input mb-portion-target" data-dish="${dish.id}" data-yield="${dish.batch_yield}"
-                   min="1" step="1" placeholder="target" title="Enter target portions to auto-calculate batches"
-                   style="width:70px;padding:2px 6px;font-size:0.8rem;margin-left:4px;">
-          ` : ''}
-        </div>
-        ` : ''}
-        <button class="btn btn-icon mc-dish-note-btn ${hasNote ? 'mc-has-note' : ''}" data-dish="${dish.id}" title="Dish notes">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" width="14" height="14"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
-        </button>
-        <div class="mb-row-actions" data-dish-id="${dish.id}"></div>
-        <div class="mc-dish-note-area ${hasNote ? 'mc-note-open' : ''}">
-          <textarea class="mc-dish-note-textarea" data-dish="${dish.id}" placeholder="Add a note for this dish in this menu..." rows="2">${escapeHtml(dish.menu_dish_notes || '')}</textarea>
-        </div>
-      </div>
-    `;
-  }
-
-  function renderCourseSection(course, dishes, isHouse, scheduleDays, isCoursed) {
-    const hasNote = course.notes && course.notes.trim();
-    const label = isCoursed ? 'Course' : 'Section';
-    return `
-      <div class="mc-course-section" data-course-id="${course.id}" draggable="true">
-        <div class="mc-course-header">
-          <div class="drag-handle mc-course-drag" title="Drag to reorder ${label.toLowerCase()}">&#8942;&#8942;</div>
-          <h2 class="mc-course-name">${escapeHtml(course.name)}</h2>
-          <span class="mc-course-dish-count">${dishes.length} dish${dishes.length !== 1 ? 'es' : ''}</span>
-          <button class="btn btn-icon mc-course-note-btn ${hasNote ? 'mc-has-note' : ''}" title="${label} notes">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" width="14" height="14"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
-          </button>
-          <button class="btn btn-sm mc-course-add-dish" data-course-id="${course.id}">+ Dish</button>
-          <span class="mc-course-actions" data-course-id="${course.id}"></span>
-        </div>
-        <div class="mc-course-note-area ${hasNote ? 'mc-note-open' : ''}">
-          <textarea class="mc-course-note-textarea" data-course-id="${course.id}" placeholder="Add ${label.toLowerCase()} notes (e.g., timing, service instructions)..." rows="2">${escapeHtml(course.notes || '')}</textarea>
-        </div>
-        <div class="menu-dishes mc-course-dishes" data-course-id="${course.id}">
-          ${dishes.length ? dishes.map(dish => renderDishRow(dish, isHouse, scheduleDays)).join('') : `
-            <div class="mc-course-empty">No dishes in this ${label.toLowerCase()} yet</div>
-          `}
-        </div>
-      </div>
-    `;
-  }
-
-  function showEditCourse(courseId, currentName, currentNotes) {
-    const serviceStyle = menu.service_style || 'alacarte';
-    const label = serviceStyle === 'coursed' ? 'Course' : 'Section';
-    const modal = openModal(`Edit ${label}`, `
-      <form id="edit-course-form" class="form">
-        <div class="form-group">
-          <label for="edit-course-name">${label} Name *</label>
-          <input type="text" id="edit-course-name" class="input" required value="${escapeHtml(currentName)}">
-        </div>
-        <div class="form-group">
-          <label for="edit-course-notes">Notes</label>
-          <textarea id="edit-course-notes" class="input" rows="2">${escapeHtml(currentNotes || '')}</textarea>
-        </div>
-        <div class="form-actions">
-          <button type="submit" class="btn btn-primary">Save</button>
-        </div>
-      </form>
-    `);
-
-    modal.querySelector('#edit-course-name').select();
-
-    modal.querySelector('#edit-course-form').addEventListener('submit', async (e) => {
-      e.preventDefault();
-      const name = modal.querySelector('#edit-course-name').value.trim();
-      if (!name) return;
-      const notes = modal.querySelector('#edit-course-notes').value.trim();
-      try {
-        await updateCourse(menuId, courseId, { name, notes });
-        menu = await getMenu(menuId);
-        closeModal(modal);
-        showToast(`${label} updated`);
-        render();
-      } catch (err) {
-        showToast(err.message, 'error');
-      }
-    });
-  }
-
-  // ---- Drag and Drop ----
-  function setupDragDrop() {
-    // Dish drag and drop (within and between courses)
-    const dishRows = container.querySelectorAll('.mb-dish-row[draggable]');
-    let draggedId = null;
-    let dragType = null; // 'dish' or 'course'
-
-    dishRows.forEach(row => {
-      row.addEventListener('dragstart', (e) => {
-        draggedId = row.dataset.dishId;
-        dragType = 'dish';
-        row.classList.add('dragging');
-        e.dataTransfer.effectAllowed = 'move';
-        e.dataTransfer.setData('text/plain', `dish:${draggedId}`);
-      });
-
-      row.addEventListener('dragend', () => {
-        row.classList.remove('dragging');
-        container.querySelectorAll('.drag-over, .mc-drop-target').forEach(r => r.classList.remove('drag-over', 'mc-drop-target'));
-      });
-
-      row.addEventListener('dragover', (e) => {
-        e.preventDefault();
-        e.dataTransfer.dropEffect = 'move';
-        if (dragType === 'dish' && row.dataset.dishId !== draggedId) {
-          container.querySelectorAll('.drag-over').forEach(r => r.classList.remove('drag-over'));
-          row.classList.add('drag-over');
-        }
-      });
-
-      row.addEventListener('dragleave', () => {
-        row.classList.remove('drag-over');
-      });
-
-      row.addEventListener('drop', async (e) => {
-        e.preventDefault();
-        row.classList.remove('drag-over');
-        if (dragType !== 'dish') return;
-        const targetId = row.dataset.dishId;
-        if (draggedId === targetId) return;
-
-        const targetCourseId = row.dataset.courseId || null;
-        const fromIndex = menu.dishes.findIndex(d => String(d.id) === String(draggedId));
-        const toIndex = menu.dishes.findIndex(d => String(d.id) === String(targetId));
-        if (fromIndex === -1 || toIndex === -1) return;
-
-        const [moved] = menu.dishes.splice(fromIndex, 1);
-        moved.course_id = targetCourseId ? parseInt(targetCourseId) : null;
-        menu.dishes.splice(toIndex, 0, moved);
-
-        const order = menu.dishes.map((d, i) => ({
-          dish_id: d.id,
-          sort_order: i,
-          course_id: d.course_id === undefined ? undefined : (d.course_id || null)
-        }));
-        try {
-          await reorderMenuDishes(menuId, order);
-          menu = await getMenu(menuId);
-          render();
-        } catch (err) {
-          showToast('Failed to reorder', 'error');
-        }
-      });
-    });
-
-    // Course drop zones (drop dish into empty course)
-    container.querySelectorAll('.mc-course-dishes').forEach(zone => {
-      zone.addEventListener('dragover', (e) => {
-        if (dragType !== 'dish') return;
-        e.preventDefault();
-        e.dataTransfer.dropEffect = 'move';
-        zone.classList.add('mc-drop-target');
-      });
-
-      zone.addEventListener('dragleave', () => {
-        zone.classList.remove('mc-drop-target');
-      });
-
-      zone.addEventListener('drop', async (e) => {
-        e.preventDefault();
-        zone.classList.remove('mc-drop-target');
-        if (dragType !== 'dish' || !draggedId) return;
-        // If dropped on the zone itself (not on a dish row), move to end of this course
-        if (e.target.closest('.mb-dish-row')) return; // handled by dish drop
-
-        const targetCourseId = zone.dataset.courseId ? parseInt(zone.dataset.courseId) : null;
-        const dish = menu.dishes.find(d => String(d.id) === String(draggedId));
-        if (!dish) return;
-
-        try {
-          await updateMenuDish(menuId, draggedId, { course_id: targetCourseId });
-          menu = await getMenu(menuId);
-          render();
-          showToast('Dish moved');
-        } catch (err) {
-          showToast('Failed to move dish', 'error');
-        }
-      });
-    });
-
-    // Course section drag and drop (reorder courses)
-    const courseSections = container.querySelectorAll('.mc-course-section[draggable]');
-    courseSections.forEach(section => {
-      const handle = section.querySelector('.mc-course-drag');
-      if (!handle) return;
-
-      handle.addEventListener('dragstart', (e) => {
-        e.stopPropagation();
-        draggedId = section.dataset.courseId;
-        dragType = 'course';
-        section.classList.add('dragging');
-        e.dataTransfer.effectAllowed = 'move';
-        e.dataTransfer.setData('text/plain', `course:${draggedId}`);
-      });
-
-      section.addEventListener('dragend', () => {
-        section.classList.remove('dragging');
-        container.querySelectorAll('.drag-over').forEach(r => r.classList.remove('drag-over'));
-      });
-
-      section.addEventListener('dragover', (e) => {
-        if (dragType !== 'course') return;
-        e.preventDefault();
-        e.dataTransfer.dropEffect = 'move';
-        if (section.dataset.courseId !== draggedId) {
-          container.querySelectorAll('.mc-course-section.drag-over').forEach(r => r.classList.remove('drag-over'));
-          section.classList.add('drag-over');
-        }
-      });
-
-      section.addEventListener('dragleave', () => {
-        section.classList.remove('drag-over');
-      });
-
-      section.addEventListener('drop', async (e) => {
-        e.preventDefault();
-        section.classList.remove('drag-over');
-        if (dragType !== 'course') return;
-        const targetCourseId = section.dataset.courseId;
-        if (draggedId === targetCourseId) return;
-
-        const courses = menu.courses || [];
-        const fromIdx = courses.findIndex(c => String(c.id) === String(draggedId));
-        const toIdx = courses.findIndex(c => String(c.id) === String(targetCourseId));
-        if (fromIdx === -1 || toIdx === -1) return;
-
-        const [moved] = courses.splice(fromIdx, 1);
-        courses.splice(toIdx, 0, moved);
-
-        const order = courses.map((c, i) => ({ course_id: c.id, sort_order: i }));
-        try {
-          await reorderCourses(menuId, order);
-          menu = await getMenu(menuId);
-          render();
-        } catch (err) {
-          showToast('Failed to reorder', 'error');
-        }
-      });
-    });
-
-    // Touch support for dish drag handles
-    let touchDragId = null;
-    let touchStartY = 0;
-
-    dishRows.forEach(row => {
-      const handle = row.querySelector('.drag-handle:not(.mc-course-drag)');
-      if (!handle) return;
-
-      handle.addEventListener('touchstart', (e) => {
-        touchDragId = row.dataset.dishId;
-        touchStartY = e.touches[0].clientY;
-        row.classList.add('dragging');
-      }, { passive: true });
-
-      handle.addEventListener('touchmove', (e) => {
-        e.preventDefault();
-      }, { passive: false });
-
-      handle.addEventListener('touchend', async (e) => {
-        row.classList.remove('dragging');
-        if (!touchDragId) return;
-
-        const touchEndY = e.changedTouches[0].clientY;
-        const diff = touchEndY - touchStartY;
-        const fromIndex = menu.dishes.findIndex(d => String(d.id) === String(touchDragId));
-
-        let toIndex = fromIndex;
-        if (diff > 40 && fromIndex < menu.dishes.length - 1) toIndex = fromIndex + 1;
-        else if (diff < -40 && fromIndex > 0) toIndex = fromIndex - 1;
-
-        if (toIndex !== fromIndex) {
-          const [moved] = menu.dishes.splice(fromIndex, 1);
-          menu.dishes.splice(toIndex, 0, moved);
-          const order = menu.dishes.map((d, i) => ({ dish_id: d.id, sort_order: i }));
-          try {
-            await reorderMenuDishes(menuId, order);
-            render();
-          } catch (err) {
-            showToast('Failed to reorder', 'error');
-          }
-        }
-        touchDragId = null;
-      });
-    });
-  }
-
-  // ---- Prepare Week ----
-  async function showPrepareWeek() {
-    let scheduleDays = [];
-    try { scheduleDays = JSON.parse(menu.schedule_days || '[]'); } catch {}
-    if (!scheduleDays.length) {
-      showToast('Set service days first', 'warning');
-      return;
-    }
-
-    const defaultMonday = getNextMonday();
-    const dayOrder = { 1: 0, 2: 1, 3: 2, 4: 3, 5: 4, 6: 5, 0: 6 };
-    const sortedDays = [...scheduleDays].sort((a, b) => dayOrder[a] - dayOrder[b]);
-
-    const modal = openModal('Prepare Week', `
-      <div class="form-group">
-        <label for="week-start-input">Week Starting (Monday)</label>
-        <input type="date" id="week-start-input" class="input" value="${defaultMonday}">
-        <p class="text-muted" style="margin-top:6px;font-size:0.85rem;">
-          ${formatWeekLabel(defaultMonday)}
-        </p>
-      </div>
-      <div class="mb-week-preview">
-        <h4 style="margin:0 0 8px;">Service days: ${sortedDays.map(d => DAY_NAMES[d]).join(', ')}</h4>
-        <p style="margin:0 0 4px;font-size:0.9rem;">${menu.dishes.length} dish${menu.dishes.length !== 1 ? 'es' : ''} on this menu</p>
-        ${(() => {
-          const daySpecific = menu.dishes.filter(d => {
-            let ad = null;
-            try { ad = d.active_days ? JSON.parse(d.active_days) : null; } catch {}
-            return ad !== null && ad.length < scheduleDays.length;
-          });
-          return daySpecific.length ? `<p style="margin:0;font-size:0.85rem;color:var(--text-secondary);">${daySpecific.length} dish${daySpecific.length !== 1 ? 'es' : ''} with day-specific schedules</p>` : '';
-        })()}
-      </div>
-      <button id="generate-week-btn" class="btn btn-primary" style="width:100%;margin-top:16px;">Generate Prep Tasks</button>
-    `);
-
-    const weekInput = modal.querySelector('#week-start-input');
-    const hintP = weekInput.nextElementSibling;
-    weekInput.addEventListener('input', () => {
-      if (weekInput.value) {
-        hintP.textContent = formatWeekLabel(weekInput.value);
-      }
-    });
-
-    modal.querySelector('#generate-week-btn').addEventListener('click', async () => {
-      const weekStart = weekInput.value;
-      if (!weekStart) {
-        showToast('Select a week start date', 'error');
-        return;
-      }
-
-      const btn = modal.querySelector('#generate-week-btn');
-      btn.disabled = true;
-      btn.textContent = 'Generating...';
-
-      try {
-        const result = await generateTasks(menuId, { week_start: weekStart });
-        closeModal(modal);
-        showToast(`Generated ${result.prep_count} prep task${result.prep_count !== 1 ? 's' : ''} for ${formatWeekLabel(weekStart)}`, 'success');
-      } catch (err) {
-        btn.disabled = false;
-        btn.textContent = 'Generate Prep Tasks';
-        showToast(err.message || 'Failed to generate tasks', 'error');
-      }
-    });
-  }
-
-  // ---- Scale Modal ----
-  async function showScaleModal() {
-    const totalPortions = menu.dishes.reduce((s, d) => s + (d.total_portions || d.servings), 0);
-    const defaultCovers = menu.expected_covers || totalPortions;
-
-    const modal = openModal('Scale for Event', `
-      <div class="form-group">
-        <label for="scale-covers">Number of Covers</label>
-        <input type="number" id="scale-covers" class="input" min="1" value="${defaultCovers}" placeholder="e.g., 50">
-        <p class="text-muted" style="margin-top:6px;font-size:0.85rem;">
-          Current menu produces ${totalPortions} portions${menu.expected_covers ? ` (${menu.expected_covers} expected covers)` : ''}. Enter total covers needed.
-        </p>
-      </div>
-      <button id="scale-calculate-btn" class="btn btn-primary" style="width:100%;margin-bottom:16px;">Calculate Scaled List</button>
-      <div id="scaled-result"></div>
-    `);
-
-    const coversInput = modal.querySelector('#scale-covers');
-    const calcBtn = modal.querySelector('#scale-calculate-btn');
-    const resultDiv = modal.querySelector('#scaled-result');
-
-    calcBtn.addEventListener('click', async () => {
-      const covers = parseInt(coversInput.value);
-      if (!covers || covers < 1) {
-        showToast('Enter a valid cover count', 'error');
-        return;
-      }
-
-      resultDiv.innerHTML = '<div class="loading" style="padding:12px;">Calculating...</div>';
-
-      try {
-        const data = await getScaledShoppingList(menuId, covers);
-
-        let html = `
-          <div class="shopping-summary" style="margin-bottom:16px;">
-            <strong>Scaled for ${data.covers} covers</strong>
-            (${data.scale_factor}x from ${data.base_covers} ${data.base_covers_source === 'expected' ? 'expected' : 'base'} covers)<br>
-            <strong>Estimated Total: $${data.total_estimated_cost.toFixed(2)}</strong>
-          </div>
-        `;
-
-        for (const group of data.groups) {
-          html += `<div class="todo-group">
-            <h3 class="todo-group-title">${capitalize(group.category)}</h3>`;
-          for (const item of group.items) {
-            html += `<div class="todo-item" style="cursor:default;">
-              <span class="todo-text">
-                <strong>${escapeHtml(item.ingredient)}</strong>
-                <span class="todo-qty">${item.total_quantity} ${item.unit}</span>
-                ${item.estimated_cost !== null ? `<span class="todo-cost">$${item.estimated_cost.toFixed(2)}</span>` : ''}
-              </span>
-            </div>`;
-          }
-          html += '</div>';
-        }
-
-        html += '<button id="scale-print-btn" class="btn btn-secondary" style="width:100%;margin-top:16px;">Print Scaled List</button>';
-
-        resultDiv.innerHTML = html;
-
-        modal.querySelector('#scale-print-btn').addEventListener('click', () => {
-          const html = `
-            <html><head><title>Scaled Shopping List - ${escapeHtml(data.menu_name)}</title>
-            <style>
-              body { font-family: -apple-system, sans-serif; padding: 20px; }
-              h1 { font-size: 1.4rem; margin-bottom: 4px; }
-              h3 { margin-top: 16px; border-bottom: 1px solid #ccc; padding-bottom: 4px; }
-              .item { padding: 4px 0; display: flex; justify-content: space-between; }
-              .summary { margin: 12px 0; padding: 8px; background: #f5f5f0; }
-            </style></head><body>
-            <h1>Scaled Shopping List: ${escapeHtml(data.menu_name)}</h1>
-            <div class="summary">
-              <strong>${data.covers} covers</strong> (${data.scale_factor}x scale) |
-              Estimated Total: <strong>$${data.total_estimated_cost.toFixed(2)}</strong>
-            </div>
-            ${data.groups.map(g => `
-              <h3>${capitalize(g.category)}</h3>
-              ${g.items.map(i => `
-                <div class="item">
-                  <span>${escapeHtml(i.ingredient)} &mdash; ${i.total_quantity} ${i.unit}</span>
-                  <span>${i.estimated_cost !== null ? '$' + i.estimated_cost.toFixed(2) : ''}</span>
-                </div>
-              `).join('')}
-            `).join('')}
-            </body></html>
-          `;
-          printSheet(html);
-        });
-
-      } catch (err) {
-        resultDiv.innerHTML = `<div class="error" style="padding:12px;">${escapeHtml(err.message)}</div>`;
-      }
-    });
-  }
-
-  // ---- Kitchen Print ----
-  async function showKitchenPrint() {
-    try {
-      const data = await getMenuKitchenPrint(menuId);
-      const courses = data.courses || [];
-      const isCoursed = (data.menu.service_style || 'alacarte') === 'coursed';
-      const hasCourses = courses.length > 0;
-
-      let html = `
-        <html><head><title>Service Sheet - ${escapeHtml(data.menu.name)}</title>
-        <style>
-          body { font-family: -apple-system, sans-serif; padding: 20px; color: #1a1a1a; }
-          h1 { font-size: 1.6rem; margin-bottom: 4px; border-bottom: 3px solid #1a1a1a; padding-bottom: 8px; }
-          .meta { font-size: 0.9rem; color: #555; margin: 8px 0 20px; }
-          .meta .alert { color: #d32f2f; font-weight: 700; }
-          .course-header { font-size: 1.3rem; font-weight: 700; margin: 24px 0 6px; padding: 8px 0 4px; border-bottom: 2px solid #333; }
-          .course-notes { font-size: 0.85rem; color: #555; font-style: italic; margin: 4px 0 12px; padding: 4px 10px; background: #f0f8ff; border-left: 3px solid #4a90d9; }
-          .dish-block { margin: 0 0 20px; padding-bottom: 20px; border-bottom: 1px solid #ddd; page-break-inside: avoid; display: grid; grid-template-columns: 120px 1fr; gap: 0 16px; }
-          .course-num { font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: #888; padding-top: 3px; }
-          .course-cat { font-size: 0.7rem; color: #aaa; margin-top: 2px; text-transform: capitalize; }
-          .dish-name { font-size: 1.15rem; font-weight: 700; margin-bottom: 6px; }
-          .dish-note { font-size: 0.82rem; color: #444; margin: 4px 0 8px; padding: 4px 8px; background: #fffde7; border-left: 3px solid #f9a825; font-style: italic; }
-          .allergens { margin-bottom: 6px; }
-          .allergen-tag { display: inline-block; padding: 2px 8px; font-size: 0.72rem; font-weight: 700; background: #ffcdd2; color: #b71c1c; border-radius: 10px; margin-right: 3px; margin-bottom: 3px; }
-          .ingredients { margin: 4px 0 8px; padding-left: 0; list-style: none; }
-          .ingredients li { font-size: 0.9rem; font-weight: 600; color: #1a1a1a; padding: 2px 0; border-bottom: 1px solid #f0f0f0; }
-          .notes { font-size: 0.85rem; color: #333; margin-top: 6px; padding: 6px 10px; background: #f5f5f0; border-left: 3px solid #999; }
-          .notes-label { font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: #888; margin-bottom: 2px; }
-          .subs { font-size: 0.82rem; margin-top: 6px; padding: 5px 10px; background: #fff3e0; border-left: 3px solid #e65100; }
-          .subs strong { color: #e65100; }
-          @media print { body { padding: 0; } }
-        </style></head><body>
-        <h1>${escapeHtml(data.menu.name)}</h1>
-        <div class="meta">
-          Printed: ${new Date().toLocaleDateString()}
-          ${data.expected_covers ? ` &nbsp;·&nbsp; <strong>Covers: ${data.expected_covers}</strong>` : ''}
-          ${data.guest_allergies.length ? ` &nbsp;·&nbsp; <span class="alert">&#9888; Guest Allergies: ${escapeHtml(data.guest_allergies.join(', ').toUpperCase())}</span>` : ''}
-          ${hasCourses ? ` &nbsp;·&nbsp; ${courses.length} ${isCoursed ? 'course' : 'section'}${courses.length !== 1 ? 's' : ''}` : ''}
-        </div>
-      `;
-
-      function renderDishBlock(dish, courseNum) {
-        const batchYield = dish.batch_yield || 1;
-        const servings = dish.servings || 1;
-        const batchInfo = servings > 1 || batchYield > 1
-          ? ` &mdash; ${servings} batch${servings !== 1 ? 'es' : ''}${batchYield > 1 ? ` (${dish.total_portions || servings * batchYield} portions)` : ''}`
-          : '';
-
-        let block = `<div class="dish-block">`;
-        block += `<div><div class="course-num">${courseNum}</div><div class="course-cat">${escapeHtml(dish.category || '')}</div></div>`;
-        block += `<div>`;
-        block += `<div class="dish-name">${escapeHtml(dish.name)}${batchInfo}</div>`;
-
-        if (dish.menu_dish_notes) {
-          block += `<div class="dish-note">${escapeHtml(dish.menu_dish_notes)}</div>`;
-        }
-
-        if (dish.allergens.length) {
-          block += `<div class="allergens">${dish.allergens.map(a => `<span class="allergen-tag">${escapeHtml(a)}</span>`).join('')}</div>`;
-        }
-
-        if (dish.components && dish.components.length) {
-          block += `<ul class="ingredients">${dish.components.map(c => `<li>${escapeHtml(c.name)}</li>`).join('')}</ul>`;
-        } else {
-          block += `<p style="font-size:0.85rem;color:#888;margin:4px 0 8px;font-style:italic;">No service components added.</p>`;
-        }
-
-        if (dish.ingredients && dish.ingredients.length) {
-          block += `<div style="margin:8px 0;"><div class="notes-label">Ingredients${servings > 1 ? ' (scaled &times;' + servings + ')' : ''}</div>`;
-          block += '<table style="width:100%;border-collapse:collapse;font-size:0.85rem;margin-top:4px;">';
-          for (const ing of dish.ingredients) {
-            block += '<tr><td style="padding:2px 6px;border-bottom:1px solid #f0f0f0;">' + escapeHtml(ing.ingredient_name) + '</td>';
-            block += '<td style="padding:2px 6px;border-bottom:1px solid #f0f0f0;text-align:right;white-space:nowrap;"><strong>' + ing.quantity + '</strong> ' + escapeHtml(ing.unit || '') + '</td>';
-            block += '<td style="padding:2px 6px;border-bottom:1px solid #f0f0f0;color:#888;font-size:0.8rem;">' + escapeHtml(ing.prep_note || '') + '</td></tr>';
-          }
-          block += '</table></div>';
-        }
-
-        if (dish.directions && dish.directions.length) {
-          block += '<div style="margin:8px 0;"><div class="notes-label">Prep Method</div>';
-          let stepNum = 0;
-          for (const d of dish.directions) {
-            if (d.type === 'section') {
-              block += '<div style="font-weight:700;margin:8px 0 4px;border-bottom:1px solid #ddd;padding-bottom:2px;">' + escapeHtml(d.text) + '</div>';
-            } else {
-              stepNum++;
-              block += '<div style="display:flex;gap:6px;margin-bottom:4px;font-size:0.85rem;"><span style="font-weight:700;color:#888;min-width:18px;">' + stepNum + '.</span><span>' + escapeHtml(d.text) + '</span></div>';
-            }
-          }
-          block += '</div>';
-        } else if (dish.chefs_notes) {
-          block += '<div class="notes"><div class="notes-label">Chef\'s Notes</div>' + escapeHtml(dish.chefs_notes) + '</div>';
-        }
-
-        if (dish.service_directions && dish.service_directions.length) {
-          block += '<div style="margin:8px 0;"><div class="notes-label">Service Process</div>';
-          let stepNum = 0;
-          for (const d of dish.service_directions) {
-            if (d.type === 'section') {
-              block += '<div style="font-weight:700;margin:8px 0 4px;border-bottom:1px solid #ddd;padding-bottom:2px;">' + escapeHtml(d.text) + '</div>';
-            } else {
-              stepNum++;
-              block += '<div style="display:flex;gap:6px;margin-bottom:4px;font-size:0.85rem;"><span style="font-weight:700;color:#888;min-width:18px;">' + stepNum + '.</span><span>' + escapeHtml(d.text) + '</span></div>';
-            }
-          }
-          block += '</div>';
-        }
-
-        if (dish.substitutions && dish.substitutions.length) {
-          block += `<div class="subs"><strong>Subs:</strong> `;
-          block += dish.substitutions.map(s =>
-            `${escapeHtml(s.allergen)}: ${escapeHtml(s.original_ingredient)} &rarr; ${escapeHtml(s.substitute_ingredient)}${s.notes ? ' (' + escapeHtml(s.notes) + ')' : ''}`
-          ).join('; ');
-          block += `</div>`;
-        }
-
-        if (dish.service_notes) {
-          block += `<div class="notes"><div class="notes-label">Service Notes</div>${escapeHtml(dish.service_notes)}</div>`;
-        }
-
-        block += `</div></div>`;
-        return block;
-      }
-
-      if (hasCourses) {
-        // Print by courses
-        let courseNum = 1;
-        for (const course of courses) {
-          const courseDishes = (data.courseMap[course.id] || []);
-          html += `<div class="course-header">${isCoursed ? `Course ${courseNum}: ` : ''}${escapeHtml(course.name)}</div>`;
-          if (course.notes) {
-            html += `<div class="course-notes">${escapeHtml(course.notes)}</div>`;
-          }
-          let dishNum = 1;
-          for (const dish of courseDishes) {
-            html += renderDishBlock(dish, `${isCoursed ? `Course ${courseNum}` : escapeHtml(course.name)} · Dish ${dishNum}`);
-            dishNum++;
-          }
-          if (!courseDishes.length) {
-            html += '<p style="color:#888;font-style:italic;margin:8px 0;">No dishes in this course</p>';
-          }
-          courseNum++;
-        }
-
-        // Unassigned dishes
-        if (data.unassigned && data.unassigned.length) {
-          html += '<div class="course-header">Other Dishes</div>';
-          data.unassigned.forEach((dish, i) => {
-            html += renderDishBlock(dish, `Dish ${i + 1}`);
-          });
-        }
-      } else {
-        // Original: sequential by sort order
-        data.dishes.forEach((dish, i) => {
-          html += renderDishBlock(dish, `Course ${i + 1}`);
-        });
-      }
-
-      html += `</body></html>`;
-      printSheet(html);
-    } catch (err) {
-      showToast('Failed to generate service sheet: ' + err.message, 'error');
-    }
-  }
-
-  // ---- Temp Dish Edit Modal ----
-  async function showTempDishEditModal(dishId) {
-    let dish;
-    try {
-      dish = await getDish(dishId);
-    } catch (err) {
-      showToast('Failed to load dish', 'error');
-      return;
-    }
-
-    const currentAllergens = new Set(
-      (dish.allergens || []).filter(a => a.source === 'manual').map(a => a.allergen)
-    );
-    const serviceDirections = dish.service_directions || [];
-    const svcDirData = serviceDirections.map((d, i) => ({ ...d, sort_order: i }));
-
-    function renderSvcDirRows() {
-      return svcDirData.map((d, idx) => {
-        if (d.type === 'section') {
-          return `<div class="mb-temp-svcdir-row mb-temp-svcdir-section" data-idx="${idx}">
-            <span class="drag-handle" title="Drag to reorder">&#8942;&#8942;</span>
-            <input type="text" class="input mb-temp-svcdir-label" value="${escapeHtml(d.text || '')}" placeholder="Section heading">
-            <button type="button" class="btn btn-icon mb-temp-svcdir-remove" data-idx="${idx}" title="Remove">&times;</button>
-          </div>`;
-        }
-        return `<div class="mb-temp-svcdir-row mb-temp-svcdir-step" data-idx="${idx}">
-          <span class="drag-handle" title="Drag to reorder">&#8942;&#8942;</span>
-          <textarea class="input mb-temp-svcdir-text" rows="2" placeholder="Service direction step">${escapeHtml(d.text || '')}</textarea>
-          <button type="button" class="btn btn-icon mb-temp-svcdir-remove" data-idx="${idx}" title="Remove">&times;</button>
-        </div>`;
-      }).join('');
-    }
-
-    const modal = openModal(`Edit Temp Dish: ${escapeHtml(dish.name)}`, `
-      <form id="temp-dish-form" class="form mb-temp-dish-form">
-        <div class="form-group">
-          <label for="temp-dish-name">Name</label>
-          <input type="text" id="temp-dish-name" class="input" value="${escapeHtml(dish.name)}" required>
-        </div>
-
-        <div class="form-group">
-          <label>Allergens</label>
-          <div class="mb-temp-allergen-grid">
-            ${ALLERGEN_LIST.map(a => `
-              <button type="button" class="mb-temp-allergen-btn ${currentAllergens.has(a) ? 'active' : ''}" data-allergen="${a}">
-                ${escapeHtml(capitalize(a))}
-              </button>
-            `).join('')}
-          </div>
-        </div>
-
-        <div class="form-group">
-          <label>Service Directions</label>
-          <div id="temp-svcdir-list">${renderSvcDirRows()}</div>
-          <div class="mb-temp-svcdir-actions">
-            <button type="button" id="temp-svcdir-add-step" class="btn btn-sm">+ Step</button>
-            <button type="button" id="temp-svcdir-add-section" class="btn btn-sm">+ Section</button>
-          </div>
-        </div>
-
-        <div class="form-group">
-          <label for="temp-dish-service-notes">Service Notes (FoH)</label>
-          <textarea id="temp-dish-service-notes" class="input" rows="3" placeholder="Notes for front of house...">${escapeHtml(dish.service_notes || '')}</textarea>
-        </div>
-
-        <button type="submit" class="btn btn-primary" style="width:100%;">Save</button>
-      </form>
-    `);
-
-    // Allergen toggle
-    modal.querySelectorAll('.mb-temp-allergen-btn').forEach(btn => {
-      btn.addEventListener('click', () => {
-        btn.classList.toggle('active');
-      });
-    });
-
-    // Service direction add/remove
-    const svcDirList = modal.querySelector('#temp-svcdir-list');
-
-    function refreshSvcDirList() {
-      svcDirList.innerHTML = renderSvcDirRows();
-      svcDirList.querySelectorAll('.mb-temp-svcdir-remove').forEach(btn => {
-        btn.addEventListener('click', () => {
-          svcDirData.splice(parseInt(btn.dataset.idx), 1);
-          refreshSvcDirList();
-        });
-      });
-    }
-
-    // Initial remove button wiring
-    refreshSvcDirList();
-
-    modal.querySelector('#temp-svcdir-add-step').addEventListener('click', () => {
-      svcDirData.push({ type: 'step', text: '', sort_order: svcDirData.length });
-      refreshSvcDirList();
-      const rows = svcDirList.querySelectorAll('.mb-temp-svcdir-text');
-      if (rows.length) rows[rows.length - 1].focus();
-    });
-
-    modal.querySelector('#temp-svcdir-add-section').addEventListener('click', () => {
-      svcDirData.push({ type: 'section', text: '', sort_order: svcDirData.length });
-      refreshSvcDirList();
-      const rows = svcDirList.querySelectorAll('.mb-temp-svcdir-label');
-      if (rows.length) rows[rows.length - 1].focus();
-    });
-
-    // Save
-    modal.querySelector('#temp-dish-form').addEventListener('submit', async (e) => {
-      e.preventDefault();
-      const name = modal.querySelector('#temp-dish-name').value.trim();
-      if (!name) return;
-
-      // Collect service directions from current DOM
-      const dirRows = svcDirList.querySelectorAll('.mb-temp-svcdir-row');
-      const service_directions = Array.from(dirRows).map((row, idx) => {
-        if (row.classList.contains('mb-temp-svcdir-section')) {
-          const text = row.querySelector('.mb-temp-svcdir-label').value.trim();
-          return text ? { type: 'section', text, sort_order: idx } : null;
-        }
-        const text = row.querySelector('.mb-temp-svcdir-text').value.trim();
-        return text ? { type: 'step', text, sort_order: idx } : null;
-      }).filter(Boolean);
-
-      const service_notes = modal.querySelector('#temp-dish-service-notes').value;
-
-      // Collect allergens
-      const selectedAllergens = new Set();
-      modal.querySelectorAll('.mb-temp-allergen-btn.active').forEach(btn => {
-        selectedAllergens.add(btn.dataset.allergen);
-      });
-
-      try {
-        // Update dish name, service notes, service directions
-        await updateDish(dishId, { name, service_notes, service_directions });
-
-        // Sync allergens: add new, remove old
-        const promises = [];
-        for (const a of ALLERGEN_LIST) {
-          const wasSet = currentAllergens.has(a);
-          const isSet = selectedAllergens.has(a);
-          if (isSet && !wasSet) {
-            promises.push(updateDishAllergen(dishId, { allergen: a, action: 'add' }));
-          } else if (!isSet && wasSet) {
-            promises.push(updateDishAllergen(dishId, { allergen: a, action: 'remove' }));
-          }
-        }
-        await Promise.all(promises);
-
-        menu = await getMenu(menuId);
-        closeModal();
-        showToast('Temp dish updated');
-        render();
-      } catch (err) {
-        showToast(err.message, 'error');
-      }
-    });
-  }
-
-  // ---- Dish Picker ----
-  async function showDishPicker(targetCourseId) {
-    let allDishes;
-    try {
-      allDishes = await getDishes();
-    } catch (err) {
-      showToast('Failed to load dishes', 'error');
-      return;
-    }
-
-    const existingIds = new Set(menu.dishes.map(d => d.id));
-    const available = allDishes.filter(d => !existingIds.has(d.id));
-
-    const modal = openModal('Add Dishes', `
-      <div class="mb-quick-add">
-        <input type="text" id="quick-add-name" class="input" placeholder="Quick add: type a name to add a temp dish">
-        <button type="button" id="quick-add-btn" class="btn btn-sm btn-primary">+ Add Temp</button>
-      </div>
-      ${available.length ? `<input type="text" id="dish-picker-search" class="input" placeholder="Search existing dishes...">` : ''}
-      <div class="mb-picker-list" id="mb-picker-list">
-        ${available.map(d => `
-          <div class="mb-picker-item" data-id="${d.id}">
-            <div class="mb-picker-info">
-              <strong>${escapeHtml(d.name)}</strong>
-              <span class="category-badge">${escapeHtml(d.category)}</span>
-              ${renderAllergenBadges(d.allergens, true)}
-            </div>
-            <button class="btn btn-sm btn-primary add-to-menu-btn" data-id="${d.id}">Add</button>
-          </div>
-        `).join('')}
-      </div>
-    `);
-
-    // Quick-add dish handler
-    const quickAddInput = modal.querySelector('#quick-add-name');
-    const quickAddBtn = modal.querySelector('#quick-add-btn');
-
-    async function quickAddDish() {
-      const name = quickAddInput.value.trim();
-      if (!name) return;
-      quickAddBtn.disabled = true;
-      quickAddBtn.textContent = 'Adding...';
-      try {
-        const dish = await createDish({ name, category: 'other', is_temporary: true });
-        await addDishToMenu(menuId, { dish_id: dish.id, servings: 1, course_id: targetCourseId || null });
-        quickAddInput.value = '';
-        menu = await getMenu(menuId);
-        showToast(`"${name}" added as temp dish`);
-      } catch (err) {
-        showToast(err.message, 'error');
-      } finally {
-        quickAddBtn.disabled = false;
-        quickAddBtn.textContent = '+ Add Temp';
-      }
-    }
-
-    quickAddBtn.addEventListener('click', quickAddDish);
-    quickAddInput.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') {
-        e.preventDefault();
-        quickAddDish();
-      }
-    });
-
-    const searchInput = modal.querySelector('#dish-picker-search');
-    if (searchInput) {
-      searchInput.addEventListener('input', () => {
-        const query = searchInput.value.toLowerCase();
-        modal.querySelectorAll('.mb-picker-item').forEach(item => {
-          const name = item.querySelector('strong').textContent.toLowerCase();
-          item.style.display = name.includes(query) ? '' : 'none';
-        });
-      });
-    }
-
-    modal.querySelectorAll('.add-to-menu-btn').forEach(btn => {
-      btn.addEventListener('click', async () => {
-        const dishId = btn.dataset.id;
-        try {
-          await addDishToMenu(menuId, { dish_id: parseInt(dishId), servings: 1, course_id: targetCourseId || null });
-          btn.textContent = 'Added';
-          btn.disabled = true;
-          btn.classList.remove('btn-primary');
-          menu = await getMenu(menuId);
-          showToast('Dish added');
-        } catch (err) {
-          showToast(err.message, 'error');
-        }
-      });
-    });
-
-    const origClose = modal.querySelector('.modal-close');
-    origClose.addEventListener('click', () => render(), { once: true });
+    setupDragDrop(ctx);
   }
 
   // Real-time sync listeners
