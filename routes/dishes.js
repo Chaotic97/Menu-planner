@@ -234,8 +234,8 @@ router.post('/', asyncHandler(async (req, res) => {
     // Save service directions
     await saveDishServiceDirections(tx, dishId, service_directions);
 
-    // Detect allergens
-    await updateDishAllergens(dishId);
+    // Detect allergens (pass tx so it sees the just-inserted ingredients)
+    await updateDishAllergens(dishId, tx);
 
     req.broadcast('dish_created', { id: dishId }, req.headers['x-client-id']);
     res.status(201).json({ id: dishId });
@@ -328,7 +328,7 @@ router.post('/:id/duplicate', asyncHandler(async (req, res) => {
       await tx.prepare('INSERT INTO dish_service_directions (dish_id, type, text, sort_order) VALUES (?, ?, ?, ?)').run(newId, d.type, d.text, d.sort_order);
     }
 
-    await updateDishAllergens(newId);
+    await updateDishAllergens(newId, tx);
 
     // Copy dish-level manual allergen overrides
     const manualAllergens = await tx.prepare(
@@ -492,8 +492,8 @@ router.put('/:id', asyncHandler(async (req, res) => {
       await tx.prepare('DELETE FROM dish_section_headers WHERE dish_id = ?').run(req.params.id);
       await saveIngredients(tx, req.params.id, ingredients);
 
-      // Re-detect allergens
-      await updateDishAllergens(req.params.id);
+      // Re-detect allergens (pass tx so it sees the replaced ingredients)
+      await updateDishAllergens(req.params.id, tx);
     }
 
     // Update tags if provided

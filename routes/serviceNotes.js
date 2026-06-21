@@ -19,7 +19,7 @@ router.get('/', asyncHandler(async (req, res) => {
     notes = await db.prepare("SELECT * FROM service_notes WHERE TO_CHAR(date::timestamp, 'YYYY-MM') = ? ORDER BY date DESC, shift, created_at DESC").all(month);
   } else {
     // Return last 30 days
-    notes = await db.prepare("SELECT * FROM service_notes WHERE date >= CURRENT_DATE - INTERVAL '30 days' ORDER BY date DESC, shift, created_at DESC").all();
+    notes = await db.prepare("SELECT * FROM service_notes WHERE date::date >= CURRENT_DATE - INTERVAL '30 days' ORDER BY date DESC, shift, created_at DESC").all();
   }
 
   res.json(notes);

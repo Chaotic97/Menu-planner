@@ -136,21 +136,21 @@ async function buildContext(pageContext) {
 
   // --- Kitchen pulse: compact stats so Haiku knows current workload ---
   const taskPending = (await db.prepare('SELECT COUNT(*) as cnt FROM tasks WHERE completed = 0').get()).cnt;
-  const taskOverdue = (await db.prepare("SELECT COUNT(*) as cnt FROM tasks WHERE completed = 0 AND due_date < CURRENT_DATE").get()).cnt;
+  const taskOverdue = (await db.prepare("SELECT COUNT(*) as cnt FROM tasks WHERE completed = 0 AND due_date < CURRENT_DATE::text").get()).cnt;
   if (taskPending > 0 || taskOverdue > 0) {
     const overdueNote = taskOverdue > 0 ? ` (${taskOverdue} overdue)` : '';
     parts.push(`Tasks: ${taskPending} pending${overdueNote}`);
   }
 
   const todayNotes = await db.prepare(
-    "SELECT title, shift FROM service_notes WHERE date = CURRENT_DATE ORDER BY created_at DESC LIMIT 3"
+    "SELECT title, shift FROM service_notes WHERE date = CURRENT_DATE::text ORDER BY created_at DESC LIMIT 3"
   ).all();
   if (todayNotes.length) {
     parts.push("Today's service notes: " + todayNotes.map(n => `${n.title} (${n.shift})`).join(', '));
   }
 
   const upcomingEvents = await db.prepare(
-    "SELECT id, name, event_date FROM menus WHERE deleted_at IS NULL AND menu_type = 'event' AND event_date >= CURRENT_DATE ORDER BY event_date LIMIT 5"
+    "SELECT id, name, event_date FROM menus WHERE deleted_at IS NULL AND menu_type = 'event' AND event_date >= CURRENT_DATE::text ORDER BY event_date LIMIT 5"
   ).all();
   if (upcomingEvents.length) {
     parts.push('Upcoming events: ' + upcomingEvents.map(m => `${m.name} on ${m.event_date} (${m.id})`).join(', '));
@@ -190,7 +190,7 @@ async function buildSuggestionHints(page) {
   const hints = [];
 
   // Task stats — useful on any page
-  const taskOverdue = (await db.prepare("SELECT COUNT(*) as cnt FROM tasks WHERE completed = 0 AND due_date < CURRENT_DATE").get()).cnt;
+  const taskOverdue = (await db.prepare("SELECT COUNT(*) as cnt FROM tasks WHERE completed = 0 AND due_date < CURRENT_DATE::text").get()).cnt;
 
   // Menu stats
   const menusWithoutTasks = await db.prepare(
@@ -202,7 +202,7 @@ async function buildSuggestionHints(page) {
 
   // Upcoming events
   const nextEvent = await db.prepare(
-    "SELECT name, event_date FROM menus WHERE deleted_at IS NULL AND menu_type = 'event' AND event_date >= CURRENT_DATE ORDER BY event_date LIMIT 1"
+    "SELECT name, event_date FROM menus WHERE deleted_at IS NULL AND menu_type = 'event' AND event_date >= CURRENT_DATE::text ORDER BY event_date LIMIT 1"
   ).get();
 
   // Dishes without directions (could use cleanup)
@@ -215,7 +215,7 @@ async function buildSuggestionHints(page) {
   ).all();
 
   // Today's notes count
-  const todayNotesCount = (await db.prepare("SELECT COUNT(*) as cnt FROM service_notes WHERE date = CURRENT_DATE").get()).cnt;
+  const todayNotesCount = (await db.prepare("SELECT COUNT(*) as cnt FROM service_notes WHERE date = CURRENT_DATE::text").get()).cnt;
 
   // Build page-specific dynamic suggestions
   if (page === '#/todos' || page === '#/today') {
