@@ -5,12 +5,11 @@
 
 const { getGeminiModel } = require('./ai/geminiClient');
 const { isConfigured } = require('./ai/vertexClient');
+const { GEMINI_MODEL: MODEL } = require('./ai/models');
 const sharp = require('sharp');
 const path = require('path');
 const fs = require('fs');
 const { getDb } = require('../db/database');
-
-const MODEL = 'gemini-2.5-flash';
 const UPLOADS_DIR = process.env.UPLOADS_PATH || path.join(__dirname, '..', 'uploads');
 
 /**

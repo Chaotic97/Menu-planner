@@ -5,6 +5,7 @@
  */
 
 const { VertexAI } = require('@google-cloud/vertexai');
+const { GEMINI_MODEL } = require('./models');
 
 let _vertexAI = null;
 
@@ -19,10 +20,10 @@ function getVertexAI() {
 
 /**
  * Get a Gemini generative model instance.
- * @param {string} modelName - defaults to 'gemini-2.5-flash'
+ * @param {string} modelName - defaults to GEMINI_MODEL
  * @param {object} options - generationConfig, safetySettings, etc.
  */
-function getGeminiModel(modelName = 'gemini-2.5-flash', options = {}) {
+function getGeminiModel(modelName = GEMINI_MODEL, options = {}) {
   const vertexAI = getVertexAI();
   return vertexAI.getGenerativeModel({
     model: modelName,

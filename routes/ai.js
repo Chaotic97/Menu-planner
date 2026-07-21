@@ -11,6 +11,7 @@ const { processCommand, processCommandStream, executeConfirmedAction, getAiSetti
 const { getClaudeClient, isConfigured } = require('../services/ai/vertexClient');
 const { restoreSnapshot, cleanupOldSnapshots } = require('../services/ai/aiHistory');
 const { extractText } = require('../services/textExtractor');
+const { CLAUDE_MODEL, GEMINI_MODEL } = require('../services/ai/models');
 
 // File upload for text extraction (10MB limit, memory storage)
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
@@ -79,7 +80,7 @@ async function fetchCleanedDirections(dishId) {
   const client = getClaudeClient({ timeout: 45 * 1000 });
 
   const response = await client.messages.create({
-    model: 'claude-haiku-4-5-20251001',
+    model: CLAUDE_MODEL,
     max_tokens: 2048,
     system: `You are a professional chef helping clean up recipe directions. Your job is to:
 - Standardize culinary terminology (e.g., "chop real fine" → "brunoise", "put in pan" → "sauté in")
@@ -106,7 +107,7 @@ ONLY output the JSON array, nothing else.`,
   const tokensOut = response.usage?.output_tokens || 0;
   await db.prepare(
     'INSERT INTO ai_usage (tokens_in, tokens_out, model, tool_used) VALUES (?, ?, ?, ?)'
-  ).run(tokensIn, tokensOut, 'claude-haiku-4-5-20251001', 'cleanup_recipe');
+  ).run(tokensIn, tokensOut, CLAUDE_MODEL, 'cleanup_recipe');
 
   const text = response.content[0]?.text || '';
   const jsonMatch = text.match(/\[[\s\S]*\]/);
@@ -431,7 +432,7 @@ router.post('/match-ingredients', aiRateLimit, asyncHandler(async (req, res) => 
 
   try {
     const response = await client.messages.create({
-      model: 'claude-haiku-4-5-20251001',
+      model: CLAUDE_MODEL,
       max_tokens: 1024,
       system: `You match imported recipe ingredient names to existing ingredients in a database. For each input name, find the best match from the existing list, or indicate no match.
 
@@ -458,7 +459,7 @@ Rules:
     const tokensOut = response.usage?.output_tokens || 0;
     await db.prepare(
       'INSERT INTO ai_usage (tokens_in, tokens_out, model, tool_used) VALUES (?, ?, ?, ?)'
-    ).run(tokensIn, tokensOut, 'claude-haiku-4-5-20251001', 'match_ingredients');
+    ).run(tokensIn, tokensOut, CLAUDE_MODEL, 'match_ingredients');
 
     const text = response.content[0]?.text || '';
     let matches;
@@ -582,7 +583,7 @@ router.post('/extract-text', upload.single('file'), asyncHandler(async (req, res
       const db = await getDb();
       await db.prepare(
         'INSERT INTO ai_usage (tokens_in, tokens_out, model, tool_used) VALUES (?, ?, ?, ?)'
-      ).run(tokensIn, tokensOut, 'gemini-2.5-flash', 'extract_image_text');
+      ).run(tokensIn, tokensOut, GEMINI_MODEL, 'extract_image_text');
 
       const extractedText = geminiResponse.candidates?.[0]?.content?.parts?.[0]?.text || '';
       return res.json({ text: extractedText, type: 'image' });
@@ -654,7 +655,7 @@ router.post('/voice', upload.single('audio'), asyncHandler(async (req, res) => {
     const db = await getDb();
     await db.prepare(
       'INSERT INTO ai_usage (tokens_in, tokens_out, model, tool_used) VALUES (?, ?, ?, ?)'
-    ).run(tokensIn, tokensOut, 'gemini-2.5-flash', 'voice_transcription');
+    ).run(tokensIn, tokensOut, GEMINI_MODEL, 'voice_transcription');
 
     const text = response.candidates?.[0]?.content?.parts?.[0]?.text || '';
     return res.json({ text: text.trim() });
@@ -821,7 +822,7 @@ router.post('/generate-tasks/:menuId', aiRateLimit, asyncHandler(async (req, res
     const client = getClaudeClient({ timeout: 45 * 1000 });
 
     const response = await client.messages.create({
-      model: 'claude-haiku-4-5-20251001',
+      model: CLAUDE_MODEL,
       max_tokens: 2048,
       system: `You are a head chef creating a practical prep task list for your kitchen team. You take a full menu with recipes and create realistic, actionable tasks that a cook would actually check off during their shift.
 
@@ -851,7 +852,7 @@ ONLY output the JSON array, nothing else.`,
     const tokensOut = response.usage?.output_tokens || 0;
     await db.prepare(
       'INSERT INTO ai_usage (tokens_in, tokens_out, model, tool_used) VALUES (?, ?, ?, ?)'
-    ).run(tokensIn, tokensOut, 'claude-haiku-4-5-20251001', 'generate_tasks');
+    ).run(tokensIn, tokensOut, CLAUDE_MODEL, 'generate_tasks');
 
     const text = response.content[0]?.text || '';
     const jsonMatch = text.match(/\[[\s\S]*\]/);

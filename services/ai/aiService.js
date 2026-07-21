@@ -8,8 +8,8 @@ const { getClaudeClient, isConfigured } = require('./vertexClient');
 const { getDb } = require('../../db/database');
 const { getToolDefinitions, executeToolHandler, isAutoApproved } = require('./aiTools');
 const { buildContext } = require('./aiContext');
+const { CLAUDE_MODEL: MODEL } = require('./models');
 
-const MODEL = 'claude-haiku-4-5-20251001';
 const MAX_RETRIES = 3;
 const MAX_TOOL_ROUNDS = 15;
 
