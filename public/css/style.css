@@ -296,6 +296,20 @@ body {
   overflow: hidden;
 }
 
+/* Sidebar workflow section headers (Plan / Build / Prep & Service) */
+.nav-section-label {
+  padding: 14px 12px 5px;
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  opacity: 0.85;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.nav-section-label:first-child { padding-top: 4px; }
+
 /* Nav links — dark theme (mobile + base) */
 .nav-link {
   display: inline-flex;
@@ -366,8 +380,11 @@ body {
   margin-top: 2px;
 }
 
-.menu-title-area { flex: 1; }
-.menu-title-row { display: flex; align-items: center; gap: 8px; }
+.menu-title-area { flex: 1; min-width: 0; }
+/* Title takes its own line (prominent); date + edit sit below it, so a long
+   menu name never gets crushed into a narrow, multi-line column. */
+.menu-title-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.menu-title-row h1 { flex: 1 1 100%; order: -1; min-width: 0; }
 
 /* ============================
    Buttons
@@ -954,14 +971,19 @@ textarea.input { resize: vertical; min-height: 80px; }
   background: var(--bg);
 }
 
+/* Cost & density fields are collapsed by default (revealed per-row via the $
+   toggle) so quick recipe entry stays light; rows that already have cost data
+   render open (see .cost-open in dishForm). */
 .ing-cost-row {
-  display: flex;
+  display: none;
   align-items: center;
   gap: 6px;
   margin-top: 4px;
   padding: 4px 0 2px 2px;
   border-top: 1px dashed var(--border);
 }
+.ingredient-row.cost-open .ing-cost-row { display: flex; }
+.ingredient-row.cost-open .ing-cost-toggle { color: var(--primary); border-color: var(--primary); }
 
 .ing-cost-row .ing-unit-cost {
   width: 80px;
@@ -3210,6 +3232,7 @@ textarea.input { resize: vertical; min-height: 80px; }
   html[data-sidebar="collapsed"] .nav-brand,
   html[data-sidebar="collapsed"] .sidebar-close-btn,
   html[data-sidebar="collapsed"] .nav-label,
+  html[data-sidebar="collapsed"] .nav-section-label,
   html[data-sidebar="collapsed"] .sync-row {
     display: none;
   }
@@ -4884,6 +4907,15 @@ textarea.input { resize: vertical; min-height: 80px; }
     order: -1; /* costing + subs above ingredients on mobile */
   }
   .dv-title { font-size: 1.3rem; }
+}
+
+/* Tablet portrait with the app sidebar expanded: the content column is too
+   narrow for the 2-col dish layout (the 280px costing rail would crush the
+   ingredients). Stack instead, so ingredients get the full width. In landscape
+   / on desktop there's room, so the side-by-side layout stays. */
+@media (min-width: 769px) and (max-width: 1024px) {
+  html[data-sidebar="expanded"] .dv-layout { grid-template-columns: 1fr; }
+  html[data-sidebar="expanded"] .dv-sidebar { order: -1; }
 }
 
 /* ============================

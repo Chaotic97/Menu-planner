@@ -265,6 +265,11 @@ function setupIngredientHandlers(ctx) {
       return;
     }
 
+    if (e.target.closest('.ing-cost-toggle')) {
+      e.target.closest('.ingredient-row').classList.toggle('cost-open');
+      return;
+    }
+
     if (e.target.closest('.ing-convert-btn')) {
       const btn = e.target.closest('.ing-convert-btn');
       const row = btn.closest('.ingredient-row');
@@ -1277,7 +1282,7 @@ function ingredientRow(ing, index) {
   const compat = allCompatibleUnits(currentUnit, gPerMl);
   const canConvert = compat.length > 0;
   return `
-    <div class="ingredient-row" data-index="${index}" draggable="true"${gPerMl ? ` data-g-per-ml="${gPerMl}"` : ''}>
+    <div class="ingredient-row${ing && (ing.unit_cost || gPerMl) ? ' cost-open' : ''}" data-index="${index}" draggable="true"${gPerMl ? ` data-g-per-ml="${gPerMl}"` : ''}>
       <span class="drag-handle" title="Drag to reorder">⠿</span>
       <div class="ing-main-controls">
         <div class="ing-field ing-name-field">
@@ -1296,6 +1301,7 @@ function ingredientRow(ing, index) {
         <div class="ing-field ing-prep-field">
           <input type="text" class="input ing-prep" placeholder="Prep note (e.g., dice, marinate 24hr)" value="${escapeHtml(ing ? ing.prep_note : '')}">
         </div>
+        <button type="button" class="btn btn-icon ing-cost-toggle" title="Cost &amp; density">$</button>
         <button type="button" class="btn btn-icon remove-ingredient" title="Remove">&times;</button>
       </div>
       <div class="ing-cost-row">

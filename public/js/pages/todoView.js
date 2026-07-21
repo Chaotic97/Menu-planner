@@ -1,4 +1,4 @@
-import { getMenus, getTasks, createTask, updateTask, deleteTask, getAiSettings } from '../api.js';
+import { getMenus, getTasks, createTask, updateTask, deleteTask, getAiSettings, generateTasks } from '../api.js';
 import { escapeHtml } from '../utils/escapeHtml.js';
 import { showToast } from '../components/toast.js';
 import { openModal, closeModal } from '../components/modal.js';
@@ -128,12 +128,22 @@ export async function renderTodoView(container, menuId) {
       buckets[bucket].push(task);
     }
     if (Object.keys(buckets).length === 0) {
+      const selectedMenu = filterMenuId ? menus.find(m => String(m.id) === filterMenuId) : null;
+      if (selectedMenu) {
+        return emptyStateHTML({
+          icon: 'tasks',
+          title: 'No prep tasks for this menu yet',
+          message: `Generate a prep list from the dishes on ${escapeHtml(selectedMenu.name)}, or add a task manually.`,
+          actionLabel: 'Generate prep tasks',
+          actionId: 'td-generate-empty',
+        });
+      }
       return emptyStateHTML({
         icon: 'tasks',
         title: 'No tasks yet',
-        message: aiAvailable && filterMenuId
-          ? 'Use "Plan Tasks" to generate tasks with AI, or add one manually.'
-          : 'Add a task to get started.',
+        message: 'Pick a menu above to generate its prep list, or add a task manually.',
+        actionLabel: '+ Add task',
+        actionId: 'td-add-empty',
       });
     }
     return DATE_BUCKET_ORDER
@@ -357,6 +367,30 @@ export async function renderTodoView(container, menuId) {
     if (countEl) countEl.textContent = `${tasks.length} task${tasks.length !== 1 ? 's' : ''}`;
   }
 
+  // Deterministic prep-list generation from a menu's dish directions.
+  // Works for any menu (event or scheduled) and needs no AI — the golden path
+  // from "I have a menu" to "here's my prep list".
+  async function handleGenerateFromMenu(btn) {
+    const selectedMenu = menus.find(m => String(m.id) === filterMenuId);
+    if (!selectedMenu) { showToast('Select a menu first', 'warning'); return; }
+    if (btn) { btn.disabled = true; btn.textContent = 'Generating…'; }
+    try {
+      const result = await generateTasks(filterMenuId);
+      const n = result.prep_count ?? result.total ?? 0;
+      if (n > 0) {
+        showToast(`Generated ${n} prep task${n !== 1 ? 's' : ''} from ${selectedMenu.name}`, 'success');
+      } else {
+        showToast('No prep steps found yet — add directions to this menu’s dishes, then generate.', 'warning');
+      }
+      await loadTasks();
+      renderContent();
+    } catch (err) {
+      console.warn('Generate tasks failed:', err);
+      showToast('Could not generate tasks. Please try again.', 'error');
+      if (btn) { btn.disabled = false; btn.textContent = 'Generate prep tasks'; }
+    }
+  }
+
   function handlePlanTasks() {
     const selectedMenuId = filterMenuId;
     const selectedMenu = menus.find(m => String(m.id) === selectedMenuId);
@@ -419,6 +453,10 @@ export async function renderTodoView(container, menuId) {
 
     // Plan tasks button
     container.querySelector('#td-plan-btn')?.addEventListener('click', () => handlePlanTasks());
+
+    // Empty-state actions (golden path: generate a prep list from the menu)
+    container.querySelector('#td-generate-empty')?.addEventListener('click', (e) => handleGenerateFromMenu(e.currentTarget));
+    container.querySelector('#td-add-empty')?.addEventListener('click', () => openAddTaskModal());
 
     // Filter: menu
     container.querySelector('#td-filter-menu')?.addEventListener('change', async (e) => {

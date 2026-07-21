@@ -3,7 +3,7 @@ import { escapeHtml } from '../utils/escapeHtml.js';
 import { showToast } from '../components/toast.js';
 import { openModal, closeModal } from '../components/modal.js';
 import { createActionMenu } from '../components/actionMenu.js';
-import { loadingHTML } from '../utils/loadingState.js';
+import { loadingHTML, emptyStateHTML } from '../utils/loadingState.js';
 
 const PRIORITY_LABELS = { high: 'High', medium: 'Medium', low: 'Low' };
 
@@ -326,8 +326,15 @@ export async function renderToday(container) {
         ${renderOverdue(data.overdue || [])}
 
         <div class="ty-phases" id="ty-phases">
-          ${(data.phases || []).map(p => renderPhaseSection(p, currentPhaseId)).join('')}
-          ${renderUnscheduled(data.unscheduled || [])}
+          ${(data.progress?.total || 0) === 0
+            ? emptyStateHTML({
+                icon: 'tasks',
+                title: 'Nothing scheduled today',
+                message: 'Generate a prep list from one of your menus to fill your day, or add a task manually.',
+                actionLabel: 'Generate a prep list',
+                actionId: 'ty-generate-empty',
+              })
+            : (data.phases || []).map(p => renderPhaseSection(p, currentPhaseId)).join('') + renderUnscheduled(data.unscheduled || [])}
         </div>
       </div>
     `;
@@ -342,6 +349,9 @@ export async function renderToday(container) {
       ]);
       overflowSlot.appendChild(menuTrigger);
     }
+
+    // Day-empty prompt → send them to Tasks, where prep-list generation lives
+    container.querySelector('#ty-generate-empty')?.addEventListener('click', () => { window.location.hash = '#/todos'; });
 
     attachListeners();
   }
