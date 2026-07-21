@@ -24,14 +24,19 @@ html { overscroll-behavior: none; touch-action: manipulation; }
   --text-muted: #757575;
   --border: #e0e0e0;
 
-  /* --- Elevation --- */
-  --shadow: 0 2px 8px rgba(0,0,0,0.08);
-  --shadow-lg: 0 4px 16px rgba(0,0,0,0.12);
+  /* --- Elevation (layered for a softer, more modern depth) --- */
+  --shadow: 0 1px 2px rgba(0,0,0,0.04), 0 2px 8px rgba(0,0,0,0.06);
+  --shadow-lg: 0 2px 4px rgba(0,0,0,0.05), 0 8px 24px rgba(0,0,0,0.10);
 
   /* --- Geometry --- */
   --radius: 10px;
   --radius-sm: 6px;
   --radius-lg: 14px;
+
+  /* --- Motion --- */
+  --ease: cubic-bezier(0.2, 0, 0, 1);
+  --dur-fast: 120ms;
+  --dur: 180ms;
 
   /* --- Layout --- */
   --nav-height: 56px;
@@ -74,8 +79,8 @@ html { overscroll-behavior: none; touch-action: manipulation; }
   --text-muted: #a0a0a0;
   --border: #404040;
   --primary-rgb: 64, 145, 108;
-  --shadow: 0 2px 8px rgba(0,0,0,0.3);
-  --shadow-lg: 0 4px 16px rgba(0,0,0,0.4);
+  --shadow: 0 1px 2px rgba(0,0,0,0.3), 0 2px 8px rgba(0,0,0,0.25);
+  --shadow-lg: 0 2px 4px rgba(0,0,0,0.3), 0 8px 24px rgba(0,0,0,0.4);
   --primary: #40916c;
   --primary-light: #52b788;
   --primary-dark: #1b4332;
@@ -302,7 +307,7 @@ body {
   font-size: 0.875rem;
   font-weight: 500;
   border-radius: var(--radius-sm);
-  min-height: 38px;
+  min-height: 44px;
   white-space: nowrap;
   transition: background 0.15s, color 0.15s;
   background: none;
@@ -1326,7 +1331,7 @@ textarea.input { resize: vertical; min-height: 80px; }
   font-size: 0.8rem;
   font-weight: 600;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease), transform var(--dur-fast) var(--ease);
 }
 
 .mb-day-btn:hover {
@@ -1370,7 +1375,7 @@ textarea.input { resize: vertical; min-height: 80px; }
   padding: 0;
   line-height: 22px;
   text-align: center;
-  transition: all 0.15s ease;
+  transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease), transform var(--dur-fast) var(--ease);
 }
 
 .mb-dish-day-btn:hover {
@@ -2604,7 +2609,7 @@ textarea.input { resize: vertical; min-height: 80px; }
   background: var(--surface);
   color: var(--text-muted);
   cursor: pointer;
-  transition: all 0.15s;
+  transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease), transform var(--dur-fast) var(--ease);
   min-height: 44px;
 }
 
@@ -4130,7 +4135,7 @@ textarea.input { resize: vertical; min-height: 80px; }
   cursor: pointer;
   color: var(--text);
   font-family: var(--font);
-  transition: all 0.15s;
+  transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease), transform var(--dur-fast) var(--ease);
   white-space: nowrap;
   flex-shrink: 0;
 }
@@ -4211,7 +4216,7 @@ textarea.input { resize: vertical; min-height: 80px; }
   border-radius: 20px;
   font-size: 0.85rem;
   cursor: pointer;
-  transition: all 0.15s;
+  transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease), transform var(--dur-fast) var(--ease);
   font-family: var(--font);
   color: var(--text);
   white-space: nowrap;
@@ -4318,7 +4323,7 @@ textarea.input { resize: vertical; min-height: 80px; }
   border-radius: 20px;
   font-size: 0.82rem;
   cursor: pointer;
-  transition: all 0.15s;
+  transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease), transform var(--dur-fast) var(--ease);
   font-family: var(--font);
   color: var(--text);
 }
@@ -4380,7 +4385,7 @@ textarea.input { resize: vertical; min-height: 80px; }
   cursor: pointer;
   color: var(--text);
   font-family: var(--font);
-  transition: all 0.15s;
+  transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease), transform var(--dur-fast) var(--ease);
 }
 
 .uc-tab-btn.active {
@@ -4527,7 +4532,7 @@ textarea.input { resize: vertical; min-height: 80px; }
   background: none;
   color: var(--sc, var(--text));
   cursor: pointer;
-  transition: all 0.15s;
+  transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease), transform var(--dur-fast) var(--ease);
   opacity: 0.7;
 }
 
@@ -8570,6 +8575,77 @@ textarea.input { resize: vertical; min-height: 80px; }
 /* --- ChefSheet: dark mode --- */
 [data-theme="dark"] .cs-raw-text {
   background: rgba(255,255,255,0.05);
+}
+
+/* ============================
+   Touch responsiveness & motion
+   ============================ */
+
+/* Tactile press feedback — every tappable dips slightly on press, giving an
+   instant response on touch (and a satisfying click on mouse). Transforms are
+   GPU-accelerated; transitions are unified on the motion tokens. */
+.btn, .card, .special-card, .nav-link, .td-tab-btn, .tab-btn,
+.tag-badge, .favorite-btn, .chat-fab, .action-menu-item,
+.sidebar-reveal-btn, .sidebar-toggle-btn, .sidebar-close-btn {
+  transition: transform var(--dur-fast) var(--ease),
+              box-shadow var(--dur) var(--ease),
+              background var(--dur-fast) var(--ease),
+              color var(--dur-fast) var(--ease),
+              border-color var(--dur) var(--ease);
+}
+.btn:active:not(:disabled),
+.card:active, .special-card:active,
+.nav-link:active, .td-tab-btn:active, .tab-btn:active,
+.tag-badge:active, .action-menu-item:active,
+.sidebar-reveal-btn:active, .sidebar-toggle-btn:active, .sidebar-close-btn:active {
+  transform: scale(0.97);
+}
+.favorite-btn:active, .chat-fab:active { transform: scale(0.9); }
+
+/* Page-enter transition — a quick fade + slide-up on each navigation, for a
+   snappier sense of movement. Retriggered from the router (app.js). Disabled
+   under reduced-motion via the global rule below. */
+@keyframes pageEnter {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.page-enter { animation: pageEnter var(--dur) var(--ease); }
+
+/* Coarse / touch pointers: :hover latches after a tap and reads as "stuck".
+   Neutralize the decorative hover lifts & elevations — tactile feedback comes
+   from :active above instead. (Matches the existing hover-none pattern used
+   for .td-task-actions.) */
+@media (hover: none) {
+  .card:hover, .special-card:hover, .fp-ingredient-chip:hover,
+  .chat-fab:hover, .chat-cancel-btn:hover, .chat-skip-btn:hover,
+  .favorite-btn:hover, .nav-link:hover {
+    transform: none;
+  }
+  .card:hover { box-shadow: none; border-color: var(--border); }
+}
+
+/* Keyboard focus ring — visible for keyboard users, suppressed for mouse/touch
+   so taps don't leave a lingering outline. */
+:focus:not(:focus-visible) { outline: none; }
+.btn:focus-visible, .nav-link:focus-visible, .input:focus-visible,
+.td-tab-btn:focus-visible, .tab-btn:focus-visible, .modal-close:focus-visible,
+a:focus-visible, button:focus-visible, [tabindex]:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+/* Respect reduced-motion — kill transforms, animations, and transitions for
+   users who ask for it, while keeping everything functional. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+  .btn:active, .card:active, .nav-link:active, .td-tab-btn:active,
+  .tab-btn:active, .tag-badge:active, .favorite-btn:active,
+  .chat-fab:active { transform: none; }
 }
 
 /* ============================

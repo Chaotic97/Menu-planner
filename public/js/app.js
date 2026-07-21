@@ -166,6 +166,11 @@ async function router() {
 
   updateActiveNav(hash);
 
+  // Page-enter transition — retrigger the animation on every navigation.
+  appContent.classList.remove('page-enter');
+  void appContent.offsetWidth; // force reflow so the animation restarts
+  appContent.classList.add('page-enter');
+
   for (const route of routes) {
     const match = hash.match(route.pattern);
     if (match) {
