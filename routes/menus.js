@@ -601,7 +601,9 @@ router.post('/:id/dishes', asyncHandler(async (req, res) => {
     req.broadcast('menu_updated', { id: parseInt(req.params.id) }, req.headers['x-client-id']);
     res.status(201).json({ success: true });
   } catch (err) {
-    if (err.message && err.message.includes('UNIQUE')) {
+    // Postgres unique_violation is code 23505 (the message says "duplicate key",
+    // not "UNIQUE" — keep a message fallback for any other driver).
+    if (err.code === '23505' || (err.message && /unique/i.test(err.message))) {
       return res.status(409).json({ error: 'Dish already in this menu' });
     }
     throw err;

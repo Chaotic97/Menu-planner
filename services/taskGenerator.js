@@ -253,7 +253,7 @@ async function getTasks(filters = {}) {
   }
 
   if (filters.overdue === '1' || filters.overdue === true) {
-    conditions.push('t.due_date < CURRENT_DATE AND t.completed = 0');
+    conditions.push("t.due_date < CURRENT_DATE::text AND t.completed = 0");
   }
 
   if (filters.search) {

@@ -1,11 +1,22 @@
-const { Pool } = require('pg');
+const { Pool, types } = require('pg');
 const path = require('path');
 const fs = require('fs');
+
+// Return bigint (int8, OID 20) as a JS number instead of a string. COUNT()/SUM()
+// yield int8, and SQLite (pre-migration) returned plain numbers — API consumers
+// and tests expect numbers. Counts/sums in this app never exceed 2^53.
+types.setTypeParser(20, (val) => (val === null ? null : parseInt(val, 10)));
 
 const DATABASE_URL = process.env.DATABASE_URL || 'postgresql://localhost:5432/platestack';
 
 let wrapper = null;
 let initPromise = null;
+
+// Tables whose primary key is not a column named `id`. INSERTs here must not
+// have `RETURNING id` appended (see StmtWrapper.run).
+const NO_ID_TABLES = new Set([
+  'settings', 'dish_tags', 'dish_allergens', 'ingredient_allergens',
+]);
 
 /**
  * Convert ? placeholders to $1, $2, ... for PostgreSQL
@@ -39,10 +50,15 @@ class StmtWrapper {
   async run(...params) {
     let sql = this._sql;
     // For INSERT statements without ON CONFLICT and without RETURNING,
-    // append RETURNING id to get the auto-generated id
+    // append RETURNING id to get the auto-generated id. Skip tables that have
+    // no `id` column (composite / non-id primary keys) — RETURNING id there
+    // raises "column id does not exist", which also aborts any open transaction.
+    const tableMatch = /^\s*INSERT\s+INTO\s+"?([a-z_][a-z0-9_]*)"?/i.exec(sql);
+    const tableName = tableMatch ? tableMatch[1].toLowerCase() : '';
     const needsReturning = this._isInsert &&
       !/RETURNING/i.test(sql) &&
-      !/ON\s+CONFLICT/i.test(sql);
+      !/ON\s+CONFLICT/i.test(sql) &&
+      !NO_ID_TABLES.has(tableName);
 
     if (needsReturning) {
       sql = sql.replace(/;?\s*$/, '') + ' RETURNING id';
